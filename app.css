@@ -1,0 +1,289 @@
+/* Walmart Listing Browser — layout layer on top of theme.css (Horizon kit).
+   Left panel replicates the Google Sheets incentive price list. */
+
+body { height: 100vh; overflow: hidden; }
+
+/* ---------------- left panel: the sheet ---------------- */
+#side {
+  width: 680px;
+  min-width: 340px;
+  flex: 0 0 auto;
+  background: var(--sidebar-bg);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#side .brand { padding: 16px 16px 12px; }
+#side .brand .badge { margin-left: auto; }
+#side .brand .badge:empty { display: none; }
+#side .brand button { padding: 4px 10px; font-size: 12px; margin-left: 8px; flex: none; }
+.brand-mark { background: var(--accent); }
+
+/* draggable divider between the sheet and the Walmart pane */
+#splitBar { flex: 0 0 7px; cursor: col-resize; position: relative; background: transparent; }
+#splitBar::before {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line);
+}
+#splitBar:hover::before, body.resizing #splitBar::before {
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+body.resizing { cursor: col-resize; user-select: none; }
+
+/* toolbar */
+.toolbar { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 10px; }
+.toolbar button { padding: 5px 11px; font-size: 12.5px; }
+.toolbar .primary { margin-left: auto; }
+
+/* formula bar */
+.fx-bar { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; }
+.fx-ref {
+  flex: none;
+  min-width: 38px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--muted);
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 6px;
+}
+.fx-bar input { flex: 1; font-size: 12.5px; padding: 6px 9px; }
+.fx-bar input:disabled { background: var(--card-2); color: var(--muted); }
+
+/* autosave indicator — flashes after each change */
+.save-state {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--green);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.save-state.show { opacity: 1; }
+
+/* find bar (Ctrl+F) */
+.find-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; }
+.find-bar input { flex: 1; font-size: 12.5px; padding: 5px 8px; }
+.find-count { flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.find-bar button { padding: 3px 9px; font-size: 12px; flex: none; }
+
+/* search match highlights */
+#sheet td.hl { background: #FDF0C2 !important; }
+#sheet td.hl-cur {
+  background: #FBDC80 !important;
+  outline: 2px solid var(--amber);
+  outline-offset: -2px;
+}
+
+.sheet-wrap { flex: 1; overflow: auto; border-top: 1px solid var(--line); }
+
+#sheet {
+  table-layout: fixed;               /* column widths follow the headers */
+  width: 100%;                       /* always fits the panel — resizing one
+                                        column reflows the others automatically */
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+#sheet thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #1F4E79;               /* navy header like the sheet */
+  color: #FFFFFF;
+  font-weight: 700;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px 10px;
+  white-space: nowrap;
+  border: 1px solid #16385A;
+  letter-spacing: 0;
+}
+#sheet thead th.rn { background: #F4F3EF; border-color: #E4E2DA; width: 34px; }
+#sheet thead th.custom-h { position: relative; padding-right: 24px; }
+#sheet thead th .col-del {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 5px;
+  border: none;
+  background: none;
+  color: #FFFFFF;
+  opacity: 0.55;
+  font-size: 12px;
+  cursor: pointer;
+}
+#sheet thead th .col-del:hover { opacity: 1; background: rgba(255, 255, 255, 0.18); border-radius: 4px; }
+#sheet td.custom { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+
+#sheet td {
+  border: 1px solid #E7E5DE;         /* light gridlines */
+  padding: 6px 10px;
+  white-space: nowrap;
+  overflow: hidden;                  /* narrow columns clip with … */
+  text-overflow: ellipsis;
+  color: var(--ink-soft);
+  vertical-align: middle;
+}
+
+/* column resize handles (right edge of each header) */
+.resize-h {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+}
+.resize-h:hover { background: rgba(255, 255, 255, 0.3); }
+body.col-resizing { cursor: col-resize; user-select: none; }
+#sheet td.rn {
+  background: #F4F3EF;               /* row-number gutter */
+  color: var(--faint);
+  text-align: center;
+  font-size: 11px;
+  padding-left: 4px;
+  padding-right: 4px;
+  position: relative;
+}
+#sheet td.rn .rowdel {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: rgba(200, 70, 60, 0.08);
+  color: var(--red);
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+}
+.sku-row:hover td.rn .n { visibility: hidden; }
+.sku-row:hover td.rn .rowdel { opacity: 1; }
+
+/* active cell (Sheets-style focus ring) */
+#sheet td.active-cell {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* inline cell editing — the input overlays the cell so column widths and the
+   table layout never shift while typing */
+#sheet td.editing { padding: 0; position: relative; }
+#sheet td.editing input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  border: 2px solid var(--accent);
+  border-radius: 0;
+  padding: 4px 8px;
+  font: inherit;
+  background: #FFFFFF;
+  color: var(--ink);
+  outline: none;
+  box-shadow: none;
+}
+#sheet td.sku {
+  background: #E7F0E3;               /* light green SKU column */
+  color: var(--ink);
+  font-weight: 500;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#sheet td.id { font-size: 12px; }
+#sheet td.num { text-align: right; }
+#sheet td.neg { color: var(--red); }
+
+/* row interactions */
+.sku-row { cursor: pointer; }
+.sku-row:hover td { background: #F6F8FB; }
+.sku-row:hover td.sku { background: #DEEBD8; }
+.sku-row:hover td.rn { background: #ECEBE5; }
+.sku-row.sel td { background: #DCE7F7; }          /* selected = soft blue like a sheet selection */
+.sku-row.sel td.sku { background: #CFE0C9; }
+.sku-row.sel td.rn { background: #C7D6EE; color: var(--accent); font-weight: 700; }
+
+/* drag to reorder */
+.sku-row.dragging td { opacity: 0.45; }
+.sku-row.drop-above td { box-shadow: inset 0 2px 0 var(--accent); }
+.sku-row.drop-below td { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* ---------------- right pane ---------------- */
+#detail { flex: 1; min-width: 0; display: flex; flex-direction: column; height: 100vh; }
+.detail-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--line);
+}
+.detail-bar button { padding: 6px 12px; font-size: 12.5px; white-space: nowrap; }
+.crumb-text { min-width: 0; margin-left: 4px; }
+.cur-sku { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.cur-item { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.detail-actions { margin-left: auto; display: flex; gap: 6px; }
+
+#listingSlot { flex: 1; position: relative; background: var(--card); }
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+/* import instructions dialog */
+.import-card { width: min(520px, 92vw); }
+.import-steps { margin: 12px 0 0 20px; }
+.import-steps li { margin-bottom: 12px; font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+.import-card code {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: "Geist Mono", Consolas, monospace;
+  font-size: 11.5px;
+}
+.import-card > .hint { margin-top: 4px; }
+
+/* loading overlay while walmart.com loads */
+.loading {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+}
+.spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--accent-tint);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 12.5px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }

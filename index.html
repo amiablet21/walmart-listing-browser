@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self';" />
+  <title>Walmart Listing Browser</title>
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <!-- LEFT: incentive price sheet -->
+  <aside id="side">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round">
+          <path d="M12 3v4M12 17v4M5 6.5l3 2M16 15.5l3 2M19 6.5l-3 2M8 15.5l-3 2" />
+        </svg>
+      </div>
+      Incentive price list
+      <span id="count" class="badge neutral"></span>
+    </div>
+
+    <div class="toolbar">
+      <button id="importBtn" title="Import a spreadsheet (.xlsx / .csv)">Import</button>
+      <button id="exportBtn" title="Export to .xlsx or .csv">Export</button>
+      <button id="addRowBtn" title="Add a new row">+ Row</button>
+      <button id="addColBtn" title="Add a new column">+ Col</button>
+      <button id="saveBtn" class="primary" title="Save all changes now">Save</button>
+    </div>
+
+    <!-- formula bar: shows the clicked cell's address and raw value/formula -->
+    <div class="fx-bar">
+      <span id="fxRef" class="fx-ref mono">—</span>
+      <input id="fxInput" type="text" class="mono" disabled
+             placeholder="Click a cell to see or edit its value or formula" />
+      <span id="saveState" class="save-state">Saved ✓</span>
+    </div>
+
+    <!-- find bar (Ctrl+F) -->
+    <div id="findBar" class="find-bar hidden">
+      <input id="findInput" type="text" placeholder="Find in sheet" />
+      <span id="findCount" class="find-count"></span>
+      <button id="findPrev" title="Previous match (Shift+Enter)">↑</button>
+      <button id="findNext" title="Next match (Enter)">↓</button>
+      <button id="findClose" title="Close (Esc)">×</button>
+    </div>
+
+    <div class="sheet-wrap">
+      <table id="sheet">
+        <thead>
+          <tr id="headRow"></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </aside>
+
+  <!-- draggable divider -->
+  <div id="splitBar" title="Drag to resize"></div>
+
+  <!-- RIGHT: live listing -->
+  <main id="detail">
+    <div id="detailBar" class="detail-bar">
+      <button id="prevBtn" title="Previous listing">‹ Prev</button>
+      <button id="nextBtn" title="Next listing">Next ›</button>
+      <div class="crumb-text">
+        <div id="curSku" class="cur-sku">Select a listing</div>
+        <div id="curItem" class="cur-item mono"></div>
+      </div>
+      <div class="detail-actions">
+        <button id="zoomOut" title="Make the page smaller">Zoom −</button>
+        <button id="zoomIn" title="Make the page bigger">Zoom +</button>
+      </div>
+    </div>
+    <!-- the live walmart.com page is docked over this slot by the main process -->
+    <div id="listingSlot">
+      <div id="slotPlaceholder" class="placeholder hint">
+        Click a row on the left to see its live Walmart page here.
+      </div>
+      <div id="loadingOverlay" class="loading hidden">
+        <div class="spinner"></div>
+        <div class="loading-text">Loading Walmart…</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- import instructions -->
+  <div id="importModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal import-card">
+      <h2>Import your spreadsheet</h2>
+      <ol class="import-steps">
+        <li>In Google Sheets: <b>File → Download → Microsoft Excel (.xlsx)</b><br />
+            <span class="hint">Comma-separated values (.csv) works too.</span></li>
+        <li>Columns must be in this order:<br />
+            <code>A&nbsp;SKU</code> <code>B&nbsp;Item&nbsp;ID</code> <code>C&nbsp;Before&nbsp;Price</code> <code>D&nbsp;During&nbsp;Incentive</code><br />
+            <span class="hint">Only SKU and Item ID are required — prices can be blank (they start at 0.00).
+            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.</span></li>
+        <li>Pick the downloaded file, then choose <b>Add to bottom</b> (rows already in the table are skipped) or <b>Replace table</b>.</li>
+      </ol>
+      <p class="hint">Tip: you can also copy rows in Google Sheets and paste them straight into the table with Ctrl+V — no file needed.</p>
+      <div class="confirm-actions">
+        <button id="importCancel">Cancel</button>
+        <button id="importChoose" class="primary">Choose file…</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- add-or-replace choice after picking an import file -->
+  <div id="importChoiceModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal">
+      <h2>How should these rows come in?</h2>
+      <p class="hint" id="importChoiceMsg"></p>
+      <div class="confirm-actions">
+        <button id="importChoiceCancel">Cancel</button>
+        <button id="importReplace" class="danger">Replace table</button>
+        <button id="importAppend" class="primary">Add to bottom</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
