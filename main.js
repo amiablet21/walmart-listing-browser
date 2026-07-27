@@ -223,6 +223,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 560,
     backgroundColor: "#FAF9F5",
+    icon: path.join(__dirname, "build", "icon.ico"),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -320,6 +321,9 @@ function paneZoomBy(dir) {
 }
 
 // ---- app lifecycle ---------------------------------------------------------
+// Own taskbar identity (icon grouping, notifications) instead of Electron's.
+app.setAppUserModelId("com.imrantursun.walmart-listing-browser");
+
 app.whenReady().then(() => {
   dataFile = path.join(app.getPath("userData"), "items.json");
 

@@ -179,7 +179,7 @@ body.sidebar-collapsed #sidebarPull svg { transform: rotate(180deg); }
   height: 30px;
   min-width: 30px;
   border-radius: 8px;
-  background: #2fa85a; /* swap for your product color */
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -19,6 +19,7 @@
   "build": {
     "appId": "com.imrantursun.walmart-listing-browser",
     "productName": "Walmart Listing Browser",
+    "copyright": "© 2026 Imran Tursun",
     "directories": {
       "output": "dist"
     },
@@ -27,6 +28,7 @@
       "!dist/**"
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -39,7 +41,9 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "uninstallDisplayName": "Walmart Listing Browser",
+      "shortcutName": "Walmart Listing Browser"
     }
   }
 }

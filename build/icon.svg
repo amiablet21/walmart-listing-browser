@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Walmart Listing Browser app icon — indigo tile, price-tag + percent mark -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5A6AAE"/>
+      <stop offset="1" stop-color="#3D4A85"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="none"
+        stroke="rgba(255,255,255,0.14)" stroke-width="4"/>
+
+  <g transform="rotate(-12 256 256)">
+    <!-- tag body: polygon + thick round-joined stroke = rounded corners -->
+    <polygon points="110,256 214,182 400,182 400,330 214,330"
+             fill="#FFFFFF" stroke="#FFFFFF" stroke-width="22" stroke-linejoin="round"/>
+    <!-- tag hole -->
+    <circle cx="206" cy="256" r="19" fill="#46549A"/>
+    <!-- percent sign -->
+    <circle cx="284" cy="224" r="25" fill="none" stroke="#46549A" stroke-width="19"/>
+    <circle cx="352" cy="288" r="25" fill="none" stroke="#46549A" stroke-width="19"/>
+    <line x1="360" y1="210" x2="276" y2="302" stroke="#46549A" stroke-width="19" stroke-linecap="round"/>
+  </g>
+</svg>
