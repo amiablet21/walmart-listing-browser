@@ -1009,6 +1009,7 @@ $("exportBtn").addEventListener("click", async () => {
   });
   const res = await window.api.exportSheet({ head, rows });
   if (res?.error) alert("Export failed: " + res.error);
+  else if (res?.saved) alert(res.note || `Exported ${items.length} rows to:\n${res.path}`);
 });
 
 // ---- import ----------------------------------------------------------------

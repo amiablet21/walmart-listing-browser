@@ -132,7 +132,9 @@ async function exportSheet(payload) {
   const file = res.filePath;
   // cells are plain values or {f: "D2-C2", v: computed} formula cells
   const isFx = (c) => c && typeof c === "object" && typeof c.f === "string";
+  const LOCKED = ["EBUSY", "EPERM", "EACCES"];
   try {
+    let write;
     if (file.toLowerCase().endsWith(".csv")) {
       const esc = (v) => {
         const s = String(v ?? "");
@@ -142,7 +144,8 @@ async function exportSheet(payload) {
       const cellStr = (c) => (isFx(c) ? "=" + c.f : c);
       const lines = [head.map(esc).join(",")];
       for (const r of rows) lines.push(r.map((c) => esc(cellStr(c))).join(","));
-      fs.writeFileSync(file, lines.join("\r\n"), "utf8");
+      const content = lines.join("\r\n");
+      write = async (target) => fs.writeFileSync(target, content, "utf8");
     } else {
       const ExcelJS = require("exceljs");
       const wb = new ExcelJS.Workbook();
@@ -155,10 +158,33 @@ async function exportSheet(payload) {
           : c)));
       }
       head.forEach((_, i) => { ws.getColumn(i + 1).width = i === 0 ? 26 : 15; });
-      await wb.xlsx.writeFile(file);
+      write = (target) => wb.xlsx.writeFile(target);
     }
-    return { saved: true, path: file };
+    try {
+      await write(file);
+      return { saved: true, path: file };
+    } catch (e) {
+      // target open in Excel? save under "name (2).ext" instead of failing
+      if (!LOCKED.includes(e.code)) throw e;
+      const ext = path.extname(file);
+      const base = file.slice(0, file.length - ext.length);
+      let alt = null;
+      for (let n = 2; n <= 50; n++) {
+        const cand = `${base} (${n})${ext}`;
+        if (!fs.existsSync(cand)) { alt = cand; break; }
+      }
+      if (!alt) throw e;
+      await write(alt);
+      return {
+        saved: true,
+        path: alt,
+        note: `"${path.basename(file)}" is open in another program (likely Excel), so the export was saved as "${path.basename(alt)}". Close the old file to overwrite it next time.`,
+      };
+    }
   } catch (e) {
+    if (LOCKED.includes(e.code)) {
+      return { error: "The file is open in another program (probably Excel). Close it there and export again." };
+    }
     return { error: e.message || String(e) };
   }
 }
