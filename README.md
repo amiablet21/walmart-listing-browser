@@ -2,6 +2,7 @@
   <img src="build/icon.png" width="96" alt="Walmart Listing Browser icon" />
   <h1>Walmart Listing Browser</h1>
   <p><b>Spreadsheet-style incentive price list with live Walmart listing browsing.</b></p>
+  <p><a href="../../releases/latest"><b>⬇ Download the Windows installer</b></a></p>
 </div>
 
 ![Walmart Listing Browser](docs/screenshot.png)
