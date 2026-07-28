@@ -95,7 +95,17 @@ let customCols = [];
 try { customCols = JSON.parse(localStorage.getItem("customCols") || "[]") || []; } catch { customCols = []; }
 const saveCols = () => localStorage.setItem("customCols", JSON.stringify(customCols));
 
-const BASE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct"];
+const BASE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom"];
+
+// per-row commission rates (%) — defaults for rows that don't specify them
+const DEFAULT_REG_COM = 6;
+const DEFAULT_INC_COM = 2;
+function fillComs(it) {
+  if (it.regCom == null || it.regCom === "") it.regCom = DEFAULT_REG_COM;
+  if (it.incCom == null || it.incCom === "") it.incCom = DEFAULT_INC_COM;
+  return it;
+}
+const newRow = () => ({ sku: "", itemId: "", before: 0, during: 0, regCom: DEFAULT_REG_COM, incCom: DEFAULT_INC_COM });
 let FIELD_ORDER = [...BASE_FIELDS];
 function rebuildFieldOrder() { FIELD_ORDER = [...BASE_FIELDS, ...customCols.map((c) => "c_" + c.key)]; }
 rebuildFieldOrder();
@@ -108,7 +118,7 @@ function getRaw(i, field) {
 // ---- column widths (drag the edge of a header to resize) -------------------
 let colWidths = {};
 try { colWidths = JSON.parse(localStorage.getItem("colWidths") || "{}") || {}; } catch { colWidths = {}; }
-const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85 };
+const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90 };
 const colW = (f) => colWidths[f] || DEFAULT_W[f] || 110;
 
 function addResizeHandle(th, field) {
@@ -142,16 +152,16 @@ function addResizeHandle(th, field) {
   th.appendChild(h);
 }
 
-const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F" };
+const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H" };
 function fieldToLetter(f) {
   if (BASE_LETTER[f]) return BASE_LETTER[f];
   const idx = customCols.findIndex((c) => "c_" + c.key === f);
-  return idx >= 0 ? String.fromCharCode(71 + idx) : "?";
+  return idx >= 0 ? String.fromCharCode(73 + idx) : "?";
 }
 function letterToField(L) {
-  const inv = { A: "sku", B: "itemId", C: "before", D: "during", E: "change", F: "pct" };
+  const inv = { A: "sku", B: "itemId", C: "before", D: "during", E: "change", F: "pct", G: "regCom", H: "incCom" };
   if (inv[L]) return inv[L];
-  const idx = L.charCodeAt(0) - 71; // G is the first custom column
+  const idx = L.charCodeAt(0) - 73; // I is the first custom column
   return customCols[idx] ? "c_" + customCols[idx].key : null;
 }
 
@@ -166,7 +176,10 @@ async function load() {
     persist();
     localStorage.setItem("seedVersion", SEED_VERSION);
   }
+  items.forEach(fillComs); // rows saved before commission columns existed
   render();
+  // seller mode doesn't depend on a row being selected — show it right away
+  if (paneMode === "seller") dockListing();
 }
 let saveFlashTimer = null;
 function persist() {
@@ -199,8 +212,7 @@ function removeRow(i) {
     items.splice(i, 1);
     if (selected === i) {
       selected = -1;
-      window.api.hideListing();
-      $("slotPlaceholder").style.display = "";
+      dockListing();
     } else if (selected > i) {
       selected--;
     }
@@ -213,6 +225,7 @@ function removeRow(i) {
 const money = (n) => (Number.isFinite(n) ? n.toFixed(2) : "#ERR");
 const chDollar = (n) => (!Number.isFinite(n) ? "#ERR" : n < 0 ? `($${Math.abs(n).toFixed(2)})` : `$${n.toFixed(2)}`);
 const chPct = (n) => (!Number.isFinite(n) ? "#ERR" : n < 0 ? `(${Math.abs(n).toFixed(1)}%)` : `${n.toFixed(1)}%`);
+const comPct = (n) => (Number.isFinite(n) ? `${Math.round(n * 100) / 100}%` : "#ERR");
 
 // ---- formula engine --------------------------------------------------------
 // Price cells accept "=" formulas with A1-style refs matching the sheet's
@@ -424,7 +437,7 @@ function renderHead() {
   // widen the gutter to fit the biggest row number (96 → 1046 → …)
   rn.style.width = Math.max(34, 14 + String(items.length + 1).length * 8) + "px";
   tr.appendChild(rn);
-  const BASE_TITLES = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change"];
+  const BASE_TITLES = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change", "Reg Comm %", "Incent Comm %"];
   BASE_TITLES.forEach((t, k) => {
     const th = document.createElement("th");
     th.textContent = t;
@@ -462,6 +475,8 @@ function render() {
     const during = safe(i, "during");
     const ch = safe(i, "change");
     const pct = safe(i, "pct");
+    const reg = safe(i, "regCom");
+    const inc = safe(i, "incCom");
     const tr = document.createElement("tr");
     tr.className = "sku-row" + (i === selected ? " sel" : "");
     tr.draggable = true;
@@ -472,7 +487,9 @@ function render() {
       <td class="num${Number.isFinite(before) ? "" : " err"}" data-field="before">${money(before)}</td>
       <td class="num${Number.isFinite(during) ? "" : " err"}" data-field="during">${money(during)}</td>
       <td class="num${ch < 0 ? " neg" : ""}${Number.isFinite(ch) ? "" : " err"}" data-field="change">${chDollar(ch)}</td>
-      <td class="num${pct < 0 ? " neg" : ""}${Number.isFinite(pct) ? "" : " err"}" data-field="pct">${chPct(pct)}</td>`;
+      <td class="num${pct < 0 ? " neg" : ""}${Number.isFinite(pct) ? "" : " err"}" data-field="pct">${chPct(pct)}</td>
+      <td class="num${Number.isFinite(reg) ? "" : " err"}" data-field="regCom">${comPct(reg)}</td>
+      <td class="num${Number.isFinite(inc) ? "" : " err"}" data-field="incCom">${comPct(inc)}</td>`;
     // custom column cells
     for (const c of customCols) {
       const f = "c_" + c.key;
@@ -591,16 +608,48 @@ function slotBounds() {
   return { x: r.left, y: r.top, width: r.width, height: r.height };
 }
 
+// which side of Walmart the pane shows: "customer" (the selected row's public
+// listing) or "seller" (a free-browsing Seller Center session, independent of
+// row selection — it loads once and row clicks never navigate it)
+let paneMode = localStorage.getItem("paneMode") === "seller" ? "seller" : "customer";
+
+function dockListing() {
+  const it = items[selected];
+  if (paneMode === "seller") {
+    $("slotPlaceholder").style.display = "none";
+    document.querySelector(".loading-text").textContent = "Loading Seller Center…";
+    window.api.showListing(null, slotBounds(), { mode: "seller" });
+    return;
+  }
+  if (!it?.itemId) {
+    window.api.hideListing();
+    $("slotPlaceholder").style.display = "";
+    return;
+  }
+  $("slotPlaceholder").style.display = "none";
+  document.querySelector(".loading-text").textContent = "Loading Walmart…";
+  window.api.showListing(it.itemId, slotBounds(), { mode: "customer" });
+}
+
+function renderModeSeg() {
+  document.querySelectorAll("#modeSeg .seg-btn").forEach((b) =>
+    b.classList.toggle("active", b.dataset.mode === paneMode));
+}
+renderModeSeg();
+document.querySelectorAll("#modeSeg .seg-btn").forEach((b) => {
+  b.addEventListener("click", () => {
+    if (paneMode === b.dataset.mode) return;
+    paneMode = b.dataset.mode;
+    localStorage.setItem("paneMode", paneMode);
+    renderModeSeg();
+    dockListing();
+  });
+});
+
 function select(i) {
   if (i < 0 || i >= items.length) return;
   selected = i;
-  if (items[i].itemId) {
-    $("slotPlaceholder").style.display = "none";
-    window.api.showListing(items[i].itemId, slotBounds());
-  } else {
-    window.api.hideListing();
-    $("slotPlaceholder").style.display = "";
-  }
+  dockListing();
   render();
   // keep the selected row in view
   document.querySelectorAll(".sku-row")[i]?.scrollIntoView({ block: "nearest" });
@@ -609,11 +658,8 @@ function select(i) {
 // keep the docked pane aligned with its slot as the window resizes
 let resizeTimer = null;
 window.addEventListener("resize", () => {
-  if (selected < 0) return;
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    if (items[selected]?.itemId) window.api.showListing(items[selected].itemId, slotBounds());
-  }, 60);
+  resizeTimer = setTimeout(() => dockListing(), 60);
 });
 
 // ---- resizable split -------------------------------------------------------
@@ -637,9 +683,7 @@ $("splitBar").addEventListener("mousedown", (e) => {
     document.removeEventListener("mouseup", up);
     document.body.classList.remove("resizing");
     localStorage.setItem("sideWidth", parseInt(side.style.width, 10) || 680);
-    if (selected >= 0 && items[selected]?.itemId) {
-      window.api.showListing(items[selected].itemId, slotBounds());
-    }
+    dockListing();
   };
   document.addEventListener("mousemove", move);
   document.addEventListener("mouseup", up);
@@ -661,8 +705,24 @@ applySheetZoom();
 // shown while walmart.com loads (the main process hides the native pane and
 // tells us when loading starts/stops)
 window.api.onListingLoading((loading) => {
-  const show = loading && selected >= 0 && !!items[selected]?.itemId;
+  const show = loading &&
+    (paneMode === "seller" || (selected >= 0 && !!items[selected]?.itemId));
   $("loadingOverlay").classList.toggle("hidden", !show);
+});
+
+// The customer pane reports when the user browses to another listing or
+// variant inside it; if that item is in the sheet, jump to its row.
+window.api.onListingNavigated((itemId) => {
+  if (paneMode !== "customer") return;
+  const id = String(itemId).trim();
+  const idx = items.findIndex((it) => String(it.itemId ?? "").trim() === id);
+  if (idx < 0 || idx === selected) return;
+  selected = idx;
+  render();
+  const row = document.querySelectorAll(".sku-row")[idx];
+  row?.scrollIntoView({ block: "nearest" });
+  row?.classList.add("nav-flash");
+  setTimeout(() => row?.classList.remove("nav-flash"), 1300);
 });
 
 // ---- copy & paste ----------------------------------------------------------
@@ -722,7 +782,7 @@ function handlePaste(text) {
       const multi = lines.length > 1 || lines[0].includes("\t");
       lines.forEach((line, r) => {
         const rowIdx = activeCell.i + r;
-        while (rowIdx >= items.length) items.push({ sku: "", itemId: "", before: 0, during: 0 });
+        while (rowIdx >= items.length) items.push(newRow());
         line.split("\t").forEach((val, c) => {
           const f = FIELD_ORDER[startCol + c];
           // multi-cell pastes never overwrite the change columns' equations —
@@ -741,7 +801,7 @@ function handlePaste(text) {
         parts = parts.map((s) => s.trim());
         if (parts.length < 2) continue;
         if (/^sku$/i.test(parts[0])) continue;        // header row
-        rows.push({ sku: parts[0], itemId: parts[1], before: parseNum(parts[2]), during: parseNum(parts[3]) });
+        rows.push(fillComs({ sku: parts[0], itemId: parts[1], before: parseNum(parts[2]), during: parseNum(parts[3]) }));
       }
       if (!rows.length) return;
       const at = selected >= 0 ? selected + 1 : items.length;
@@ -781,7 +841,7 @@ $("zoomIn").addEventListener("click", () => window.api.zoomListing(1));
 $("zoomOut").addEventListener("click", () => window.api.zoomListing(-1));
 
 $("addRowBtn").addEventListener("click", () => {
-  applyMutation(() => items.push({ sku: "", itemId: "", before: 0, during: 0 }));
+  applyMutation(() => items.push(newRow()));
   persist();
   render();
   // scroll to the new row and start editing its SKU right away
@@ -792,7 +852,7 @@ $("addRowBtn").addEventListener("click", () => {
 });
 
 // ---- cell editing helpers --------------------------------------------------
-const EDITABLE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct"];
+const EDITABLE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom"];
 const isEditableField = (f) => EDITABLE_FIELDS.includes(f) || f.startsWith("c_");
 
 // open the active cell's inline editor; `initial` replaces the content
@@ -869,7 +929,10 @@ function cellSearchText(i, f) {
     return shown + " " + formula;
   }
   const v = safe(i, f);
-  const shown = f === "change" ? chDollar(v) : f === "pct" ? chPct(v) : money(v);
+  const shown = f === "change" ? chDollar(v)
+    : f === "pct" ? chPct(v)
+    : f === "regCom" || f === "incCom" ? comPct(v)
+    : money(v);
   return shown + " " + formula;
 }
 
@@ -965,8 +1028,7 @@ $("addColBtn").addEventListener("click", () => {
 
 $("saveBtn").addEventListener("click", () => persist());
 
-$("exportBtn").addEventListener("click", async () => {
-  if (!items.length) { alert("Nothing to export."); return; }
+async function exportRegular() {
   const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : "");
   // The exported sheet has the same layout as the app (header row 1, data from
   // row 2, same column letters), so formulas export as live spreadsheet
@@ -977,6 +1039,7 @@ $("exportBtn").addEventListener("click", async () => {
     return typeof raw === "string" && raw.trim().startsWith("=") ? toExcelFormula(raw) : null;
   };
   const head = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change",
+                "Regular Commission", "During Incentive Commission",
                 ...customCols.map((c) => c.name)];
   const rows = items.map((it, i) => {
     const r = i + 2;
@@ -1005,12 +1068,71 @@ $("exportBtn").addEventListener("click", async () => {
       if (raw != null && raw !== "" && Number.isFinite(Number(raw))) return Number(raw);
       return raw ?? "";
     });
-    return [it.sku, it.itemId, priceCell("before"), priceCell("during"), change, pct, ...extras];
+    return [it.sku, it.itemId, priceCell("before"), priceCell("during"), change, pct,
+            priceCell("regCom"), priceCell("incCom"), ...extras];
   });
-  const res = await window.api.exportSheet({ head, rows });
+  const res = await window.api.exportSheet({ head, rows, name: "incentive-list" });
+  finishExport(res, rows.length);
+}
+
+// The 11-column incentive template the Walmart rep uploads. Item ID, prices,
+// the partner constants, and each row's commission rates are filled in —
+// Status, dates, and Item Name are left for the rep, matching their sheet.
+const REP_PARTNER_ID = 10001467995;
+const REP_PARTNER_NAME = "HotDeals";
+
+async function exportRep() {
+  const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : "");
+  const head = [
+    "Status", "Item ID", "Partner ID", "Partner Name", "Regular Commission Rate",
+    "Avg. Price Before Incentive (Past 90 days)", "Incentive Start Date",
+    "Incentive End Date", "Incentive Commission Rate", "Price During Incentive",
+    "Item Name",
+  ];
+  const rate = (i, field, dflt) => {
+    const v = round2(safe(i, field));
+    return Number.isFinite(v) ? v : dflt;
+  };
+  const rows = items
+    .map((it, i) => (String(it.itemId ?? "").trim()
+      ? ["", String(it.itemId).trim(), REP_PARTNER_ID, REP_PARTNER_NAME,
+         rate(i, "regCom", DEFAULT_REG_COM),
+         round2(safe(i, "before")), "", "",
+         rate(i, "incCom", DEFAULT_INC_COM),
+         round2(safe(i, "during")), ""]
+      : null))
+    .filter(Boolean);
+  if (!rows.length) { alert("No rows with an Item ID to export."); return; }
+  const res = await window.api.exportSheet({
+    head, rows,
+    name: "walmart-incentive-rep",
+    widths: head.map((h) => Math.max(12, h.length + 2)),
+  });
+  finishExport(res, rows.length);
+}
+
+function finishExport(res, count) {
   if (res?.error) alert("Export failed: " + res.error);
-  else if (res?.saved) alert(res.note || `Exported ${items.length} rows to:\n${res.path}`);
+  else if (res?.saved) alert(res.note || `Exported ${count} rows to:\n${res.path}`);
+}
+
+// Export opens a format chooser first; the Walmart pane is a native layer
+// that would cover the dialog, so it hides while the modal is open.
+function closeExportModal() {
+  $("exportModal").classList.add("hidden");
+  dockListing();
+}
+$("exportBtn").addEventListener("click", () => {
+  if (!items.length) { alert("Nothing to export."); return; }
+  window.api.hideListing();
+  $("exportModal").classList.remove("hidden");
 });
+$("exportCancel").addEventListener("click", closeExportModal);
+$("exportModal").addEventListener("click", (e) => {
+  if (e.target.id === "exportModal") closeExportModal();
+});
+$("exportRegular").addEventListener("click", () => { closeExportModal(); exportRegular(); });
+$("exportRep").addEventListener("click", () => { closeExportModal(); exportRep(); });
 
 // ---- import ----------------------------------------------------------------
 // The Import button opens an instructions dialog first; "Choose file…" runs
@@ -1022,9 +1144,7 @@ function openImportModal() {
 }
 function closeImportModal() {
   $("importModal").classList.add("hidden");
-  if (selected >= 0 && items[selected]?.itemId) {
-    window.api.showListing(items[selected].itemId, slotBounds());
-  }
+  dockListing();
 }
 $("importBtn").addEventListener("click", openImportModal);
 $("importCancel").addEventListener("click", closeImportModal);

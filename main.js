@@ -24,7 +24,8 @@ function saveItems(items) {
 }
 
 // ---- spreadsheet import (.xlsx / .csv / .tsv) ------------------------------
-// Reads the first four columns: SKU, Item ID, Before Price, During Incentive.
+// Reads SKU, Item ID, Before Price, During Incentive from columns A-D, plus
+// per-row commission rates from any header-labeled "…Commission…" columns.
 const parseNumMain = (s) => Number(String(s ?? "").replace(/[$,()%\s]/g, "")) || 0;
 
 function splitCsvLine(line) {
@@ -44,6 +45,26 @@ function splitCsvLine(line) {
 }
 
 function normalizeRows(rows) {
+  // Per-row commission columns are located by header label (any column whose
+  // header mentions "commission") rather than by position, so older sheets
+  // with $ Change / % Change in columns E-F can't be misread. Without labeled
+  // columns every row gets the defaults.
+  const REG_DEFAULT = 6, INC_DEFAULT = 2;
+  let regIdx = -1, incIdx = -1;
+  const header = rows.find((p) => /^sku$/i.test(String(p?.[0] ?? "").trim()));
+  if (header) {
+    const labels = header.map((s) => String(s ?? "").toLowerCase());
+    regIdx = labels.findIndex((l) => l.includes("commission") && l.includes("regular"));
+    incIdx = labels.findIndex((l) =>
+      l.includes("commission") && (l.includes("incentive") || l.includes("during")));
+    if (incIdx === -1) incIdx = labels.findIndex((l, k) => l.includes("commission") && k !== regIdx);
+  }
+  const commission = (parts, idx, dflt) => {
+    const s = String(idx >= 0 ? parts[idx] ?? "" : "").trim();
+    if (!s) return dflt;
+    const n = parseNumMain(s);
+    return n >= 0 && n <= 100 ? n : dflt;
+  };
   const out = [];
   for (const parts of rows) {
     if (!parts?.length) continue;
@@ -55,6 +76,8 @@ function normalizeRows(rows) {
       itemId: String(itemId ?? "").trim(),
       before: parseNumMain(before),
       during: parseNumMain(during),
+      regCom: commission(parts, regIdx, REG_DEFAULT),
+      incCom: commission(parts, incIdx, INC_DEFAULT),
     });
   }
   return out;
@@ -88,7 +111,7 @@ async function parseXlsx(file) {
   const ws = wb.worksheets[0];
   if (!ws) throw new Error("No worksheet found in the file.");
   const rows = [];
-  ws.eachRow((row) => rows.push([1, 2, 3, 4].map((c) => cellText(row.getCell(c)))));
+  ws.eachRow((row) => rows.push([1, 2, 3, 4, 5, 6, 7, 8].map((c) => cellText(row.getCell(c)))));
   return normalizeRows(rows);
 }
 
@@ -119,10 +142,12 @@ async function importSheet() {
 async function exportSheet(payload) {
   const head = Array.isArray(payload?.head) ? payload.head : [];
   const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const widths = Array.isArray(payload?.widths) ? payload.widths : null;
+  const name = typeof payload?.name === "string" && payload.name ? payload.name : "incentive-list";
   const stamp = new Date().toISOString().slice(0, 10);
   const res = await dialog.showSaveDialog(win, {
     title: "Export spreadsheet",
-    defaultPath: `incentive-list-${stamp}.xlsx`,
+    defaultPath: `${name}-${stamp}.xlsx`,
     filters: [
       { name: "Excel", extensions: ["xlsx"] },
       { name: "CSV", extensions: ["csv"] },
@@ -157,7 +182,7 @@ async function exportSheet(payload) {
           ? { formula: c.f, result: typeof c.v === "number" ? c.v : undefined }
           : c)));
       }
-      head.forEach((_, i) => { ws.getColumn(i + 1).width = i === 0 ? 26 : 15; });
+      head.forEach((_, i) => { ws.getColumn(i + 1).width = widths?.[i] ?? (i === 0 ? 26 : 15); });
       write = (target) => wb.xlsx.writeFile(target);
     }
     try {
@@ -239,62 +264,89 @@ function createWindow() {
   win.loadFile(path.join(__dirname, "index.html"));
 }
 
-// ---- docked live-listing pane ---------------------------------------------
-// A WebContentsView (window-grade browser, unlike <webview> which walmart.com
-// refuses to render into) positioned over the right side of the window. The
-// renderer sends the region's bounds.
+// ---- docked live-listing panes --------------------------------------------
+// Two WebContentsViews (window-grade browsers, unlike <webview> which
+// walmart.com refuses to render into) positioned over the right side of the
+// window; the renderer sends the region's bounds. "customer" follows the
+// selected row's public listing; "seller" is a free-browsing Seller Center
+// session that loads once and is never navigated by row clicks — switching
+// modes only shows/hides the panes, so neither side ever reloads.
 const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
-let paneView = null;
-let paneItem = null;
+const panes = { customer: null, seller: null };
+let activePane = null;   // which pane the renderer currently wants shown
+let customerItem = null; // itemId loaded in the customer pane
 let paneZoom = 0.7;
-let paneWanted = false;  // whether the renderer currently wants the pane visible
-let paneLoading = false; // true only while WE are loading a new item (not walmart's own background loads)
+let paneWanted = false;  // whether the renderer currently wants a pane visible
+let paneLoading = false; // true only while WE are loading (not walmart's own background loads)
 
-function ensurePane() {
-  if (paneView) return paneView;
-  paneView = new WebContentsView({
+function makePane(mode) {
+  const v = new WebContentsView({
     webPreferences: {
-      partition: "persist:listing",
+      partition: "persist:listing", // one session for both panes: log in once
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
-  paneView.webContents.setUserAgent(CHROME_UA);
-  paneView.webContents.on("dom-ready", () => {
-    try { paneView.webContents.setZoomFactor(paneZoom); } catch { /* view gone */ }
+  v.webContents.setUserAgent(CHROME_UA);
+  v.webContents.on("dom-ready", () => {
+    try { v.webContents.setZoomFactor(paneZoom); } catch { /* view gone */ }
   });
-  // Ctrl+scroll (or trackpad pinch) over the listing zooms it, like a browser.
-  paneView.webContents.on("zoom-changed", (_e, dir) => {
+  // Ctrl+scroll (or trackpad pinch) over the pane zooms it, like a browser.
+  v.webContents.on("zoom-changed", (_e, dir) => {
     paneZoomBy(dir === "in" ? 1 : -1);
   });
   // Loading screen: an HTML overlay can't cover the native view, so while a
-  // NEW item is loading the view hides and the renderer shows a spinner.
-  // Only loads we initiate count — walmart.com fires loading events constantly
-  // (ads, iframes) and reacting to those made the pane flicker mid-use.
-  paneView.webContents.on("did-start-loading", () => {
-    if (!paneLoading) return;
+  // load WE started is in flight the view hides and the renderer shows a
+  // spinner. Only our loads count — walmart.com fires loading events
+  // constantly (ads, iframes) and reacting to those made the pane flicker.
+  v.webContents.on("did-start-loading", () => {
+    if (!paneLoading || panes[activePane] !== v) return;
     try { win?.webContents.send("listing:loading", true); } catch { /* window gone */ }
-    if (paneWanted) paneView.setVisible(false);
+    if (paneWanted) v.setVisible(false);
   });
-  paneView.webContents.on("did-stop-loading", () => {
-    if (!paneLoading) return;
+  v.webContents.on("did-stop-loading", () => {
+    if (!paneLoading || panes[activePane] !== v) return;
     paneLoading = false;
     try { win?.webContents.send("listing:loading", false); } catch { /* window gone */ }
-    if (paneWanted) paneView.setVisible(true);
+    if (paneWanted) v.setVisible(true);
   });
-  attachContextMenu(paneView.webContents);
-  paneView.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//.test(url)) paneView.webContents.loadURL(url);
+  attachContextMenu(v.webContents);
+  v.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//.test(url)) v.webContents.loadURL(url);
     return { action: "deny" };
   });
-  win.contentView.addChildView(paneView);
-  return paneView;
+  // When the user browses to another listing or variant inside the customer
+  // pane, tell the renderer so it can jump to that row. Variant clicks are
+  // SPA history pushes, hence also did-navigate-in-page.
+  if (mode === "customer") {
+    const report = (url) => {
+      const m = /\/ip\/(?:[^/]+\/)?(\d{5,})(?:[/?#]|$)/.exec(url);
+      if (!m || m[1] === customerItem) return;
+      customerItem = m[1]; // a later row click on this item won't reload
+      try { win?.webContents.send("listing:navigated", m[1]); } catch { /* window gone */ }
+    };
+    v.webContents.on("did-navigate", (_e, url) => report(url));
+    v.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => {
+      if (isMainFrame) report(url);
+    });
+  }
+  win.contentView.addChildView(v);
+  return v;
 }
 
-function paneShow(itemId, b) {
-  const v = ensurePane();
+const customerUrl = (itemId) => `https://www.walmart.com/ip/${encodeURIComponent(itemId)}`;
+const SELLER_HOME = "https://seller.walmart.com/items-and-inventory/manage-items";
+
+function paneShow(itemId, b, mode) {
+  mode = mode === "seller" ? "seller" : "customer";
+  const created = !panes[mode];
+  if (created) panes[mode] = makePane(mode);
+  const v = panes[mode];
+  activePane = mode;
   paneWanted = true;
+  const other = panes[mode === "seller" ? "customer" : "seller"];
+  if (other) other.setVisible(false);
   v.setBounds({
     x: Math.round(b.x),
     y: Math.round(b.y),
@@ -302,21 +354,32 @@ function paneShow(itemId, b) {
     height: Math.max(0, Math.round(b.height)),
   });
   v.setVisible(true);
-  if (paneItem !== itemId) {
-    paneItem = itemId;
+  if (mode === "seller") {
+    // load Seller Center once, ever; after that the user browses it freely
+    if (created) {
+      paneLoading = true;
+      v.webContents.loadURL(SELLER_HOME);
+    }
+  } else if (itemId && customerItem !== itemId) {
+    customerItem = itemId;
     paneLoading = true;
-    v.webContents.loadURL(`https://www.walmart.com/ip/${encodeURIComponent(itemId)}`);
+    v.webContents.loadURL(customerUrl(itemId));
   }
+  // a load we started is still in flight → stay hidden behind the spinner
+  if (paneLoading && v.webContents.isLoading()) v.setVisible(false);
   return true;
 }
 function paneHide() {
   paneWanted = false;
-  if (paneView) paneView.setVisible(false);
+  activePane = null;
+  for (const v of Object.values(panes)) v?.setVisible(false);
   return true;
 }
 function paneZoomBy(dir) {
   paneZoom = dir === 0 ? 0.7 : Math.min(1.3, Math.max(0.4, Math.round((paneZoom + dir * 0.05) * 100) / 100));
-  try { paneView?.webContents.setZoomFactor(paneZoom); } catch { /* view gone */ }
+  for (const v of Object.values(panes)) {
+    try { v?.webContents.setZoomFactor(paneZoom); } catch { /* view gone */ }
+  }
   return paneZoom;
 }
 
@@ -329,7 +392,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("items:list", () => loadItems());
   ipcMain.handle("items:save", (_e, items) => saveItems(Array.isArray(items) ? items : []));
-  ipcMain.handle("listing:show", (_e, { itemId, bounds }) => paneShow(itemId, bounds));
+  ipcMain.handle("listing:show", (_e, { itemId, bounds, mode }) => paneShow(itemId, bounds, mode));
   ipcMain.handle("listing:hide", () => paneHide());
   ipcMain.handle("listing:zoom", (_e, dir) => paneZoomBy(dir));
   ipcMain.handle("listing:openExternal", (_e, itemId) =>
