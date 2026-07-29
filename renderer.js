@@ -491,7 +491,7 @@ function render() {
     tr.className = "sku-row" + (i === selected ? " sel" : "");
     tr.draggable = true;
     tr.innerHTML = `
-      <td class="rn"><span class="n">${i + 2}</span><button class="rowdel" title="Delete row">×</button></td>
+      <td class="rn"><span class="n">${i + 2}</span></td>
       <td class="sku" data-field="sku"></td>
       <td class="mono id" data-field="itemId"></td>
       <td class="num${Number.isFinite(before) ? "" : " err"}" data-field="before">${money(before)}</td>
@@ -537,7 +537,7 @@ function render() {
         ?.classList.add("active-cell");
     }
     tr.addEventListener("click", (e) => {
-      if (e.target.closest("input, .rowdel")) return;
+      if (e.target.closest("input")) return;
       // remember which cell was clicked (Sheets-style active cell)
       const td = e.target.closest("td");
       const f = td?.dataset.field || td?.dataset.col || null;
@@ -545,10 +545,6 @@ function render() {
       activeCell = f ? { i, field: f } : null;
       select(i);
       if (wasActive) editActive(); // clicking the focused cell again edits it
-    });
-    tr.querySelector(".rowdel").addEventListener("click", (e) => {
-      e.stopPropagation();
-      removeRow(i);
     });
     // double-click a cell to edit it
     tr.querySelectorAll("td[data-field]").forEach((td) => {

@@ -164,22 +164,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   padding-right: 4px;
   position: relative;
 }
-#sheet td.rn .rowdel {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: rgba(200, 70, 60, 0.08);
-  color: var(--red);
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0;
-}
-.sku-row:hover td.rn .n { visibility: hidden; }
-.sku-row:hover td.rn .rowdel { opacity: 1; }
+/* Row deletion lives in the right-click menu. The old hover-× that replaced
+   the row number was too easy to hit by accident and deleted with no warning. */
 
 /* active cell (Sheets-style focus ring) */
 #sheet td.active-cell {
