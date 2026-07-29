@@ -1006,19 +1006,53 @@ function deleteColumn(k) {
   render();
 }
 
-function renameColumn(k) {
+// window.prompt doesn't exist in Electron, so column names go through a
+// small modal instead. The native Walmart pane would cover it, hence
+// hide/re-dock around it like the other dialogs.
+let colNameResolve = null;
+function askColName(title, initial, okLabel) {
+  $("colNameTitle").textContent = title;
+  $("colNameOk").textContent = okLabel;
+  const input = $("colNameInput");
+  input.value = initial;
+  window.api.hideListing();
+  $("colNameModal").classList.remove("hidden");
+  input.focus();
+  input.select();
+  return new Promise((res) => { colNameResolve = res; });
+}
+function settleColName(v) {
+  if (!colNameResolve) return;
+  $("colNameModal").classList.add("hidden");
+  const res = colNameResolve;
+  colNameResolve = null;
+  res(v);
+  dockListing();
+}
+$("colNameOk").addEventListener("click", () => settleColName($("colNameInput").value));
+$("colNameCancel").addEventListener("click", () => settleColName(null));
+$("colNameModal").addEventListener("click", (e) => {
+  if (e.target.id === "colNameModal") settleColName(null);
+});
+$("colNameInput").addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Enter") settleColName($("colNameInput").value);
+  if (e.key === "Escape") settleColName(null);
+});
+
+async function renameColumn(k) {
   const col = customCols[k];
   if (!col) return;
-  const name = prompt("Column name:", col.name);
+  const name = await askColName("Rename column", col.name, "Rename");
   if (name == null || !name.trim()) return;
   col.name = name.trim();
   saveCols();
   render();
 }
 
-$("addColBtn").addEventListener("click", () => {
-  const letter = String.fromCharCode(71 + customCols.length); // G, H, …
-  const name = prompt("Name for the new column:", `Column ${letter}`);
+$("addColBtn").addEventListener("click", async () => {
+  const letter = String.fromCharCode(73 + customCols.length); // I, J, …
+  const name = await askColName("New column", `Column ${letter}`, "Add");
   if (name == null || !name.trim()) return;
   customCols.push({ key: Math.random().toString(36).slice(2, 8), name: name.trim() });
   saveCols();

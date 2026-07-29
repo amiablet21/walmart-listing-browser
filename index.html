@@ -118,6 +118,18 @@
     </div>
   </div>
 
+  <!-- column name entry (window.prompt doesn't exist in Electron) -->
+  <div id="colNameModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal">
+      <h2 id="colNameTitle">New column</h2>
+      <input id="colNameInput" type="text" placeholder="Column name" maxlength="40" />
+      <div class="confirm-actions">
+        <button id="colNameCancel">Cancel</button>
+        <button id="colNameOk" class="primary">Add</button>
+      </div>
+    </div>
+  </div>
+
   <!-- export format choice -->
   <div id="exportModal" class="modal-overlay hidden">
     <div class="modal confirm-modal">
