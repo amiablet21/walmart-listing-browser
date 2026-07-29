@@ -1343,6 +1343,44 @@ async function renameColumn(k) {
 $("undoBtn").addEventListener("click", () => undo());
 $("redoBtn").addEventListener("click", () => redo());
 
+// ---- Sheets-style menu bar (File / Edit / Insert) --------------------------
+// The dropdowns reuse the right-click menu component and call the same
+// actions as the toolbar and context menus.
+function menuEntries(name) {
+  if (name === "file") {
+    return [
+      { label: "Import…", run: () => $("importBtn").click() },
+      { label: "Export…", run: () => $("exportBtn").click() },
+      "-",
+      { label: "Save now", run: () => persist() },
+    ];
+  }
+  if (name === "edit") {
+    return [
+      { label: "Undo", run: () => undo() },
+      { label: "Redo", run: () => redo() },
+      "-",
+      { label: "Find in sheet…", run: () => openFind() },
+    ];
+  }
+  // insert — anchored at the selected row / active cell when there is one
+  const rowAt = selected >= 0 ? selected : items.length;
+  const colAt = activeCell ? displayOrder().indexOf(activeCell.field) : displayOrder().length;
+  return [
+    { label: "Row above", run: () => insertRow(rowAt) },
+    { label: "Row below", run: () => insertRow(selected >= 0 ? selected + 1 : items.length) },
+    "-",
+    { label: "1 column left", run: () => addCustomCol(colAt) },
+    { label: "1 column right", run: () => addCustomCol(colAt + 1) },
+  ];
+}
+document.querySelectorAll(".menu-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const r = btn.getBoundingClientRect();
+    openCtxMenu(r.left, r.bottom + 4, menuEntries(btn.dataset.menu));
+  });
+});
+
 $("saveBtn").addEventListener("click", () => persist());
 
 async function exportRegular() {
