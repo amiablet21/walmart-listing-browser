@@ -905,6 +905,19 @@ function updateFxBar() {
 
 $("fxInput").addEventListener("keydown", (e) => {
   e.stopPropagation();
+  // Ctrl+Z / Ctrl+Y here mean "undo the sheet", not text-undo in this box —
+  // after committing from the formula bar, focus stays in it, and without
+  // this the shortcut would silently do nothing.
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+    e.preventDefault();
+    redo();
+    return;
+  }
   if (e.key === "Enter" && activeCell && isEditableField(activeCell.field)) {
     applyMutation(() => setCell(activeCell.i, activeCell.field, $("fxInput").value));
     persist();
