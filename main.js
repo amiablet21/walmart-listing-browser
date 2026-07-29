@@ -7,6 +7,13 @@ const fs = require("fs");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
+let uiFile = null; // userData/ui.json — small UI prefs (pane zoom)
+function loadUi() {
+  try { return JSON.parse(fs.readFileSync(uiFile, "utf8")) || {}; } catch { return {}; }
+}
+function saveUi(patch) {
+  try { fs.writeFileSync(uiFile, JSON.stringify({ ...loadUi(), ...patch })); } catch { /* best effort */ }
+}
 function loadItems() {
   try {
     return JSON.parse(fs.readFileSync(dataFile, "utf8")).items || [];
@@ -276,7 +283,7 @@ const CHROME_UA =
 const panes = { customer: null, seller: null };
 let activePane = null;   // which pane the renderer currently wants shown
 let customerItem = null; // itemId loaded in the customer pane
-let paneZoom = 0.7;
+let paneZoom = 1; // 100% by default; the user's adjustment persists (ui.json)
 let paneWanted = false;  // whether the renderer currently wants a pane visible
 let paneLoading = false; // true only while WE are loading (not walmart's own background loads)
 
@@ -376,10 +383,11 @@ function paneHide() {
   return true;
 }
 function paneZoomBy(dir) {
-  paneZoom = dir === 0 ? 0.7 : Math.min(1.3, Math.max(0.4, Math.round((paneZoom + dir * 0.05) * 100) / 100));
+  paneZoom = dir === 0 ? 1 : Math.min(1.5, Math.max(0.4, Math.round((paneZoom + dir * 0.05) * 100) / 100));
   for (const v of Object.values(panes)) {
     try { v?.webContents.setZoomFactor(paneZoom); } catch { /* view gone */ }
   }
+  saveUi({ paneZoom });
   return paneZoom;
 }
 
@@ -389,6 +397,9 @@ app.setAppUserModelId("com.imrantursun.walmart-listing-browser");
 
 app.whenReady().then(() => {
   dataFile = path.join(app.getPath("userData"), "items.json");
+  uiFile = path.join(app.getPath("userData"), "ui.json");
+  const savedZoom = loadUi().paneZoom;
+  if (Number.isFinite(savedZoom)) paneZoom = Math.min(1.5, Math.max(0.4, savedZoom));
 
   ipcMain.handle("items:list", () => loadItems());
   ipcMain.handle("items:save", (_e, items) => saveItems(Array.isArray(items) ? items : []));
