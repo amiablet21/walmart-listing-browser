@@ -732,7 +732,7 @@ function render() {
 
 function renderDetailBar() {
   const it = items[selected];
-  $("curSku").textContent = it ? (it.sku || "(no SKU)") : "Select a listing";
+  $("curSku").textContent = it ? (it.sku || "(no SKU)") : "";
   $("curItem").textContent = it ? (it.itemId ? `item ${it.itemId}` : "no item ID yet") : "";
   $("prevBtn").disabled = !(selected > 0);
   $("nextBtn").disabled = !(selected >= 0 && selected < items.length - 1);
