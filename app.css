@@ -205,12 +205,25 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 
 /* row interactions */
 .sku-row { cursor: pointer; }
-.sku-row:hover td { background: #F6F8FB; }
-.sku-row:hover td.sku { background: #DEEBD8; }
-.sku-row:hover td.rn { background: #ECEBE5; }
-.sku-row.sel td { background: #DCE7F7; }          /* selected = soft blue like a sheet selection */
-.sku-row.sel td.sku { background: #CFE0C9; }
-.sku-row.sel td.rn { background: #C7D6EE; color: var(--accent); font-weight: 700; }
+#sheet .sku-row:hover td { background: #F6F8FB; }
+#sheet .sku-row:hover td.sku { background: #DEEBD8; }
+#sheet .sku-row:hover td.rn { background: #ECEBE5; }
+/* selected — Sheets-style: the WHOLE row tints blue (including the SKU
+   column), accent rules run along its top and bottom edges, and the row
+   number becomes a solid accent chip. These selectors carry the #sheet
+   prefix so they outrank the #sheet td.sku / td.rn base rules, and they
+   sit after the hover rules so selection wins while hovering too. */
+#sheet .sku-row.sel td,
+#sheet .sku-row.sel td.sku {
+  background: #DCE7F7;
+  box-shadow: inset 0 1px 0 rgba(76, 91, 158, 0.5), inset 0 -1px 0 rgba(76, 91, 158, 0.5);
+}
+#sheet .sku-row.sel td.rn {
+  background: var(--accent);
+  color: #FFFFFF;
+  font-weight: 700;
+  box-shadow: none;
+}
 
 /* drag to reorder */
 .sku-row.dragging td { opacity: 0.45; }
