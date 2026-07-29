@@ -207,6 +207,16 @@ function moveItem(from, to) {
   render();
 }
 
+function insertRow(at) {
+  applyMutation(() => {
+    items.splice(at, 0, newRow());
+    if (selected >= at) selected++;
+    if (activeCell && activeCell.i >= at) activeCell = { ...activeCell, i: activeCell.i + 1 };
+  });
+  persist();
+  render();
+}
+
 function removeRow(i) {
   applyMutation(() => {
     items.splice(i, 1);
@@ -849,6 +859,97 @@ $("addRowBtn").addEventListener("click", () => {
   const tr = rows[rows.length - 1];
   tr?.scrollIntoView({ block: "nearest" });
   if (tr) startEdit(tr, items.length - 1, tr.querySelector('td[data-field="sku"]'));
+});
+
+// ---- right-click menu on the sheet -----------------------------------------
+// Everything the keyboard can do (copy/paste/clear, rows, columns), reachable
+// with the mouse. Uses the theme's .menu-pop dropdown styling.
+let ctxMenuEl = null;
+function closeCtxMenu() { ctxMenuEl?.remove(); ctxMenuEl = null; }
+function openCtxMenu(x, y, entries) {
+  closeCtxMenu();
+  const pop = document.createElement("div");
+  pop.className = "menu-pop";
+  for (const en of entries) {
+    if (en === "-") {
+      const s = document.createElement("div");
+      s.className = "menu-sep";
+      pop.appendChild(s);
+      continue;
+    }
+    const b = document.createElement("button");
+    b.className = "menu-item" + (en.danger ? " danger" : "");
+    b.textContent = en.label;
+    b.addEventListener("click", () => { closeCtxMenu(); en.run(); });
+    pop.appendChild(b);
+  }
+  document.body.appendChild(pop);
+  const r = pop.getBoundingClientRect();
+  pop.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 8)) + "px";
+  pop.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 8)) + "px";
+  ctxMenuEl = pop;
+}
+window.addEventListener("mousedown", (e) => {
+  if (ctxMenuEl && !e.target.closest(".menu-pop")) closeCtxMenu();
+});
+window.addEventListener("blur", closeCtxMenu);
+
+const copyRowTsv = (i) => window.api.writeClipboard(FIELD_ORDER.map((f) => cellRaw(i, f)).join("\t"));
+const pasteFromClipboard = async () => {
+  const t = await window.api.readClipboard();
+  if (t) handlePaste(t);
+};
+const columnEntries = (f) => {
+  const entries = [{ label: "Add column…", run: () => $("addColBtn").click() }];
+  if (f?.startsWith("c_")) {
+    const k = customCols.findIndex((c) => "c_" + c.key === f);
+    if (k >= 0) {
+      entries.push(
+        { label: `Rename "${customCols[k].name}"…`, run: () => renameColumn(k) },
+        { label: `Delete "${customCols[k].name}"`, danger: true, run: () => deleteColumn(k) },
+      );
+    }
+  }
+  return entries;
+};
+
+$("sheet").addEventListener("contextmenu", (e) => {
+  if (e.target.closest("input")) return;          // cell editor → native menu
+  if (String(window.getSelection())) return;      // highlighted text → native copy
+  const th = e.target.closest("th");
+  if (th) {
+    e.preventDefault();
+    const customThs = [...document.querySelectorAll("#headRow th.custom-h")];
+    const k = customThs.indexOf(th);
+    openCtxMenu(e.clientX, e.clientY, columnEntries(k >= 0 ? "c_" + customCols[k].key : null));
+    return;
+  }
+  const tr = e.target.closest(".sku-row");
+  const td = e.target.closest("td");
+  if (!tr || !td) return;
+  e.preventDefault();
+  const i = [...document.querySelectorAll(".sku-row")].indexOf(tr);
+  const f = td.dataset.field || td.dataset.col || null;
+  activeCell = f && isEditableField(f) ? { i, field: f } : null;
+  render();
+  const entries = [];
+  if (activeCell) {
+    entries.push(
+      { label: "Copy cell", run: () => window.api.writeClipboard(cellRaw(i, f)) },
+      { label: "Paste", run: pasteFromClipboard },
+      { label: "Clear cell", run: () => { applyMutation(() => setCell(i, f, "")); persist(); render(); } },
+      "-",
+    );
+  }
+  entries.push(
+    { label: "Copy row", run: () => copyRowTsv(i) },
+    { label: "Insert row above", run: () => insertRow(i) },
+    { label: "Insert row below", run: () => insertRow(i + 1) },
+    { label: "Delete row", danger: true, run: () => removeRow(i) },
+    "-",
+    ...columnEntries(f),
+  );
+  openCtxMenu(e.clientX, e.clientY, entries);
 });
 
 // ---- cell editing helpers --------------------------------------------------

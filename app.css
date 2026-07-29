@@ -140,6 +140,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   vertical-align: middle;
 }
 
+/* right-click menu separator (menu itself styled by theme's .menu-pop) */
+.menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+
 /* column resize handles (right edge of each header) */
 .resize-h {
   position: absolute;
