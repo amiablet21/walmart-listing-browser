@@ -157,6 +157,31 @@ let hiddenCols = new Set();
 try { hiddenCols = new Set(JSON.parse(localStorage.getItem("hiddenCols") || "[]")); } catch { hiddenCols = new Set(); }
 const saveHidden = () => localStorage.setItem("hiddenCols", JSON.stringify([...hiddenCols]));
 
+// Column DISPLAY order — columns can be dragged and inserted anywhere, but
+// this is presentation only: field letters (C=Before, …) and the exported
+// layout stay canonical so stored formulas never break when columns move.
+let colOrder = null;
+try { colOrder = JSON.parse(localStorage.getItem("colOrder") || "null"); } catch { colOrder = null; }
+const saveColOrder = () => localStorage.setItem("colOrder", JSON.stringify(colOrder));
+function displayOrder() {
+  const known = new Set(FIELD_ORDER);
+  const out = (colOrder || []).filter((f) => known.has(f));
+  for (const f of FIELD_ORDER) if (!out.includes(f)) out.push(f);
+  return out;
+}
+const visibleOrder = () => displayOrder().filter((f) => !hiddenCols.has(f));
+function moveColumn(src, target, before) {
+  if (src === target) return;
+  const order = displayOrder().filter((f) => f !== src);
+  let idx = order.indexOf(target);
+  if (idx < 0) return;
+  if (!before) idx++;
+  order.splice(idx, 0, src);
+  colOrder = order;
+  saveColOrder();
+  render();
+}
+
 const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H" };
 function fieldToLetter(f) {
   if (BASE_LETTER[f]) return BASE_LETTER[f];
@@ -424,8 +449,9 @@ function startEdit(tr, i, td) {
     if (nav && activeCell && activeCell.i === i && activeCell.field === field) {
       if (nav === "down" && i + 1 < items.length) activeCell = { i: i + 1, field };
       if (nav === "right") {
-        const idx = FIELD_ORDER.indexOf(field);
-        activeCell = { i, field: FIELD_ORDER[Math.min(FIELD_ORDER.length - 1, idx + 1)] };
+        const ord = visibleOrder();
+        const idx = ord.indexOf(field);
+        activeCell = { i, field: ord[Math.min(ord.length - 1, idx + 1)] };
       }
     }
     persist();
@@ -452,34 +478,65 @@ function renderHead() {
   // widen the gutter to fit the biggest row number (96 → 1046 → …)
   rn.style.width = Math.max(34, 14 + String(items.length + 1).length * 8) + "px";
   tr.appendChild(rn);
-  const BASE_TITLES = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change", "Reg Comm %", "Incent Comm %"];
-  BASE_TITLES.forEach((t, k) => {
-    if (hiddenCols.has(BASE_FIELDS[k])) return;
+  const BASE_TITLE = {
+    sku: "SKU", itemId: "Item ID", before: "Before Price", during: "During Incentive",
+    change: "$ Change", pct: "% Change", regCom: "Reg Comm %", incCom: "Incent Comm %",
+  };
+  for (const f of visibleOrder()) {
     const th = document.createElement("th");
-    th.dataset.field = BASE_FIELDS[k];
-    th.textContent = t;
-    th.style.width = colW(BASE_FIELDS[k]) + "px";
-    addResizeHandle(th, BASE_FIELDS[k]);
-    tr.appendChild(th);
-  });
-  customCols.forEach((c, k) => {
-    const f = "c_" + c.key;
-    if (hiddenCols.has(f)) return;
-    const th = document.createElement("th");
-    th.className = "custom-h";
     th.dataset.field = f;
-    th.textContent = c.name;
-    th.title = "Double-click to rename";
+    if (f.startsWith("c_")) {
+      const k = customCols.findIndex((c) => "c_" + c.key === f);
+      th.className = "custom-h";
+      th.textContent = customCols[k].name;
+      th.title = "Double-click to rename · drag to move";
+      const x = document.createElement("button");
+      x.className = "col-del";
+      x.textContent = "×";
+      x.title = "Delete column";
+      x.addEventListener("click", () => deleteColumn(k));
+      th.appendChild(x);
+      th.addEventListener("dblclick", () => renameColumn(k));
+    } else {
+      th.textContent = BASE_TITLE[f];
+      th.title = "Drag to move";
+    }
     th.style.width = colW(f) + "px";
-    const x = document.createElement("button");
-    x.className = "col-del";
-    x.textContent = "×";
-    x.title = "Delete column";
-    x.addEventListener("click", () => deleteColumn(k));
-    th.appendChild(x);
-    th.addEventListener("dblclick", () => renameColumn(k));
+    attachColDrag(th, f);
     addResizeHandle(th, f);
     tr.appendChild(th);
+  }
+}
+
+// drag a header to reorder columns (display only — letters stay put)
+let dragCol = null;
+function attachColDrag(th, f) {
+  th.draggable = true;
+  th.addEventListener("dragstart", (e) => {
+    if (e.target.closest(".resize-h, .col-del")) { e.preventDefault(); return; }
+    dragCol = f;
+    th.classList.add("col-dragging");
+    e.dataTransfer.effectAllowed = "move";
+  });
+  th.addEventListener("dragend", () => {
+    dragCol = null;
+    document.querySelectorAll("#headRow th").forEach((h) =>
+      h.classList.remove("col-dragging", "drop-left", "drop-right"));
+  });
+  th.addEventListener("dragover", (e) => {
+    if (!dragCol || dragCol === f) return;
+    e.preventDefault();
+    const r = th.getBoundingClientRect();
+    const before = e.clientX < r.left + r.width / 2;
+    th.classList.toggle("drop-left", before);
+    th.classList.toggle("drop-right", !before);
+  });
+  th.addEventListener("dragleave", () => th.classList.remove("drop-left", "drop-right"));
+  th.addEventListener("drop", (e) => {
+    if (!dragCol || dragCol === f) return;
+    e.preventDefault();
+    const r = th.getBoundingClientRect();
+    moveColumn(dragCol, f, e.clientX < r.left + r.width / 2);
   });
 }
 
@@ -490,50 +547,47 @@ function render() {
   const tb = $("tbody");
   tb.innerHTML = "";
   items.forEach((it, i) => {
-    const before = safe(i, "before");
-    const during = safe(i, "during");
-    const ch = safe(i, "change");
-    const pct = safe(i, "pct");
-    const reg = safe(i, "regCom");
-    const inc = safe(i, "incCom");
     const tr = document.createElement("tr");
     tr.className = "sku-row" + (i === selected ? " sel" : "");
     tr.draggable = true;
-    tr.innerHTML = `
-      <td class="rn"><span class="n">${i + 2}</span></td>
-      <td class="sku" data-field="sku"></td>
-      <td class="mono id" data-field="itemId"></td>
-      <td class="num${Number.isFinite(before) ? "" : " err"}" data-field="before">${money(before)}</td>
-      <td class="num${Number.isFinite(during) ? "" : " err"}" data-field="during">${money(during)}</td>
-      <td class="num${ch < 0 ? " neg" : ""}${Number.isFinite(ch) ? "" : " err"}" data-field="change">${chDollar(ch)}</td>
-      <td class="num${pct < 0 ? " neg" : ""}${Number.isFinite(pct) ? "" : " err"}" data-field="pct">${chPct(pct)}</td>
-      <td class="num${Number.isFinite(reg) ? "" : " err"}" data-field="regCom">${comPct(reg)}</td>
-      <td class="num${Number.isFinite(inc) ? "" : " err"}" data-field="incCom">${comPct(inc)}</td>`;
-    // custom column cells
-    for (const c of customCols) {
-      const f = "c_" + c.key;
+    tr.innerHTML = `<td class="rn"><span class="n">${i + 2}</span></td>`;
+    // cells follow the (draggable) display order
+    for (const f of visibleOrder()) {
       const td = document.createElement("td");
       td.dataset.field = f;
-      td.className = "custom";
-      const raw = it.custom?.[c.key];
-      if (typeof raw === "string" && raw.trim().startsWith("=")) {
+      if (f === "sku") {
+        td.className = "sku";
+        td.textContent = it.sku;
+      } else if (f === "itemId") {
+        td.className = "mono id";
+        td.textContent = it.itemId;
+      } else if (f === "before" || f === "during") {
         const v = safe(i, f);
-        td.textContent = Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "#ERR";
-        td.classList.add("num");
-        if (!Number.isFinite(v)) td.classList.add("err");
+        td.className = "num" + (Number.isFinite(v) ? "" : " err");
+        td.textContent = money(v);
+      } else if (f === "change" || f === "pct") {
+        const v = safe(i, f);
+        td.className = "num" + (v < 0 ? " neg" : "") + (Number.isFinite(v) ? "" : " err");
+        td.textContent = f === "change" ? chDollar(v) : chPct(v);
+      } else if (f === "regCom" || f === "incCom") {
+        const v = safe(i, f);
+        td.className = "num" + (Number.isFinite(v) ? "" : " err");
+        td.textContent = comPct(v);
       } else {
-        td.textContent = raw ?? "";
-        if (raw != null && raw !== "" && Number.isFinite(Number(raw))) td.classList.add("num");
+        td.className = "custom";
+        const raw = it.custom?.[f.slice(2)];
+        if (typeof raw === "string" && raw.trim().startsWith("=")) {
+          const v = safe(i, f);
+          td.textContent = Number.isFinite(v) ? String(Math.round(v * 100) / 100) : "#ERR";
+          td.classList.add("num");
+          if (!Number.isFinite(v)) td.classList.add("err");
+        } else {
+          td.textContent = raw ?? "";
+          if (raw != null && raw !== "" && Number.isFinite(Number(raw))) td.classList.add("num");
+        }
       }
       tr.appendChild(td);
     }
-    if (hiddenCols.size) {
-      tr.querySelectorAll("td[data-field]").forEach((td) => {
-        if (hiddenCols.has(td.dataset.field)) td.remove();
-      });
-    }
-    tr.querySelector(".sku").textContent = it.sku;
-    tr.querySelector(".id").textContent = it.itemId;
     // mark formula cells (dotted underline + the formula as a tooltip)
     FIELD_ORDER.filter((f) => f !== "sku" && f !== "itemId").forEach((f) => {
       const raw = getRaw(i, f);
@@ -798,13 +852,14 @@ function handlePaste(text) {
     if (activeCell) {
       // grid paste anchored at the active cell, Sheets-style; grows the sheet
       // downward if the grid runs past the last row
-      const startCol = FIELD_ORDER.indexOf(activeCell.field);
+      const ord = visibleOrder(); // paste fills visually adjacent columns
+      const startCol = ord.indexOf(activeCell.field);
       const multi = lines.length > 1 || lines[0].includes("\t");
       lines.forEach((line, r) => {
         const rowIdx = activeCell.i + r;
         while (rowIdx >= items.length) items.push(newRow());
         line.split("\t").forEach((val, c) => {
-          const f = FIELD_ORDER[startCol + c];
+          const f = ord[startCol + c];
           // multi-cell pastes never overwrite the change columns' equations —
           // those recompute; paste a single value/formula into one to override it
           if (f && !(multi && (f === "change" || f === "pct"))) setCell(rowIdx, f, val);
@@ -846,7 +901,7 @@ window.addEventListener("keydown", async (e) => {
       window.api.writeClipboard(cellRaw(activeCell.i, activeCell.field));
     } else if (selected >= 0) {
       e.preventDefault();
-      window.api.writeClipboard(FIELD_ORDER.map((f) => cellRaw(selected, f)).join("\t"));
+      window.api.writeClipboard(visibleOrder().map((f) => cellRaw(selected, f)).join("\t"));
     }
   } else if (k === "v") {
     e.preventDefault();
@@ -904,7 +959,7 @@ window.addEventListener("mousedown", (e) => {
 });
 window.addEventListener("blur", closeCtxMenu);
 
-const copyRowTsv = (i) => window.api.writeClipboard(FIELD_ORDER.map((f) => cellRaw(i, f)).join("\t"));
+const copyRowTsv = (i) => window.api.writeClipboard(visibleOrder().map((f) => cellRaw(i, f)).join("\t"));
 const pasteFromClipboard = async () => {
   const t = await window.api.readClipboard();
   if (t) handlePaste(t);
@@ -912,13 +967,21 @@ const pasteFromClipboard = async () => {
 // Sheets-style column menu. Custom columns support insert left/right (within
 // the custom block), rename, clear, hide, and delete. Base columns are the
 // app's data model — they can be cleared or hidden, but not moved or deleted.
-async function addCustomCol(at) {
+// atDisplay is a DISPLAY position — the new column's data always appends to
+// customCols (so existing custom-column letters never shift), then its field
+// is spliced into the display order where the user asked for it.
+async function addCustomCol(atDisplay) {
   const letter = String.fromCharCode(73 + customCols.length); // I, J, …
   const name = await askColName("New column", `Column ${letter}`, "Add");
   if (name == null || !name.trim()) return;
-  customCols.splice(at, 0, { key: Math.random().toString(36).slice(2, 8), name: name.trim() });
+  const col = { key: Math.random().toString(36).slice(2, 8), name: name.trim() };
+  const order = displayOrder(); // capture before FIELD_ORDER changes
+  customCols.push(col);
   saveCols();
   rebuildFieldOrder();
+  order.splice(Math.max(0, Math.min(atDisplay, order.length)), 0, "c_" + col.key);
+  colOrder = order;
+  saveColOrder();
   render();
 }
 function clearColumn(f) {
@@ -935,22 +998,23 @@ function hideColumn(f) {
 }
 const columnEntries = (f) => {
   const entries = [];
+  if (f) {
+    const d = displayOrder().indexOf(f);
+    entries.push(
+      { label: "Insert 1 column left", run: () => addCustomCol(d) },
+      { label: "Insert 1 column right", run: () => addCustomCol(d + 1) },
+    );
+    if (isEditableField(f)) entries.push({ label: "Clear column", run: () => clearColumn(f) });
+    if (f !== "sku" && f !== "itemId") entries.push({ label: "Hide column", run: () => hideColumn(f) });
+  } else {
+    entries.push({ label: "Add column…", run: () => addCustomCol(displayOrder().length) });
+  }
   const k = f?.startsWith("c_") ? customCols.findIndex((c) => "c_" + c.key === f) : -1;
   if (k >= 0) {
-    entries.push(
-      { label: "Insert 1 column left", run: () => addCustomCol(k) },
-      { label: "Insert 1 column right", run: () => addCustomCol(k + 1) },
-      "-",
+    entries.push("-",
       { label: "Rename column…", run: () => renameColumn(k) },
-      { label: "Clear column", run: () => clearColumn(f) },
-      { label: "Hide column", run: () => hideColumn(f) },
-      "-",
       { label: "Delete column", danger: true, run: () => deleteColumn(k) },
     );
-  } else {
-    entries.push({ label: "Add column…", run: () => addCustomCol(customCols.length) });
-    if (f && isEditableField(f)) entries.push({ label: "Clear column", run: () => clearColumn(f) });
-    if (f && f !== "sku" && f !== "itemId") entries.push({ label: "Hide column", run: () => hideColumn(f) });
   }
   if (hiddenCols.size) {
     entries.push("-", {
@@ -1428,11 +1492,10 @@ window.addEventListener("keydown", (e) => {
     }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      const dir = e.key === "ArrowRight" ? 1 : -1;
-      let ni = FIELD_ORDER.indexOf(field) + dir;
-      while (ni >= 0 && ni < FIELD_ORDER.length && hiddenCols.has(FIELD_ORDER[ni])) ni += dir; // skip hidden
-      if (ni >= 0 && ni < FIELD_ORDER.length) {
-        activeCell = { i, field: FIELD_ORDER[ni] };
+      const ord = visibleOrder();
+      const ni = ord.indexOf(field) + (e.key === "ArrowRight" ? 1 : -1);
+      if (ni >= 0 && ni < ord.length) {
+        activeCell = { i, field: ord[ni] };
         render();
       }
       return;
