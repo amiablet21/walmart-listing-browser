@@ -152,6 +152,11 @@ function addResizeHandle(th, field) {
   th.appendChild(h);
 }
 
+// hidden columns (Sheets-style "Hide column"; unhide via the header menu)
+let hiddenCols = new Set();
+try { hiddenCols = new Set(JSON.parse(localStorage.getItem("hiddenCols") || "[]")); } catch { hiddenCols = new Set(); }
+const saveHidden = () => localStorage.setItem("hiddenCols", JSON.stringify([...hiddenCols]));
+
 const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H" };
 function fieldToLetter(f) {
   if (BASE_LETTER[f]) return BASE_LETTER[f];
@@ -449,7 +454,9 @@ function renderHead() {
   tr.appendChild(rn);
   const BASE_TITLES = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change", "Reg Comm %", "Incent Comm %"];
   BASE_TITLES.forEach((t, k) => {
+    if (hiddenCols.has(BASE_FIELDS[k])) return;
     const th = document.createElement("th");
+    th.dataset.field = BASE_FIELDS[k];
     th.textContent = t;
     th.style.width = colW(BASE_FIELDS[k]) + "px";
     addResizeHandle(th, BASE_FIELDS[k]);
@@ -457,8 +464,10 @@ function renderHead() {
   });
   customCols.forEach((c, k) => {
     const f = "c_" + c.key;
+    if (hiddenCols.has(f)) return;
     const th = document.createElement("th");
     th.className = "custom-h";
+    th.dataset.field = f;
     th.textContent = c.name;
     th.title = "Double-click to rename";
     th.style.width = colW(f) + "px";
@@ -517,6 +526,11 @@ function render() {
         if (raw != null && raw !== "" && Number.isFinite(Number(raw))) td.classList.add("num");
       }
       tr.appendChild(td);
+    }
+    if (hiddenCols.size) {
+      tr.querySelectorAll("td[data-field]").forEach((td) => {
+        if (hiddenCols.has(td.dataset.field)) td.remove();
+      });
     }
     tr.querySelector(".sku").textContent = it.sku;
     tr.querySelector(".id").textContent = it.itemId;
@@ -895,16 +909,54 @@ const pasteFromClipboard = async () => {
   const t = await window.api.readClipboard();
   if (t) handlePaste(t);
 };
+// Sheets-style column menu. Custom columns support insert left/right (within
+// the custom block), rename, clear, hide, and delete. Base columns are the
+// app's data model — they can be cleared or hidden, but not moved or deleted.
+async function addCustomCol(at) {
+  const letter = String.fromCharCode(73 + customCols.length); // I, J, …
+  const name = await askColName("New column", `Column ${letter}`, "Add");
+  if (name == null || !name.trim()) return;
+  customCols.splice(at, 0, { key: Math.random().toString(36).slice(2, 8), name: name.trim() });
+  saveCols();
+  rebuildFieldOrder();
+  render();
+}
+function clearColumn(f) {
+  // clearing change/pct removes overrides, restoring the built-in equations
+  applyMutation(() => { items.forEach((_it, i) => setCell(i, f, "")); });
+  persist();
+  render();
+}
+function hideColumn(f) {
+  hiddenCols.add(f);
+  saveHidden();
+  if (activeCell?.field === f) activeCell = null;
+  render();
+}
 const columnEntries = (f) => {
-  const entries = [{ label: "Add column…", run: () => $("addColBtn").click() }];
-  if (f?.startsWith("c_")) {
-    const k = customCols.findIndex((c) => "c_" + c.key === f);
-    if (k >= 0) {
-      entries.push(
-        { label: `Rename "${customCols[k].name}"…`, run: () => renameColumn(k) },
-        { label: `Delete "${customCols[k].name}"`, danger: true, run: () => deleteColumn(k) },
-      );
-    }
+  const entries = [];
+  const k = f?.startsWith("c_") ? customCols.findIndex((c) => "c_" + c.key === f) : -1;
+  if (k >= 0) {
+    entries.push(
+      { label: "Insert 1 column left", run: () => addCustomCol(k) },
+      { label: "Insert 1 column right", run: () => addCustomCol(k + 1) },
+      "-",
+      { label: "Rename column…", run: () => renameColumn(k) },
+      { label: "Clear column", run: () => clearColumn(f) },
+      { label: "Hide column", run: () => hideColumn(f) },
+      "-",
+      { label: "Delete column", danger: true, run: () => deleteColumn(k) },
+    );
+  } else {
+    entries.push({ label: "Add column…", run: () => addCustomCol(customCols.length) });
+    if (f && isEditableField(f)) entries.push({ label: "Clear column", run: () => clearColumn(f) });
+    if (f && f !== "sku" && f !== "itemId") entries.push({ label: "Hide column", run: () => hideColumn(f) });
+  }
+  if (hiddenCols.size) {
+    entries.push("-", {
+      label: `Unhide all columns (${hiddenCols.size})`,
+      run: () => { hiddenCols.clear(); saveHidden(); render(); },
+    });
   }
   return entries;
 };
@@ -915,9 +967,7 @@ $("sheet").addEventListener("contextmenu", (e) => {
   const th = e.target.closest("th");
   if (th) {
     e.preventDefault();
-    const customThs = [...document.querySelectorAll("#headRow th.custom-h")];
-    const k = customThs.indexOf(th);
-    openCtxMenu(e.clientX, e.clientY, columnEntries(k >= 0 ? "c_" + customCols[k].key : null));
+    openCtxMenu(e.clientX, e.clientY, columnEntries(th.dataset.field || null));
     return;
   }
   const tr = e.target.closest(".sku-row");
@@ -1160,15 +1210,7 @@ async function renameColumn(k) {
   render();
 }
 
-$("addColBtn").addEventListener("click", async () => {
-  const letter = String.fromCharCode(73 + customCols.length); // I, J, …
-  const name = await askColName("New column", `Column ${letter}`, "Add");
-  if (name == null || !name.trim()) return;
-  customCols.push({ key: Math.random().toString(36).slice(2, 8), name: name.trim() });
-  saveCols();
-  rebuildFieldOrder();
-  render();
-});
+$("addColBtn").addEventListener("click", () => addCustomCol(customCols.length));
 
 $("saveBtn").addEventListener("click", () => persist());
 
@@ -1386,10 +1428,13 @@ window.addEventListener("keydown", (e) => {
     }
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      const idx = FIELD_ORDER.indexOf(field);
-      const ni = Math.min(FIELD_ORDER.length - 1, Math.max(0, idx + (e.key === "ArrowRight" ? 1 : -1)));
-      activeCell = { i, field: FIELD_ORDER[ni] };
-      render();
+      const dir = e.key === "ArrowRight" ? 1 : -1;
+      let ni = FIELD_ORDER.indexOf(field) + dir;
+      while (ni >= 0 && ni < FIELD_ORDER.length && hiddenCols.has(FIELD_ORDER[ni])) ni += dir; // skip hidden
+      if (ni >= 0 && ni < FIELD_ORDER.length) {
+        activeCell = { i, field: FIELD_ORDER[ni] };
+        render();
+      }
       return;
     }
     if (e.key.length === 1) { e.preventDefault(); editActive(e.key); return; }

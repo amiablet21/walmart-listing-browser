@@ -112,7 +112,9 @@ body.resizing { cursor: col-resize; user-select: none; }
   letter-spacing: 0;
 }
 #sheet thead th.rn { background: #F4F3EF; border-color: #E4E2DA; width: 34px; }
-#sheet thead th.custom-h { position: relative; padding-right: 24px; }
+/* no position:relative here — it would override the th's position:sticky and
+   the header would scroll out of line; sticky already anchors the × button */
+#sheet thead th.custom-h { padding-right: 24px; }
 #sheet thead th .col-del {
   position: absolute;
   right: 3px;
