@@ -95,7 +95,16 @@ let customCols = [];
 try { customCols = JSON.parse(localStorage.getItem("customCols") || "[]") || []; } catch { customCols = []; }
 const saveCols = () => localStorage.setItem("customCols", JSON.stringify(customCols));
 
-const BASE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom"];
+const BASE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom", "cost", "shipping", "profit"];
+
+// Default column display order — reads like a P&L, left to right: identity,
+// the prices customers see, the fees and costs that eat into them, and the
+// profit they produce. (Canonical letter order is BASE_FIELDS, unchanged.)
+const DEFAULT_DISPLAY = ["sku", "itemId", "before", "during", "pct", "regCom", "incCom", "cost", "shipping", "profit"];
+
+// fields that exist in the data model (letters, formulas, exports) but are
+// never shown in the sheet — "$ Change" was dropped from the UI as clutter
+const UNLISTED = new Set(["change"]);
 
 // per-row commission rates (%) — defaults for rows that don't specify them
 const DEFAULT_REG_COM = 6;
@@ -105,7 +114,7 @@ function fillComs(it) {
   if (it.incCom == null || it.incCom === "") it.incCom = DEFAULT_INC_COM;
   return it;
 }
-const newRow = () => ({ sku: "", itemId: "", before: 0, during: 0, regCom: DEFAULT_REG_COM, incCom: DEFAULT_INC_COM });
+const newRow = () => ({ sku: "", itemId: "", before: 0, during: 0, regCom: DEFAULT_REG_COM, incCom: DEFAULT_INC_COM, cost: 0, shipping: 0 });
 let FIELD_ORDER = [...BASE_FIELDS];
 function rebuildFieldOrder() { FIELD_ORDER = [...BASE_FIELDS, ...customCols.map((c) => "c_" + c.key)]; }
 rebuildFieldOrder();
@@ -118,7 +127,7 @@ function getRaw(i, field) {
 // ---- column widths (drag the edge of a header to resize) -------------------
 let colWidths = {};
 try { colWidths = JSON.parse(localStorage.getItem("colWidths") || "{}") || {}; } catch { colWidths = {}; }
-const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90 };
+const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95 };
 const colW = (f) => colWidths[f] || DEFAULT_W[f] || 110;
 
 function addResizeHandle(th, field) {
@@ -165,8 +174,8 @@ try { colOrder = JSON.parse(localStorage.getItem("colOrder") || "null"); } catch
 const saveColOrder = () => localStorage.setItem("colOrder", JSON.stringify(colOrder));
 function displayOrder() {
   const known = new Set(FIELD_ORDER);
-  const out = (colOrder || []).filter((f) => known.has(f));
-  for (const f of FIELD_ORDER) if (!out.includes(f)) out.push(f);
+  const out = (colOrder || DEFAULT_DISPLAY).filter((f) => known.has(f) && !UNLISTED.has(f));
+  for (const f of FIELD_ORDER) if (!out.includes(f) && !UNLISTED.has(f)) out.push(f);
   return out;
 }
 const visibleOrder = () => displayOrder().filter((f) => !hiddenCols.has(f));
@@ -182,16 +191,16 @@ function moveColumn(src, target, before) {
   render();
 }
 
-const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H" };
+const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H", cost: "I", shipping: "J", profit: "K" };
 function fieldToLetter(f) {
   if (BASE_LETTER[f]) return BASE_LETTER[f];
   const idx = customCols.findIndex((c) => "c_" + c.key === f);
-  return idx >= 0 ? String.fromCharCode(73 + idx) : "?";
+  return idx >= 0 ? String.fromCharCode(76 + idx) : "?";
 }
 function letterToField(L) {
-  const inv = { A: "sku", B: "itemId", C: "before", D: "during", E: "change", F: "pct", G: "regCom", H: "incCom" };
+  const inv = { A: "sku", B: "itemId", C: "before", D: "during", E: "change", F: "pct", G: "regCom", H: "incCom", I: "cost", J: "shipping", K: "profit" };
   if (inv[L]) return inv[L];
-  const idx = L.charCodeAt(0) - 73; // I is the first custom column
+  const idx = L.charCodeAt(0) - 76; // L is the first custom column
   return customCols[idx] ? "c_" + customCols[idx].key : null;
 }
 
@@ -207,6 +216,28 @@ async function load() {
     localStorage.setItem("seedVersion", SEED_VERSION);
   }
   items.forEach(fillComs); // rows saved before commission columns existed
+  // one-time migrations for the cost/shipping/profit columns:
+  // a user-created custom column literally named "Cost" becomes the built-in
+  const costIdx = customCols.findIndex((c) => c.name.trim().toLowerCase() === "cost");
+  if (costIdx >= 0) {
+    const key = customCols[costIdx].key;
+    for (const it of items) {
+      const v = it.custom?.[key];
+      if (v != null && v !== "" && (it.cost == null || it.cost === "" || it.cost === 0)) it.cost = v;
+      if (it.custom) delete it.custom[key];
+    }
+    customCols.splice(costIdx, 1);
+    saveCols();
+    rebuildFieldOrder();
+    persist();
+  }
+  // one-time reset to the new default arrangement (P&L order); any custom
+  // drag order from before this layout is discarded once
+  if (localStorage.getItem("colOrderV") !== "2") {
+    colOrder = null;
+    localStorage.removeItem("colOrder");
+    localStorage.setItem("colOrderV", "2");
+  }
   render();
   // seller mode doesn't depend on a row being selected — show it right away
   if (paneMode === "seller") dockListing();
@@ -273,6 +304,13 @@ const comPct = (n) => (Number.isFinite(n) ? `${Math.round(n * 100) / 100}%` : "#
 // Sheet row 1 is the header, so C2 = the first data row's Before Price.
 // Supported: + - * / ( ), ranges (C2:C10), SUM, AVERAGE, MIN, MAX, ROUND, ABS.
 function fieldValue(i, field, stack = new Set()) {
+  if (field === "profit") {
+    // always derived: what's left of the During Incentive price after the
+    // incentive commission, item cost, and shipping
+    const inc = fieldValue(i, "incCom", stack);
+    return fieldValue(i, "during", stack) * (1 - inc / 100)
+      - fieldValue(i, "cost", stack) - fieldValue(i, "shipping", stack);
+  }
   if (field === "change" || field === "pct") {
     const rawE = items[i][field];
     if (rawE == null || rawE === "") {
@@ -481,6 +519,7 @@ function renderHead() {
   const BASE_TITLE = {
     sku: "SKU", itemId: "Item ID", before: "Before Price", during: "During Incentive",
     change: "$ Change", pct: "% Change", regCom: "Reg Comm %", incCom: "Incent Comm %",
+    cost: "Cost", shipping: "Shipping", profit: "Profit",
   };
   for (const f of visibleOrder()) {
     const th = document.createElement("th");
@@ -499,7 +538,9 @@ function renderHead() {
       th.addEventListener("dblclick", () => renameColumn(k));
     } else {
       th.textContent = BASE_TITLE[f];
-      th.title = "Drag to move";
+      th.title = f === "profit"
+        ? "During Incentive × (1 − Incent Comm %) − Cost − Shipping. Type a target profit and the During Incentive price adjusts to hit it. Drag to move."
+        : "Drag to move";
     }
     th.style.width = colW(f) + "px";
     attachColDrag(th, f);
@@ -542,10 +583,27 @@ function attachColDrag(th, f) {
 
 function render() {
   $("count").textContent = items.length || "";
+  $("undoBtn").disabled = !undoStack.length;
+  $("redoBtn").disabled = !redoStack.length;
   renderHead();
 
   const tb = $("tbody");
   tb.innerHTML = "";
+  // empty sheet: with the + Row button gone there'd be nothing to right-click
+  if (!items.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = visibleOrder().length + 1;
+    const btn = document.createElement("button");
+    btn.className = "linkish";
+    btn.textContent = "+ Add a row";
+    btn.addEventListener("click", () => { insertRow(0); });
+    td.style.padding = "14px";
+    td.style.textAlign = "center";
+    td.appendChild(btn);
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  }
   items.forEach((it, i) => {
     const tr = document.createElement("tr");
     tr.className = "sku-row" + (i === selected ? " sel" : "");
@@ -561,10 +619,14 @@ function render() {
       } else if (f === "itemId") {
         td.className = "mono id";
         td.textContent = it.itemId;
-      } else if (f === "before" || f === "during") {
+      } else if (f === "before" || f === "during" || f === "cost" || f === "shipping") {
         const v = safe(i, f);
         td.className = "num" + (Number.isFinite(v) ? "" : " err");
         td.textContent = money(v);
+      } else if (f === "profit") {
+        const v = safe(i, "profit");
+        td.className = "num profit" + (v < 0 ? " neg" : "") + (Number.isFinite(v) ? "" : " err");
+        td.textContent = chDollar(v);
       } else if (f === "change" || f === "pct") {
         const v = safe(i, f);
         td.className = "num" + (v < 0 ? " neg" : "") + (Number.isFinite(v) ? "" : " err");
@@ -818,8 +880,8 @@ function cellRaw(i, field) {
   const raw = getRaw(i, field);
   const isFormula = typeof raw === "string" && raw.trim().startsWith("=");
   if (isFormula && field !== "sku" && field !== "itemId") return raw.trim();
-  if (field === "before" || field === "during") return money(safe(i, field));
-  if (field === "change") return chDollar(safe(i, "change"));
+  if (field === "before" || field === "during" || field === "cost" || field === "shipping") return money(safe(i, field));
+  if (field === "change" || field === "profit") return chDollar(safe(i, field));
   if (field === "pct") return chPct(safe(i, "pct"));
   return String(raw ?? "");
 }
@@ -838,6 +900,18 @@ function setCell(i, field, text) {
   if (field === "change" || field === "pct") {
     // clearing the cell restores the built-in equation
     items[i][field] = t === "" ? undefined : t.startsWith("=") ? t : parseNum(t);
+    return;
+  }
+  if (field === "profit") {
+    // profit is always derived — typing a target profit back-solves the
+    // During Incentive price that produces it (commission accounted for)
+    if (t === "" || t.startsWith("=")) return;
+    const want = parseNum(t);
+    const inc = safe(i, "incCom");
+    const rate = 1 - (Number.isFinite(inc) ? inc : 0) / 100;
+    if (rate <= 0) return; // a 100%+ commission has no solution
+    const solvedDuring = (want + safe(i, "cost") + safe(i, "shipping")) / rate;
+    items[i].during = Math.round(solvedDuring * 100) / 100;
     return;
   }
   items[i][field] = t.startsWith("=") ? t : parseNum(t);
@@ -915,16 +989,8 @@ $("nextBtn").addEventListener("click", () => select(selected + 1));
 $("zoomIn").addEventListener("click", () => window.api.zoomListing(1));
 $("zoomOut").addEventListener("click", () => window.api.zoomListing(-1));
 
-$("addRowBtn").addEventListener("click", () => {
-  applyMutation(() => items.push(newRow()));
-  persist();
-  render();
-  // scroll to the new row and start editing its SKU right away
-  const rows = document.querySelectorAll(".sku-row");
-  const tr = rows[rows.length - 1];
-  tr?.scrollIntoView({ block: "nearest" });
-  if (tr) startEdit(tr, items.length - 1, tr.querySelector('td[data-field="sku"]'));
-});
+// + Row / + Col toolbar buttons were removed — rows and columns are added
+// from the right-click menu instead.
 
 // ---- right-click menu on the sheet -----------------------------------------
 // Everything the keyboard can do (copy/paste/clear, rows, columns), reachable
@@ -971,7 +1037,7 @@ const pasteFromClipboard = async () => {
 // customCols (so existing custom-column letters never shift), then its field
 // is spliced into the display order where the user asked for it.
 async function addCustomCol(atDisplay) {
-  const letter = String.fromCharCode(73 + customCols.length); // I, J, …
+  const letter = String.fromCharCode(76 + customCols.length); // L, M, …
   const name = await askColName("New column", `Column ${letter}`, "Add");
   if (name == null || !name.trim()) return;
   const col = { key: Math.random().toString(36).slice(2, 8), name: name.trim() };
@@ -1063,7 +1129,7 @@ $("sheet").addEventListener("contextmenu", (e) => {
 });
 
 // ---- cell editing helpers --------------------------------------------------
-const EDITABLE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom"];
+const EDITABLE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom", "cost", "shipping", "profit"];
 const isEditableField = (f) => EDITABLE_FIELDS.includes(f) || f.startsWith("c_");
 
 // open the active cell's inline editor; `initial` replaces the content
@@ -1108,8 +1174,8 @@ function updateFxBar() {
   } else {
     fxInput.value = isFormula
       ? raw.trim()
-      : field === "before" || field === "during"
-        ? money(Number(raw) || 0)
+      : ["before", "during", "cost", "shipping", "profit"].includes(field)
+        ? money(safe(i, field))
         : String(raw ?? "");
   }
 }
@@ -1274,7 +1340,8 @@ async function renameColumn(k) {
   render();
 }
 
-$("addColBtn").addEventListener("click", () => addCustomCol(customCols.length));
+$("undoBtn").addEventListener("click", () => undo());
+$("redoBtn").addEventListener("click", () => redo());
 
 $("saveBtn").addEventListener("click", () => persist());
 
@@ -1290,6 +1357,7 @@ async function exportRegular() {
   };
   const head = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change",
                 "Regular Commission", "During Incentive Commission",
+                "Cost", "Shipping", "Profit",
                 ...customCols.map((c) => c.name)];
   const rows = items.map((it, i) => {
     const r = i + 2;
@@ -1318,8 +1386,11 @@ async function exportRegular() {
       if (raw != null && raw !== "" && Number.isFinite(Number(raw))) return Number(raw);
       return raw ?? "";
     });
+    // profit exports as a live formula so the sheet stays self-computing
+    const profit = { f: `D${r}*(1-H${r}/100)-I${r}-J${r}`, v: round2(safe(i, "profit")) };
     return [it.sku, it.itemId, priceCell("before"), priceCell("during"), change, pct,
-            priceCell("regCom"), priceCell("incCom"), ...extras];
+            priceCell("regCom"), priceCell("incCom"),
+            priceCell("cost"), priceCell("shipping"), profit, ...extras];
   });
   const res = await window.api.exportSheet({ head, rows, name: "incentive-list" });
   finishExport(res, rows.length);

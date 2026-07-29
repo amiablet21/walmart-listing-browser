@@ -142,6 +142,31 @@ body.resizing { cursor: col-resize; user-select: none; }
   vertical-align: middle;
 }
 
+/* import/export — icon + label */
+.toolbar .io {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  font-weight: 600;
+}
+.toolbar .io svg { display: block; color: var(--muted); }
+.toolbar .io:hover:not(:disabled) svg { color: var(--ink); }
+
+/* quiet undo/redo toolbar buttons */
+.toolbar .tb-ghost {
+  padding: 6px 8px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+.toolbar .tb-ghost:hover:not(:disabled) { background: var(--card-2); color: var(--ink); }
+.toolbar .tb-ghost:disabled { opacity: 0.3; }
+.toolbar .tb-ghost svg { display: block; }
+
 /* right-click menu separator (menu itself styled by theme's .menu-pop) */
 .menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 

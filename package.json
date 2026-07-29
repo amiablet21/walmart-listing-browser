@@ -1,7 +1,7 @@
 {
   "name": "walmart-listing-browser",
   "productName": "Walmart Listing Browser",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Spreadsheet-style incentive price list with live Walmart listing browsing.",
   "author": "Imran Tursun",
   "main": "main.js",

@@ -26,10 +26,28 @@
     </div>
 
     <div class="toolbar">
-      <button id="importBtn" title="Import a spreadsheet (.xlsx / .csv)">Import</button>
-      <button id="exportBtn" title="Export to .xlsx or .csv">Export</button>
-      <button id="addRowBtn" title="Add a new row">+ Row</button>
-      <button id="addColBtn" title="Add a new column">+ Col</button>
+      <button id="undoBtn" class="tb-ghost" title="Undo (Ctrl+Z)" aria-label="Undo">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+        </svg>
+      </button>
+      <button id="redoBtn" class="tb-ghost" title="Redo (Ctrl+Y)" aria-label="Redo">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15 14l5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+        </svg>
+      </button>
+      <button id="importBtn" class="io" title="Import a spreadsheet (.xlsx / .csv)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v11" /><path d="M8 10l4 4 4-4" /><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+        </svg>
+        Import
+      </button>
+      <button id="exportBtn" class="io" title="Export to .xlsx or .csv">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 14V3" /><path d="M8 7l4-4 4 4" /><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2" />
+        </svg>
+        Export
+      </button>
       <button id="saveBtn" class="primary" title="Save all changes now">Save</button>
     </div>
 
