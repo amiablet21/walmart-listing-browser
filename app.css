@@ -153,6 +153,10 @@ body.resizing { cursor: col-resize; user-select: none; }
 .toolbar .io svg { display: block; color: var(--muted); }
 .toolbar .io:hover:not(:disabled) svg { color: var(--ink); }
 
+/* icon-only Save (still the accent pill) */
+.toolbar .save-icon { padding: 7px 10px; display: inline-flex; align-items: center; }
+.toolbar .save-icon svg { display: block; }
+
 /* quiet undo/redo toolbar buttons */
 .toolbar .tb-ghost {
   padding: 6px 8px;
