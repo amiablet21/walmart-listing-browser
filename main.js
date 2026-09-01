@@ -278,8 +278,18 @@ function createWindow() {
 // selected row's public listing; "seller" is a free-browsing Seller Center
 // session that loads once and is never navigated by row clicks — switching
 // modes only shows/hides the panes, so neither side ever reloads.
-const CHROME_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+// Present as plain Chrome (no "Electron/…" token, which trips bot detection),
+// but truthfully: the real platform and the real Chromium version Electron
+// ships. A mismatched UA (e.g. "Windows" while running on a Mac, or a stale
+// Chrome version) makes walmart.com's robot-or-human checks fire and fail.
+const CHROME_UA = (() => {
+  const chromeVer = `${(process.versions.chrome || "130").split(".")[0]}.0.0.0`;
+  const platform =
+    process.platform === "darwin" ? "Macintosh; Intel Mac OS X 10_15_7"
+    : process.platform === "win32" ? "Windows NT 10.0; Win64; x64"
+    : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`;
+})();
 const panes = { customer: null, seller: null };
 let activePane = null;   // which pane the renderer currently wants shown
 let customerItem = null; // itemId loaded in the customer pane
