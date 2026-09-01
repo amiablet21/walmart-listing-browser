@@ -988,6 +988,13 @@ $("prevBtn").addEventListener("click", () => select(selected - 1));
 $("nextBtn").addEventListener("click", () => select(selected + 1));
 $("zoomIn").addEventListener("click", () => window.api.zoomListing(1));
 $("zoomOut").addEventListener("click", () => window.api.zoomListing(-1));
+// Open the selected row's listing in the user's real default browser, where
+// they're already a signed-in, trusted human — so Walmart's robot-or-human
+// check doesn't fire the way it can inside the docked pane.
+$("openExternalBtn").addEventListener("click", () => {
+  const it = items[selected];
+  if (it?.itemId) window.api.openExternal(it.itemId);
+});
 
 // + Row / + Col toolbar buttons were removed — rows and columns are added
 // from the right-click menu instead.
