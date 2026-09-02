@@ -35,6 +35,20 @@ npm run dist
 
 The branded NSIS installer lands in `dist/Walmart Listing Browser Setup <version>.exe`.
 
+### Build the macOS app
+
+Run this **on a Mac** (a `.dmg` can only be built on macOS):
+
+```bash
+npm install
+npm run dist:mac
+```
+
+The disk image lands in `dist/Walmart Listing Browser-<version>.dmg`. Open it and
+drag the app into **Applications** — from then on it's a normal double-click app.
+It isn't code-signed, so the first launch shows an "unidentified developer"
+warning: right-click the app → **Open** → **Open**, and macOS remembers it.
+
 ## Import format
 
 The first four columns of your sheet, in this order (a header row is fine — it's skipped):

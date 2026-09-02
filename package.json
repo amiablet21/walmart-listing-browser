@@ -7,7 +7,8 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
   },
   "devDependencies": {
     "electron": "^44.1.0",
@@ -37,6 +38,16 @@
           ]
         }
       ]
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.business",
+      "target": [
+        "dmg"
+      ]
+    },
+    "dmg": {
+      "title": "Walmart Listing Browser"
     },
     "nsis": {
       "oneClick": true,
