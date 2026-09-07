@@ -81,23 +81,27 @@ const VISIBLE_HEADER = {
 const MERGES = ["D2:D5", "F2:G2", "H2:I2", "H3:I3"];
 const DATA_START_ROW = 7;
 
-// Deduplicate SKUs (keep first occurrence), dropping blanks. Repricer keys on
-// SKU, so a product with no SKU can't be included.
-function cleanSkus(skus) {
+// Normalize incoming rows to { sku, min, max }, deduplicating by SKU (keep
+// first occurrence) and dropping blanks — the repricer is keyed on SKU, so a
+// product with no SKU can't be included. `min`/`max` are optional numbers; a
+// missing or invalid one is left blank in the file.
+function cleanRows(rows) {
   const seen = new Set();
   const out = [];
-  for (const s of skus || []) {
-    const v = String(s ?? "").trim();
-    if (!v || seen.has(v)) continue;
-    seen.add(v);
-    out.push(v);
+  for (const row of rows || []) {
+    const sku = String(row?.sku ?? "").trim();
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    const num = (v) => (Number.isFinite(Number(v)) && v !== "" && v != null ? Number(v) : null);
+    out.push({ sku, min: num(row?.min), max: num(row?.max) });
   }
   return out;
 }
 
 // Returns an xlsx Buffer for the filled repricer file, or throws.
-async function buildRepricerBuffer(ExcelJS, skus, strategy) {
-  const rows = cleanSkus(skus);
+// `rows` is an array of { sku, min?, max? }.
+async function buildRepricerBuffer(ExcelJS, rows, strategy) {
+  const clean = cleanRows(rows);
   const strat = String(strategy ?? "").trim() || DEFAULT_STRATEGY;
   const wb = new ExcelJS.Workbook();
 
@@ -111,13 +115,15 @@ async function buildRepricerBuffer(ExcelJS, skus, strategy) {
   const ws = wb.addWorksheet("Repricer Bulk Upload");
   for (const [addr, val] of Object.entries(VISIBLE_HEADER)) ws.getCell(addr).value = val;
   MERGES.forEach((m) => ws.mergeCells(m));
-  rows.forEach((sku, i) => {
+  clean.forEach((row, i) => {
     const r = DATA_START_ROW + i;
-    ws.getCell(`D${r}`).value = sku;
-    ws.getCell(`E${r}`).value = strat;
+    ws.getCell(`D${r}`).value = row.sku;              // SKU
+    ws.getCell(`E${r}`).value = strat;                // Repricer Strategy
+    if (row.min != null) ws.getCell(`F${r}`).value = row.min;  // Minimum Seller Allowed Price
+    if (row.max != null) ws.getCell(`G${r}`).value = row.max;  // Maximum Seller Allowed Price
   });
 
   return wb.xlsx.writeBuffer();
 }
 
-module.exports = { buildRepricerBuffer, cleanSkus, DEFAULT_STRATEGY, VERSION_LINE, DATA_START_ROW };
+module.exports = { buildRepricerBuffer, cleanRows, DEFAULT_STRATEGY, VERSION_LINE, DATA_START_ROW };

@@ -1447,21 +1447,32 @@ function finishExport(res, count) {
   else if (res?.saved) alert(res.note || `Exported ${count} rows to:\n${res.path}`);
 }
 
-// Walmart Repricer Bulk Upload: one row per SKU, all set to the same strategy.
+// Walmart Repricer Bulk Upload: one row per SKU, all set to the same strategy,
+// with a price window of During Incentive ± $5 as the Min/Max Seller Allowed
+// Price (so the repricer has room to act). If a row has no valid During price,
+// or the window would drop to/below $0, Min/Max are left blank for that row.
 const REPRICER_STRATEGY = "IMRAN BUY BOX";
+const REPRICER_WINDOW = 5;
 
 async function exportRepricer() {
+  const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
   const seen = new Set();
-  const skus = [];
-  for (const it of items) {
-    const sku = String(it.sku ?? "").trim();
+  const rows = [];
+  for (let i = 0; i < items.length; i++) {
+    const sku = String(items[i].sku ?? "").trim();
     if (!sku || seen.has(sku)) continue;
     seen.add(sku);
-    skus.push(sku);
+    const during = safe(i, "during");
+    let min = null, max = null;
+    if (Number.isFinite(during) && during - REPRICER_WINDOW > 0) {
+      min = round2(during - REPRICER_WINDOW);
+      max = round2(during + REPRICER_WINDOW);
+    }
+    rows.push({ sku, min, max });
   }
-  if (!skus.length) { alert("No rows with a SKU to export. Repricer files are keyed on SKU."); return; }
-  const res = await window.api.exportRepricer({ skus, strategy: REPRICER_STRATEGY });
-  finishExport(res, skus.length);
+  if (!rows.length) { alert("No rows with a SKU to export. Repricer files are keyed on SKU."); return; }
+  const res = await window.api.exportRepricer({ rows, strategy: REPRICER_STRATEGY });
+  finishExport(res, rows.length);
 }
 
 // Export opens a format chooser first; the Walmart pane is a native layer

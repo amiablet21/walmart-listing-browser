@@ -226,7 +226,7 @@ async function exportSheet(payload) {
 // Builds Walmart's Repricer Bulk Upload file for every SKU, each assigned the
 // chosen strategy (defaults to IMRAN BUY BOX), and saves it via a dialog.
 async function exportRepricer(payload) {
-  const skus = Array.isArray(payload?.skus) ? payload.skus : [];
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
   const strategy = payload?.strategy || DEFAULT_STRATEGY;
   const stamp = new Date().toISOString().slice(0, 10);
   const res = await dialog.showSaveDialog(win, {
@@ -239,7 +239,7 @@ async function exportRepricer(payload) {
   const LOCKED = ["EBUSY", "EPERM", "EACCES"];
   try {
     const ExcelJS = require("exceljs");
-    const buf = await buildRepricerBuffer(ExcelJS, skus, strategy);
+    const buf = await buildRepricerBuffer(ExcelJS, rows, strategy);
     const write = (target) => fs.writeFileSync(target, Buffer.from(buf));
     try {
       write(file);
