@@ -1,11 +1,17 @@
 name: Build & release installers
 
-# Push a version tag (e.g. v0.3.4) to build the macOS .dmg and Windows .exe
-# on real macOS/Windows runners and attach both to a public GitHub Release.
+# Builds the macOS .dmg and Windows .exe on real macOS/Windows runners and
+# attaches both to a public GitHub Release. The release is tagged from the
+# version in package.json, so bump that version to cut a new release.
+#
+# Triggers on pushes to this working branch (tag pushes are blocked for this
+# session's credentials) and can also be run manually from the Actions tab.
+# Once merged to the default branch, switch this to `tags: ["v*"]`.
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - "claude/macos-app-usage-egn49v"
+  workflow_dispatch:
 
 jobs:
   build-mac:
@@ -50,12 +56,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - name: Read version from package.json
+        id: ver
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: v${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
           files: artifacts/**/*
           fail_on_unmatched_files: true
           generate_release_notes: true
