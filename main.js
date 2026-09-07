@@ -4,6 +4,7 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
@@ -221,6 +222,54 @@ async function exportSheet(payload) {
   }
 }
 
+// ---- repricer bulk-upload export -------------------------------------------
+// Builds Walmart's Repricer Bulk Upload file for every SKU, each assigned the
+// chosen strategy (defaults to IMRAN BUY BOX), and saves it via a dialog.
+async function exportRepricer(payload) {
+  const skus = Array.isArray(payload?.skus) ? payload.skus : [];
+  const strategy = payload?.strategy || DEFAULT_STRATEGY;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const res = await dialog.showSaveDialog(win, {
+    title: "Export repricer bulk upload",
+    defaultPath: `repricer-bulk-upload-${stamp}.xlsx`,
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  const file = res.filePath;
+  const LOCKED = ["EBUSY", "EPERM", "EACCES"];
+  try {
+    const ExcelJS = require("exceljs");
+    const buf = await buildRepricerBuffer(ExcelJS, skus, strategy);
+    const write = (target) => fs.writeFileSync(target, Buffer.from(buf));
+    try {
+      write(file);
+      return { saved: true, path: file };
+    } catch (e) {
+      // target open in Excel? save under "name (2).xlsx" instead of failing
+      if (!LOCKED.includes(e.code)) throw e;
+      const ext = path.extname(file);
+      const base = file.slice(0, file.length - ext.length);
+      let alt = null;
+      for (let n = 2; n <= 50; n++) {
+        const cand = `${base} (${n})${ext}`;
+        if (!fs.existsSync(cand)) { alt = cand; break; }
+      }
+      if (!alt) throw e;
+      write(alt);
+      return {
+        saved: true,
+        path: alt,
+        note: `"${path.basename(file)}" is open in another program (likely Excel), so the export was saved as "${path.basename(alt)}". Close the old file to overwrite it next time.`,
+      };
+    }
+  } catch (e) {
+    if (LOCKED.includes(e.code)) {
+      return { error: "The file is open in another program (probably Excel). Close it there and export again." };
+    }
+    return { error: e.message || String(e) };
+  }
+}
+
 // ---- right-click menu (copy/paste in fields, copy links) ------------------
 function attachContextMenu(contents) {
   contents.on("context-menu", (_e, params) => {
@@ -422,6 +471,7 @@ app.whenReady().then(() => {
   ipcMain.handle("clip:write", (_e, t) => { clipboard.writeText(String(t ?? "")); return true; });
   ipcMain.handle("sheet:import", () => importSheet());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
+  ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
 
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

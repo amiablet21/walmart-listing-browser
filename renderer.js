@@ -1447,6 +1447,23 @@ function finishExport(res, count) {
   else if (res?.saved) alert(res.note || `Exported ${count} rows to:\n${res.path}`);
 }
 
+// Walmart Repricer Bulk Upload: one row per SKU, all set to the same strategy.
+const REPRICER_STRATEGY = "IMRAN BUY BOX";
+
+async function exportRepricer() {
+  const seen = new Set();
+  const skus = [];
+  for (const it of items) {
+    const sku = String(it.sku ?? "").trim();
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    skus.push(sku);
+  }
+  if (!skus.length) { alert("No rows with a SKU to export. Repricer files are keyed on SKU."); return; }
+  const res = await window.api.exportRepricer({ skus, strategy: REPRICER_STRATEGY });
+  finishExport(res, skus.length);
+}
+
 // Export opens a format chooser first; the Walmart pane is a native layer
 // that would cover the dialog, so it hides while the modal is open.
 function closeExportModal() {
@@ -1464,6 +1481,7 @@ $("exportModal").addEventListener("click", (e) => {
 });
 $("exportRegular").addEventListener("click", () => { closeExportModal(); exportRegular(); });
 $("exportRep").addEventListener("click", () => { closeExportModal(); exportRep(); });
+$("exportRepricer").addEventListener("click", () => { closeExportModal(); exportRepricer(); });
 
 // ---- import ----------------------------------------------------------------
 // The Import button opens an instructions dialog first; "Choose file…" runs
