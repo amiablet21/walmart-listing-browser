@@ -1,0 +1,74 @@
+name: Build & release installers
+
+# Builds the macOS .dmg and Windows .exe on real macOS/Windows runners and
+# attaches both to a public GitHub Release. The release is tagged from the
+# version in package.json, so bump that version to cut a new release.
+#
+# Triggers on pushes to this working branch (tag pushes are blocked for this
+# session's credentials) and can also be run manually from the Actions tab.
+# Once merged to the default branch, switch this to `tags: ["v*"]`.
+on:
+  push:
+    branches:
+      - "claude/macos-app-usage-egn49v"
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Universal .dmg runs on both Apple Silicon and Intel Macs. Unsigned
+      # (no Apple certificate), so first launch needs right-click -> Open.
+      - name: Build macOS installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --mac --universal --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-installer
+          path: dist/*.dmg
+
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build Windows installer
+        run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: win-installer
+          path: dist/*.exe
+
+  release:
+    needs: [build-mac, build-win]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version from package.json
+        id: ver
+        run: echo "v=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: v${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
+          files: artifacts/**/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

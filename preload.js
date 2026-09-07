@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld("api", {
   writeClipboard: (t) => ipcRenderer.invoke("clip:write", t),
   importSheet: () => ipcRenderer.invoke("sheet:import"),
   exportSheet: (rows) => ipcRenderer.invoke("sheet:export", rows),
+  exportRepricer: (payload) => ipcRenderer.invoke("sheet:exportRepricer", payload),
 });

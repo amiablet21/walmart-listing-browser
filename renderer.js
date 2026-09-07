@@ -988,6 +988,13 @@ $("prevBtn").addEventListener("click", () => select(selected - 1));
 $("nextBtn").addEventListener("click", () => select(selected + 1));
 $("zoomIn").addEventListener("click", () => window.api.zoomListing(1));
 $("zoomOut").addEventListener("click", () => window.api.zoomListing(-1));
+// Open the selected row's listing in the user's real default browser, where
+// they're already a signed-in, trusted human — so Walmart's robot-or-human
+// check doesn't fire the way it can inside the docked pane.
+$("openExternalBtn").addEventListener("click", () => {
+  const it = items[selected];
+  if (it?.itemId) window.api.openExternal(it.itemId);
+});
 
 // + Row / + Col toolbar buttons were removed — rows and columns are added
 // from the right-click menu instead.
@@ -1399,45 +1406,37 @@ async function exportRegular() {
   finishExport(res, rows.length);
 }
 
-// The 11-column incentive template the Walmart rep uploads. Item ID, prices,
-// the partner constants, and each row's commission rates are filled in —
-// Status, dates, and Item Name are left for the rep, matching their sheet.
-const REP_PARTNER_ID = 10001467995;
-const REP_PARTNER_NAME = "HotDeals";
-
-async function exportRep() {
-  const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : "");
-  const head = [
-    "Status", "Item ID", "Partner ID", "Partner Name", "Regular Commission Rate",
-    "Avg. Price Before Incentive (Past 90 days)", "Incentive Start Date",
-    "Incentive End Date", "Incentive Commission Rate", "Price During Incentive",
-    "Item Name",
-  ];
-  const rate = (i, field, dflt) => {
-    const v = round2(safe(i, field));
-    return Number.isFinite(v) ? v : dflt;
-  };
-  const rows = items
-    .map((it, i) => (String(it.itemId ?? "").trim()
-      ? ["", String(it.itemId).trim(), REP_PARTNER_ID, REP_PARTNER_NAME,
-         rate(i, "regCom", DEFAULT_REG_COM),
-         round2(safe(i, "before")), "", "",
-         rate(i, "incCom", DEFAULT_INC_COM),
-         round2(safe(i, "during")), ""]
-      : null))
-    .filter(Boolean);
-  if (!rows.length) { alert("No rows with an Item ID to export."); return; }
-  const res = await window.api.exportSheet({
-    head, rows,
-    name: "walmart-incentive-rep",
-    widths: head.map((h) => Math.max(12, h.length + 2)),
-  });
-  finishExport(res, rows.length);
-}
-
 function finishExport(res, count) {
   if (res?.error) alert("Export failed: " + res.error);
   else if (res?.saved) alert(res.note || `Exported ${count} rows to:\n${res.path}`);
+}
+
+// Walmart Repricer Bulk Upload: one row per SKU, all set to the same strategy,
+// with a price window of During Incentive ± $5 as the Min/Max Seller Allowed
+// Price (so the repricer has room to act). If a row has no valid During price,
+// or the window would drop to/below $0, Min/Max are left blank for that row.
+const REPRICER_STRATEGY = "IMRAN BUY BOX";
+const REPRICER_WINDOW = 5;
+
+async function exportRepricer() {
+  const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  const seen = new Set();
+  const rows = [];
+  for (let i = 0; i < items.length; i++) {
+    const sku = String(items[i].sku ?? "").trim();
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    const during = safe(i, "during");
+    let min = null, max = null;
+    if (Number.isFinite(during) && during - REPRICER_WINDOW > 0) {
+      min = round2(during - REPRICER_WINDOW);
+      max = round2(during + REPRICER_WINDOW);
+    }
+    rows.push({ sku, min, max });
+  }
+  if (!rows.length) { alert("No rows with a SKU to export. Repricer files are keyed on SKU."); return; }
+  const res = await window.api.exportRepricer({ rows, strategy: REPRICER_STRATEGY });
+  finishExport(res, rows.length);
 }
 
 // Export opens a format chooser first; the Walmart pane is a native layer
@@ -1456,7 +1455,7 @@ $("exportModal").addEventListener("click", (e) => {
   if (e.target.id === "exportModal") closeExportModal();
 });
 $("exportRegular").addEventListener("click", () => { closeExportModal(); exportRegular(); });
-$("exportRep").addEventListener("click", () => { closeExportModal(); exportRep(); });
+$("exportRepricer").addEventListener("click", () => { closeExportModal(); exportRepricer(); });
 
 // ---- import ----------------------------------------------------------------
 // The Import button opens an instructions dialog first; "Choose file…" runs

@@ -4,6 +4,7 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
@@ -221,6 +222,54 @@ async function exportSheet(payload) {
   }
 }
 
+// ---- repricer bulk-upload export -------------------------------------------
+// Builds Walmart's Repricer Bulk Upload file for every SKU, each assigned the
+// chosen strategy (defaults to IMRAN BUY BOX), and saves it via a dialog.
+async function exportRepricer(payload) {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const strategy = payload?.strategy || DEFAULT_STRATEGY;
+  const stamp = new Date().toISOString().slice(0, 10);
+  const res = await dialog.showSaveDialog(win, {
+    title: "Export repricer bulk upload",
+    defaultPath: `repricer-bulk-upload-${stamp}.xlsx`,
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  const file = res.filePath;
+  const LOCKED = ["EBUSY", "EPERM", "EACCES"];
+  try {
+    const ExcelJS = require("exceljs");
+    const buf = await buildRepricerBuffer(ExcelJS, rows, strategy);
+    const write = (target) => fs.writeFileSync(target, Buffer.from(buf));
+    try {
+      write(file);
+      return { saved: true, path: file };
+    } catch (e) {
+      // target open in Excel? save under "name (2).xlsx" instead of failing
+      if (!LOCKED.includes(e.code)) throw e;
+      const ext = path.extname(file);
+      const base = file.slice(0, file.length - ext.length);
+      let alt = null;
+      for (let n = 2; n <= 50; n++) {
+        const cand = `${base} (${n})${ext}`;
+        if (!fs.existsSync(cand)) { alt = cand; break; }
+      }
+      if (!alt) throw e;
+      write(alt);
+      return {
+        saved: true,
+        path: alt,
+        note: `"${path.basename(file)}" is open in another program (likely Excel), so the export was saved as "${path.basename(alt)}". Close the old file to overwrite it next time.`,
+      };
+    }
+  } catch (e) {
+    if (LOCKED.includes(e.code)) {
+      return { error: "The file is open in another program (probably Excel). Close it there and export again." };
+    }
+    return { error: e.message || String(e) };
+  }
+}
+
 // ---- right-click menu (copy/paste in fields, copy links) ------------------
 function attachContextMenu(contents) {
   contents.on("context-menu", (_e, params) => {
@@ -278,8 +327,18 @@ function createWindow() {
 // selected row's public listing; "seller" is a free-browsing Seller Center
 // session that loads once and is never navigated by row clicks — switching
 // modes only shows/hides the panes, so neither side ever reloads.
-const CHROME_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+// Present as plain Chrome (no "Electron/…" token, which trips bot detection),
+// but truthfully: the real platform and the real Chromium version Electron
+// ships. A mismatched UA (e.g. "Windows" while running on a Mac, or a stale
+// Chrome version) makes walmart.com's robot-or-human checks fire and fail.
+const CHROME_UA = (() => {
+  const chromeVer = `${(process.versions.chrome || "130").split(".")[0]}.0.0.0`;
+  const platform =
+    process.platform === "darwin" ? "Macintosh; Intel Mac OS X 10_15_7"
+    : process.platform === "win32" ? "Windows NT 10.0; Win64; x64"
+    : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${platform}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`;
+})();
 const panes = { customer: null, seller: null };
 let activePane = null;   // which pane the renderer currently wants shown
 let customerItem = null; // itemId loaded in the customer pane
@@ -412,6 +471,7 @@ app.whenReady().then(() => {
   ipcMain.handle("clip:write", (_e, t) => { clipboard.writeText(String(t ?? "")); return true; });
   ipcMain.handle("sheet:import", () => importSheet());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
+  ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
 
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
