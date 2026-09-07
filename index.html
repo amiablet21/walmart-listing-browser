@@ -150,7 +150,7 @@
         <li>Optional commission columns:<br />
             <code>Regular&nbsp;Commission</code> <code>During&nbsp;Incentive&nbsp;Commission</code><br />
             <span class="hint">Found by their header names, so they can sit in any column. Rows without them
-            default to 6% / 2%. These fill the commission rates in the "For Walmart rep" export.</span></li>
+            default to 6% / 2%. These fill the commission columns in the exported sheet.</span></li>
         <li>Pick the downloaded file, then choose <b>Add to bottom</b> (rows already in the table are skipped) or <b>Replace table</b>.</li>
       </ol>
       <p class="hint">Tip: you can also copy rows in Google Sheets and paste them straight into the table with Ctrl+V — no file needed.</p>
@@ -179,8 +179,6 @@
       <h2>Export spreadsheet</h2>
       <p class="hint">
         <b>Regular sheet</b> exports every column with live formulas.<br />
-        <b>For Walmart rep</b> exports the incentive template your rep uploads —
-        Item ID, partner ID, commission rates, and prices in their 11-column layout.<br />
         <b>Repricer</b> exports Walmart's Repricer Bulk Upload file with every SKU
         set to the <b>IMRAN BUY BOX</b> strategy, with Min/Max Seller Allowed Price
         set to the During Incentive price −$5 / +$5.
@@ -188,7 +186,6 @@
       <div class="confirm-actions">
         <button id="exportCancel">Cancel</button>
         <button id="exportRepricer">Repricer</button>
-        <button id="exportRep">For Walmart rep</button>
         <button id="exportRegular" class="primary">Regular sheet</button>
       </div>
     </div>
