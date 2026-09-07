@@ -238,8 +238,7 @@ async function exportRepricer(payload) {
   const file = res.filePath;
   const LOCKED = ["EBUSY", "EPERM", "EACCES"];
   try {
-    const ExcelJS = require("exceljs");
-    const buf = await buildRepricerBuffer(ExcelJS, rows, strategy);
+    const buf = await buildRepricerBuffer(rows, strategy);
     const write = (target) => fs.writeFileSync(target, Buffer.from(buf));
     try {
       write(file);
