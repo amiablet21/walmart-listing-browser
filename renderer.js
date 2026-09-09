@@ -1412,11 +1412,11 @@ function finishExport(res, count) {
 }
 
 // Walmart Repricer Bulk Upload: one row per SKU, all set to the same strategy,
-// with a price window of During Incentive ± $5 as the Min/Max Seller Allowed
-// Price (so the repricer has room to act). If a row has no valid During price,
-// or the window would drop to/below $0, Min/Max are left blank for that row.
+// The Maximum Seller Allowed Price is the During Incentive price, and the
+// Minimum is $10 below that. If a row has no valid During price, or the minimum
+// would drop to/below $0, Min/Max are left blank for that row.
 const REPRICER_STRATEGY = "IMRAN BUY BOX";
-const REPRICER_WINDOW = 5;
+const REPRICER_MIN_BELOW = 10;
 
 async function exportRepricer() {
   const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
@@ -1428,9 +1428,9 @@ async function exportRepricer() {
     seen.add(sku);
     const during = safe(i, "during");
     let min = null, max = null;
-    if (Number.isFinite(during) && during - REPRICER_WINDOW > 0) {
-      min = round2(during - REPRICER_WINDOW);
-      max = round2(during + REPRICER_WINDOW);
+    if (Number.isFinite(during) && during - REPRICER_MIN_BELOW > 0) {
+      max = round2(during);
+      min = round2(during - REPRICER_MIN_BELOW);
     }
     rows.push({ sku, min, max });
   }
