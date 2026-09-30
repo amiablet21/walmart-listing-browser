@@ -856,11 +856,12 @@ window.api.onListingNavigated((itemId) => {
 });
 
 // ---- copy & paste ----------------------------------------------------------
-// Click a cell, then Ctrl+C copies that cell (formulas copy as "=…"), Ctrl+V
-// pastes into it — including multi-cell grids from Sheets, anchored at the
-// cell. With no cell clicked, Ctrl+C copies the whole selected row and Ctrl+V
-// inserts pasted lines as new rows. Inside a cell editor, native copy/paste
-// applies as usual.
+// Click a cell, then Ctrl+C (Cmd+C) copies that cell (formulas copy as "=…"),
+// Ctrl+V pastes into it — including multi-cell grids from Sheets, anchored at
+// the cell. With no cell clicked, Ctrl+C copies the whole selected row and
+// Ctrl+V inserts pasted lines as new rows. Inside a cell editor, native
+// copy/paste applies as usual. Cells aren't text-selectable (like Sheets), so
+// a copy is always the cell or the row, never a stray highlight.
 const parseNum = (s) => {
   const str = String(s ?? "").trim();
   const negative = /^\(.*\)$/.test(str);      // "(5.31)" style negatives
@@ -963,18 +964,43 @@ window.addEventListener("keydown", async (e) => {
   if (k === "y") { e.preventDefault(); redo(); return; }
   if (k === "f") { e.preventDefault(); openFind(); return; }
   if (k === "c") {
-    if (String(window.getSelection())) return;      // highlighted text — native copy
-    if (activeCell) {
-      e.preventDefault();
-      window.api.writeClipboard(cellRaw(activeCell.i, activeCell.field));
-    } else if (selected >= 0) {
-      e.preventDefault();
-      window.api.writeClipboard(visibleOrder().map((f) => cellRaw(selected, f)).join("\t"));
-    }
+    const text = sheetCopyText();
+    if (text == null) return;                       // let the browser copy highlighted text
+    e.preventDefault();
+    window.api.writeClipboard(text);
   } else if (k === "v") {
     e.preventDefault();
     handlePaste(await window.api.readClipboard());
   }
+});
+
+// What a copy should put on the clipboard: the active cell if there is one,
+// else the selected row as tab-separated values, else null (native copy).
+// The active cell always wins — a stray text highlight across the row must
+// never turn a cell copy into a row copy.
+function sheetCopyText() {
+  if (activeCell && items[activeCell.i]) return cellRaw(activeCell.i, activeCell.field);
+  if (String(window.getSelection())) return null;
+  if (selected >= 0) return visibleOrder().map((f) => cellRaw(selected, f)).join("\t");
+  return null;
+}
+const inTextEditor = (el) => !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+
+// Native copy/paste commands (the macOS Edit menu, right-click → Copy) don't
+// go through the keydown handler above, so serve them from the sheet too.
+document.addEventListener("copy", (e) => {
+  if (inTextEditor(e.target)) return;
+  const text = sheetCopyText();
+  if (text == null) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", text);
+});
+document.addEventListener("paste", (e) => {
+  if (inTextEditor(e.target)) return;
+  const text = e.clipboardData?.getData("text/plain");
+  if (!text) return;
+  e.preventDefault();
+  handlePaste(text);
 });
 
 // ---- wiring -----------------------------------------------------------------

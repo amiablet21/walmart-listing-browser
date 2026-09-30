@@ -199,6 +199,11 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* Row deletion lives in the right-click menu. The old hover-× that replaced
    the row number was too easy to hit by accident and deleted with no warning. */
 
+/* cells aren't text-selectable: copy = the active cell (or the selected row),
+   never a dragged highlight across the row. The inline editor is still text. */
+#sheet td { -webkit-user-select: none; user-select: none; }
+#sheet td.editing, #sheet td.editing input { -webkit-user-select: text; user-select: text; }
+
 /* active cell (Sheets-style focus ring) */
 #sheet td.active-cell {
   outline: 2px solid var(--accent);
