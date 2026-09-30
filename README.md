@@ -11,7 +11,7 @@ Keep an incentive price sheet on the left, and click any row to see its **live w
 
 ## Features
 
-- **Spreadsheet UI** — editable cells, formula bar, formulas (`=D2-C2`), Ctrl+F find, sortable columns, drag-to-reorder rows, custom columns.
+- **Spreadsheet UI** — editable cells, formulas (`=D2-C2`), always-on search bar (Ctrl+F), sortable columns, drag-to-reorder rows, custom columns.
 - **Live listing pane** — the real walmart.com product page for the selected row, docked beside the sheet, with zoom and prev/next navigation.
 - **Walmart Listing ⇄ Seller Center toggle** — flip the pane between the customer-facing listing and a free-browsing Seller Center session (sign in once; loads once; row clicks never disturb it).
 - **Row auto-jump** — browse to another listing or variant inside the pane and the sheet selects that row automatically.

@@ -192,11 +192,6 @@ function moveColumn(src, target, before) {
 }
 
 const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H", cost: "I", shipping: "J", profit: "K" };
-function fieldToLetter(f) {
-  if (BASE_LETTER[f]) return BASE_LETTER[f];
-  const idx = customCols.findIndex((c) => "c_" + c.key === f);
-  return idx >= 0 ? String.fromCharCode(76 + idx) : "?";
-}
 function letterToField(L) {
   const inv = { A: "sku", B: "itemId", C: "before", D: "during", E: "change", F: "pct", G: "regCom", H: "incCom", I: "cost", J: "shipping", K: "profit" };
   if (inv[L]) return inv[L];
@@ -727,7 +722,6 @@ function render() {
   }
 
   renderDetailBar();
-  updateFxBar();
 }
 
 function renderDetailBar() {
@@ -1154,64 +1148,6 @@ function editActive(initial) {
     if (input) { input.value = initial; input.setSelectionRange(initial.length, initial.length); }
   }
 }
-
-// ---- formula bar -----------------------------------------------------------
-function updateFxBar() {
-  const fxRef = $("fxRef");
-  const fxInput = $("fxInput");
-  if (document.activeElement === fxInput) return; // don't clobber while typing
-  if (!activeCell || !items[activeCell.i]) {
-    fxRef.textContent = "—";
-    fxInput.value = "";
-    fxInput.disabled = true;
-    return;
-  }
-  const { i, field } = activeCell;
-  const r = i + 2;
-  fxRef.textContent = fieldToLetter(field) + r;
-  fxInput.disabled = false;
-  const raw = getRaw(i, field);
-  const isFormula = typeof raw === "string" && raw.trim().startsWith("=");
-  if (field === "change" || field === "pct") {
-    fxInput.value = isFormula
-      ? raw.trim()
-      : raw == null || raw === ""
-        ? (field === "change" ? `=D${r}-C${r}` : `=(D${r}-C${r})/C${r}*100`)
-        : String(raw);
-  } else {
-    fxInput.value = isFormula
-      ? raw.trim()
-      : ["before", "during", "cost", "shipping", "profit"].includes(field)
-        ? money(safe(i, field))
-        : String(raw ?? "");
-  }
-}
-
-$("fxInput").addEventListener("keydown", (e) => {
-  e.stopPropagation();
-  // Ctrl+Z / Ctrl+Y here mean "undo the sheet", not text-undo in this box —
-  // after committing from the formula bar, focus stays in it, and without
-  // this the shortcut would silently do nothing.
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-    e.preventDefault();
-    if (e.shiftKey) redo(); else undo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-    e.preventDefault();
-    redo();
-    return;
-  }
-  if (e.key === "Enter" && activeCell && isEditableField(activeCell.field)) {
-    applyMutation(() => setCell(activeCell.i, activeCell.field, $("fxInput").value));
-    persist();
-    render();
-    $("fxInput").blur();
-  } else if (e.key === "Escape") {
-    $("fxInput").blur();
-    updateFxBar();
-  }
-});
 
 // ---- find (Ctrl+F) ---------------------------------------------------------
 // what a cell "contains" for search: its displayed text plus any formula

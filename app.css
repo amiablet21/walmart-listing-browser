@@ -42,22 +42,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* the brand row sits directly above the menubar — trim its air */
 #side .brand { padding-bottom: 10px; }
 
-/* formula bar */
-.fx-bar { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; }
-.fx-ref {
-  flex: none;
-  min-width: 38px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--muted);
-  background: var(--card-2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 6px;
-}
-.fx-bar input { flex: 1; font-size: 12.5px; padding: 6px 9px; }
-.fx-bar input:disabled { background: var(--card-2); color: var(--muted); }
-
 /* autosave indicator — flashes after each change */
 .save-state {
   flex: none;
@@ -69,13 +53,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .save-state.show { opacity: 1; }
 
-/* search box — lives at the right end of the toolbar; Ctrl+F focuses it */
-.find-bar { display: flex; align-items: center; gap: 4px; margin-left: auto; min-width: 0; }
-.find-bar .find-icon { flex: none; color: var(--muted); margin-right: -26px; position: relative; z-index: 1; pointer-events: none; margin-left: 8px; }
-.find-bar input { width: 210px; min-width: 120px; font-size: 12.5px; padding: 5px 8px 5px 28px; }
-.find-bar input:focus { width: 260px; }
+/* search row — full width under the toolbar; Ctrl+F focuses it */
+.find-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; }
+.find-bar .find-icon { flex: none; color: var(--muted); margin: 0 -26px 0 9px; position: relative; z-index: 1; pointer-events: none; }
+.find-bar input { flex: 1; min-width: 0; font-size: 12.5px; padding: 6px 9px 6px 30px; }
 .find-count { flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; margin-left: 4px; }
-.find-bar button { padding: 3px 8px; font-size: 12px; flex: none; }
+.find-bar button { padding: 3px 9px; font-size: 12px; flex: none; }
 /* until something is typed, only the box itself shows */
 .find-bar.empty .find-count, .find-bar.empty button { display: none; }
 

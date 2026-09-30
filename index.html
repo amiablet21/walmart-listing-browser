@@ -56,24 +56,18 @@
         </svg>
       </button>
 
-      <!-- search box (always visible; Ctrl+F focuses it) -->
-      <div id="findBar" class="find-bar empty">
-        <svg class="find-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
-        </svg>
-        <input id="findInput" type="text" placeholder="Search the sheet (Ctrl+F)" />
-        <span id="findCount" class="find-count"></span>
-        <button id="findPrev" title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button>
-        <button id="findNext" title="Next match (Enter)" aria-label="Next match">↓</button>
-        <button id="findClose" title="Clear search (Esc)" aria-label="Clear search">×</button>
-      </div>
     </div>
 
-    <!-- formula bar: shows the clicked cell's address and raw value/formula -->
-    <div class="fx-bar">
-      <span id="fxRef" class="fx-ref mono">—</span>
-      <input id="fxInput" type="text" class="mono" disabled
-             placeholder="Click a cell to see or edit its value or formula" />
+    <!-- search row (Ctrl+F focuses it); autosave indicator on the right -->
+    <div id="findBar" class="find-bar empty">
+      <svg class="find-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+      </svg>
+      <input id="findInput" type="text" placeholder="Search SKU, Item ID, price… (Ctrl+F)" />
+      <span id="findCount" class="find-count"></span>
+      <button id="findPrev" title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button>
+      <button id="findNext" title="Next match (Enter)" aria-label="Next match">↓</button>
+      <button id="findClose" title="Clear search (Esc)" aria-label="Clear search">×</button>
       <span id="saveState" class="save-state">Saved ✓</span>
     </div>
 
