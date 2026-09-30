@@ -145,8 +145,9 @@
             <span class="hint">Comma-separated values (.csv) works too.</span></li>
         <li>Columns must be in this order:<br />
             <code>A&nbsp;SKU</code> <code>B&nbsp;Item&nbsp;ID</code> <code>C&nbsp;Before&nbsp;Price</code> <code>D&nbsp;During&nbsp;Incentive</code><br />
-            <span class="hint">Only SKU and Item ID are required — prices can be blank (they start at 0.00).
-            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.</span></li>
+            <span class="hint">Only SKU is required — Item ID and prices can be blank (prices start at 0.00).
+            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.
+            Not sure about the layout? <a href="#" id="importTemplate">Download a blank template</a>.</span></li>
         <li>Optional commission columns:<br />
             <code>Regular&nbsp;Commission</code> <code>During&nbsp;Incentive&nbsp;Commission</code><br />
             <span class="hint">Found by their header names, so they can sit in any column. Rows without them

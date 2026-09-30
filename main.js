@@ -34,6 +34,7 @@ function saveItems(items) {
 // ---- spreadsheet import (.xlsx / .csv / .tsv) ------------------------------
 // Reads SKU, Item ID, Before Price, During Incentive from columns A-D, plus
 // per-row commission rates from any header-labeled "…Commission…" columns.
+// Only SKU is required; everything else may be blank.
 const parseNumMain = (s) => Number(String(s ?? "").replace(/[$,()%\s]/g, "")) || 0;
 
 function splitCsvLine(line) {
@@ -78,7 +79,7 @@ function normalizeRows(rows) {
     if (!parts?.length) continue;
     if (/^sku$/i.test(String(parts[0] ?? "").trim())) continue;    // header row
     const [sku, itemId, before, during] = parts;
-    if (!String(sku ?? "").trim() && !String(itemId ?? "").trim()) continue;
+    if (!String(sku ?? "").trim()) continue;                        // SKU is the only required column
     out.push({
       sku: String(sku ?? "").trim(),
       itemId: String(itemId ?? "").trim(),
@@ -141,6 +142,39 @@ async function importSheet() {
       ? await parseXlsx(file)
       : parseDelimited(fs.readFileSync(file, "utf8"));
     return { rows, file };
+  } catch (e) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// ---- import template (.xlsx) ------------------------------------------------
+// A blank sheet laid out exactly the way importSheet() expects it, with one
+// example row so the columns are self-explanatory. Saved wherever the user
+// picks; they fill it in (Excel / Google Sheets) and import it back.
+const TEMPLATE_HEAD = [
+  "SKU", "Item ID", "Before Price", "During Incentive", "Regular Commission", "During Incentive Commission",
+];
+async function saveImportTemplate() {
+  const res = await dialog.showSaveDialog(win, {
+    title: "Save import template",
+    defaultPath: "import-template.xlsx",
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  try {
+    const ExcelJS = require("exceljs");
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Import");
+    ws.addRow(TEMPLATE_HEAD);
+    ws.getRow(1).font = { bold: true };
+    ws.addRow(["EXAMPLE-SKU-001", "123456789", 19.99, 17.99, 6, 2]);
+    ws.addRow(["EXAMPLE-SKU-002", "", "", "", "", ""]); // only SKU is required
+    ws.getRow(2).font = ws.getRow(3).font = { italic: true, color: { argb: "FF888888" } };
+    ws.getCell("A2").note = "Example rows — delete them before importing.";
+    [26, 15, 14, 16, 18, 26].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    await wb.xlsx.writeFile(res.filePath);
+    return { saved: true, path: res.filePath };
   } catch (e) {
     return { error: e.message || String(e) };
   }
@@ -469,6 +503,7 @@ app.whenReady().then(() => {
   ipcMain.handle("clip:read", () => clipboard.readText());
   ipcMain.handle("clip:write", (_e, t) => { clipboard.writeText(String(t ?? "")); return true; });
   ipcMain.handle("sheet:import", () => importSheet());
+  ipcMain.handle("sheet:template", () => saveImportTemplate());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
   ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
 

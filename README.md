@@ -57,7 +57,9 @@ The first four columns of your sheet, in this order (a header row is fine — it
 |---|---|---|---|
 | SKU | Item ID | Before Price | During Incentive |
 
-Only SKU and Item ID are required; extra columns (`$ Change`, `% Change`, …) are ignored on import and recomputed in-app.
+Only SKU is required — Item ID and prices can be left blank. Extra columns (`$ Change`, `% Change`, …) are ignored on import and recomputed in-app.
+
+Need a starting point? The import dialog has a **Download a blank template** link that saves an `.xlsx` with these headers and an example row.
 
 Optionally add `Regular Commission` and `During Incentive Commission` columns (any position — they're matched by header name). Rows without them default to 6% / 2%; the values fill the commission rates in the "For Walmart rep" export.
 

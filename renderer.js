@@ -948,9 +948,9 @@ function handlePaste(text) {
         let parts = line.split("\t");                 // Sheets copies as TSV
         if (parts.length < 2) parts = line.split(/[,;]+/);
         parts = parts.map((s) => s.trim());
-        if (parts.length < 2) continue;
+        if (!parts[0]) continue;                      // SKU is the only required column
         if (/^sku$/i.test(parts[0])) continue;        // header row
-        rows.push(fillComs({ sku: parts[0], itemId: parts[1], before: parseNum(parts[2]), during: parseNum(parts[3]) }));
+        rows.push(fillComs({ sku: parts[0], itemId: parts[1] ?? "", before: parseNum(parts[2]), during: parseNum(parts[3]) }));
       }
       if (!rows.length) return;
       const at = selected >= 0 ? selected + 1 : items.length;
@@ -1470,6 +1470,11 @@ function closeImportModal() {
   dockListing();
 }
 $("importBtn").addEventListener("click", openImportModal);
+$("importTemplate").addEventListener("click", async (e) => {
+  e.preventDefault();
+  const res = await window.api.saveImportTemplate();
+  if (res?.error) alert("Couldn't save the template: " + res.error);
+});
 $("importCancel").addEventListener("click", closeImportModal);
 $("importModal").addEventListener("click", (e) => {
   if (e.target.id === "importModal") closeImportModal();
@@ -1523,7 +1528,7 @@ $("importChoose").addEventListener("click", async () => {
   if (res.error) { alert("Import failed: " + res.error); closeImportModal(); return; }
   const rows = res.rows || [];
   if (!rows.length) {
-    alert("No usable rows found. Only SKU (column A) and Item ID (column B) are required.");
+    alert("No usable rows found. Only SKU (column A) is required.");
     closeImportModal();
     return;
   }

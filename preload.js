@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("api", {
   readClipboard: () => ipcRenderer.invoke("clip:read"),
   writeClipboard: (t) => ipcRenderer.invoke("clip:write", t),
   importSheet: () => ipcRenderer.invoke("sheet:import"),
+  saveImportTemplate: () => ipcRenderer.invoke("sheet:template"),
   exportSheet: (rows) => ipcRenderer.invoke("sheet:export", rows),
   exportRepricer: (payload) => ipcRenderer.invoke("sheet:exportRepricer", payload),
 });
