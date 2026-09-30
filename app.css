@@ -69,11 +69,15 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .save-state.show { opacity: 1; }
 
-/* find bar (Ctrl+F) */
-.find-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; }
-.find-bar input { flex: 1; font-size: 12.5px; padding: 5px 8px; }
-.find-count { flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
-.find-bar button { padding: 3px 9px; font-size: 12px; flex: none; }
+/* search box — lives at the right end of the toolbar; Ctrl+F focuses it */
+.find-bar { display: flex; align-items: center; gap: 4px; margin-left: auto; min-width: 0; }
+.find-bar .find-icon { flex: none; color: var(--muted); margin-right: -26px; position: relative; z-index: 1; pointer-events: none; margin-left: 8px; }
+.find-bar input { width: 210px; min-width: 120px; font-size: 12.5px; padding: 5px 8px 5px 28px; }
+.find-bar input:focus { width: 260px; }
+.find-count { flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; margin-left: 4px; }
+.find-bar button { padding: 3px 8px; font-size: 12px; flex: none; }
+/* until something is typed, only the box itself shows */
+.find-bar.empty .find-count, .find-bar.empty button { display: none; }
 
 /* search match highlights */
 #sheet td.hl { background: #FDF0C2 !important; }

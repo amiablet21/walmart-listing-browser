@@ -1244,8 +1244,9 @@ function computeMatches() {
   });
 }
 
+// The search box sits in the toolbar and is always visible; Ctrl+F just
+// focuses it. "Closing" clears the term and its highlights.
 function openFind() {
-  $("findBar").classList.remove("hidden");
   $("findInput").focus();
   $("findInput").select();
 }
@@ -1255,7 +1256,8 @@ function closeFind() {
   findIdx = -1;
   findMatches = [];
   $("findInput").value = "";
-  $("findBar").classList.add("hidden");
+  $("findBar").classList.add("empty");
+  $("findInput").blur();
   render();
 }
 
@@ -1274,6 +1276,7 @@ function stepFind(d) {
 
 $("findInput").addEventListener("input", () => {
   findTerm = $("findInput").value.trim();
+  $("findBar").classList.toggle("empty", !findTerm);
   findIdx = 0;
   render();
   scrollToMatch();
