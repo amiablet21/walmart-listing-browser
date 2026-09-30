@@ -743,7 +743,22 @@ function slotBounds() {
 // row selection — it loads once and row clicks never navigate it)
 let paneMode = localStorage.getItem("paneMode") === "seller" ? "seller" : "customer";
 
+// The whole right pane can be closed (× in its header) so the sheet gets the
+// full window; "Show listing pane" in the toolbar brings it back. Remembered.
+let paneClosed = localStorage.getItem("paneClosed") === "1";
+function setPaneClosed(closed) {
+  paneClosed = closed;
+  localStorage.setItem("paneClosed", closed ? "1" : "0");
+  document.body.classList.toggle("pane-closed", closed);
+  if (closed) window.api.hideListing();
+  else setTimeout(dockListing, 0); // after layout, so the slot has its size
+}
+document.body.classList.toggle("pane-closed", paneClosed);
+$("paneCloseBtn").addEventListener("click", () => setPaneClosed(true));
+$("paneOpenBtn").addEventListener("click", () => setPaneClosed(false));
+
 function dockListing() {
+  if (paneClosed) { window.api.hideListing(); return; }
   const it = items[selected];
   if (paneMode === "seller") {
     $("slotPlaceholder").style.display = "none";

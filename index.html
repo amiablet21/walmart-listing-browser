@@ -63,7 +63,13 @@
           <path d="M17 21v-8H7v8" /><path d="M7 3v5h8" />
         </svg>
       </button>
-
+      <!-- only shown while the listing pane is closed -->
+      <button id="paneOpenBtn" class="tb-ghost pane-open" title="Show the Walmart listing pane" aria-label="Show listing pane">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M14 4v16" />
+        </svg>
+        <span>Show listing pane</span>
+      </button>
     </div>
 
     <!-- search row (Ctrl+F focuses it); autosave indicator on the right -->
@@ -127,6 +133,7 @@
             <line x1="10" y1="14" x2="21" y2="3" />
           </svg>
         </button>
+        <button id="paneCloseBtn" class="ghost" title="Close this pane — the sheet takes the full window" aria-label="Close pane">×</button>
       </div>
     </div>
     <!-- the live walmart.com page is docked over this slot by the main process -->

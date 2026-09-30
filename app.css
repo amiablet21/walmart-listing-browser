@@ -54,6 +54,13 @@ body { height: 100vh; overflow: hidden; }
 }
 body.resizing { cursor: col-resize; user-select: none; }
 
+/* listing pane closed: the sheet takes the whole window */
+body.pane-closed #detail, body.pane-closed #splitBar { display: none; }
+body.pane-closed #side { width: auto !important; flex: 1 1 auto; }
+.toolbar #paneOpenBtn { display: none; margin-left: auto; gap: 6px; font-size: 12px; }
+body.pane-closed .toolbar #paneOpenBtn { display: inline-flex; }
+.detail-bar #paneCloseBtn { font-size: 18px; margin-left: 4px; }
+
 /* toolbar */
 .toolbar { display: flex; gap: 2px; align-items: center; padding: 0 10px 8px; }
 /* the brand row sits directly above the menubar — trim its air */
