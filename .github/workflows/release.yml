@@ -10,7 +10,7 @@ name: Build & release installers
 on:
   push:
     branches:
-      - "claude/macos-app-usage-egn49v"
+      - "claude/epic-faraday-phw62m"
   workflow_dispatch:
 
 jobs:
