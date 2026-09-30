@@ -1,7 +1,7 @@
 {
   "name": "walmart-listing-browser",
   "productName": "Walmart Listing Browser",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "Spreadsheet-style incentive price list with live Walmart listing browsing.",
   "author": "Imran Tursun",
   "main": "main.js",
@@ -37,6 +37,7 @@
     ],
     "win": {
       "icon": "build/icon.ico",
+      "artifactName": "Walmart-Listing-Browser-Setup-${version}.${ext}",
       "target": [
         {
           "target": "nsis",
@@ -48,6 +49,7 @@
     },
     "mac": {
       "icon": "build/icon.png",
+      "artifactName": "Walmart-Listing-Browser-${version}-${arch}.${ext}",
       "category": "public.app-category.business",
       "target": [
         "dmg"

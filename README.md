@@ -34,7 +34,7 @@ npm start
 npm run dist
 ```
 
-The branded NSIS installer lands in `dist/Walmart Listing Browser Setup <version>.exe`.
+The branded NSIS installer lands in `dist/Walmart-Listing-Browser-Setup-<version>.exe`.
 
 ### Build the macOS app
 
@@ -45,7 +45,7 @@ npm install
 npm run dist:mac
 ```
 
-The disk image lands in `dist/Walmart Listing Browser-<version>.dmg`. Open it and
+The disk image lands in `dist/Walmart-Listing-Browser-<version>-universal.dmg`. Open it and
 drag the app into **Applications** — from then on it's a normal double-click app.
 It isn't code-signed, so the first launch shows an "unidentified developer"
 warning: right-click the app → **Open** → **Open**, and macOS remembers it.
