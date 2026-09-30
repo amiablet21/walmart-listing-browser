@@ -16,4 +16,10 @@ contextBridge.exposeInMainWorld("api", {
   saveImportTemplate: () => ipcRenderer.invoke("sheet:template"),
   exportSheet: (rows) => ipcRenderer.invoke("sheet:export", rows),
   exportRepricer: (payload) => ipcRenderer.invoke("sheet:exportRepricer", payload),
+  appVersion: () => ipcRenderer.invoke("app:version"),
+  checkForUpdates: (manual) => ipcRenderer.invoke("update:check", manual),
+  downloadUpdate: () => ipcRenderer.invoke("update:download"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+  updateState: () => ipcRenderer.invoke("update:state"),
+  onUpdateState: (cb) => ipcRenderer.on("update:state", (_e, st) => cb(st)),
 });

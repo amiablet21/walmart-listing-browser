@@ -22,7 +22,15 @@
         </svg>
       </div>
       Incentive price list
+      <button id="versionBtn" class="version" title="Check for updates">v—</button>
       <span id="count" class="badge neutral"></span>
+    </div>
+
+    <!-- update banner: hidden until a newer release exists (or a manual check runs) -->
+    <div id="updateBar" class="update-bar hidden">
+      <span id="updateMsg"></span>
+      <button id="updateAct" class="primary"></button>
+      <button id="updateLater" title="Hide for now">Later</button>
     </div>
 
     <!-- compact icon toolbar -->

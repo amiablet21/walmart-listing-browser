@@ -16,6 +16,7 @@ Keep an incentive price sheet on the left, and click any row to see its **live w
 - **Walmart Listing ⇄ Seller Center toggle** — flip the pane between the customer-facing listing and a free-browsing Seller Center session (sign in once; loads once; row clicks never disturb it).
 - **Row auto-jump** — browse to another listing or variant inside the pane and the sheet selects that row automatically.
 - **Import** — pull rows in from `.xlsx` / `.csv` / `.tsv`, or paste straight from Google Sheets with Ctrl+V; optional per-row commission columns are picked up by header name.
+- **Auto-update** — the app checks the latest GitHub Release on launch (and every few hours). Windows downloads and installs the new version in-app; macOS shows a Download button for the new `.dmg` (unsigned builds can't replace themselves). Click the version tag next to the title to check by hand.
 - **Export** — the regular sheet (live formulas), or the 11-column incentive template the Walmart rep uploads, prefilled with partner details and per-row commission rates.
 - **Auto-computed columns** — `$ Change` and `% Change` recompute from Before / During prices.
 - **Local-first** — everything is stored in a local JSON file; no accounts, no server.

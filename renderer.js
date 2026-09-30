@@ -1149,6 +1149,49 @@ function editActive(initial) {
   }
 }
 
+// ---- updates ---------------------------------------------------------------
+// main.js does the checking; we just show a banner. Windows downloads and
+// installs in-app; macOS gets the .dmg link (unsigned builds can't self-swap).
+const IS_MAC = navigator.platform.toLowerCase().includes("mac");
+let updateDismissed = false;
+window.api.appVersion().then((v) => { $("versionBtn").textContent = "v" + v; });
+
+function showUpdate(st) {
+  const bar = $("updateBar"), msg = $("updateMsg"), act = $("updateAct"), later = $("updateLater");
+  const show = (text, action = "", dismissable = true) => {
+    msg.textContent = text; act.textContent = action; later.style.display = dismissable ? "" : "none";
+    bar.classList.remove("hidden");
+  };
+  $("versionBtn").classList.toggle("has-update", ["available", "downloading", "ready"].includes(st.state));
+  switch (st.state) {
+    case "checking": if (st.manual) show("Checking for updates…", "", false); return;
+    case "available":
+      if (updateDismissed && !st.manual) return;
+      show(`Version ${st.version} is available (you have ${st.current}).`, IS_MAC ? "Download" : "Update now");
+      return;
+    case "downloading": show(`Downloading version ${st.version ?? ""}… ${st.percent ?? 0}%`, "", false); return;
+    case "ready": show(`Version ${st.version} is ready to install.`, "Restart to update"); return;
+    case "none":
+      if (st.manual) { show(st.dev ? "Update checks only run in the installed app." : `You're up to date (v${st.current}).`, ""); setTimeout(hideUpdate, 4000); }
+      return;
+    case "error":
+      if (st.manual) show(`Couldn't check for updates: ${st.message}`, "Open releases page");
+      return;
+    default: return;
+  }
+}
+function hideUpdate() { $("updateBar").classList.add("hidden"); }
+
+$("updateAct").addEventListener("click", async () => {
+  const st = await window.api.updateState();
+  if (st.state === "ready") { await window.api.installUpdate(); return; }
+  if (st.state === "available") { await window.api.downloadUpdate(); return; }
+  await window.api.installUpdate(); // error state → opens the releases page
+});
+$("updateLater").addEventListener("click", () => { updateDismissed = true; hideUpdate(); });
+$("versionBtn").addEventListener("click", () => { updateDismissed = false; window.api.checkForUpdates(true); });
+window.api.onUpdateState(showUpdate);
+
 // ---- find (Ctrl+F) ---------------------------------------------------------
 // what a cell "contains" for search: its displayed text plus any formula
 function cellSearchText(i, f) {

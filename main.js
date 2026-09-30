@@ -5,6 +5,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipb
 const path = require("path");
 const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
+const { autoUpdater } = require("electron-updater");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
@@ -483,6 +484,82 @@ function paneZoomBy(dir) {
   return paneZoom;
 }
 
+// ---- updates ---------------------------------------------------------------
+// New versions are published as GitHub Releases by the release workflow.
+// Windows: electron-updater fetches latest.yml from the release, downloads the
+// installer in the background and swaps the app on restart. macOS: the build
+// is unsigned, so the OS won't let it replace itself — we check the GitHub API
+// for a newer tag and hand the user the .dmg link instead.
+const RELEASES_API = "https://api.github.com/repos/amiablet21/walmart-listing-browser/releases/latest";
+const RELEASES_PAGE = "https://github.com/amiablet21/walmart-listing-browser/releases/latest";
+let updateState = { state: "idle", current: app.getVersion() };
+function pushUpdate(patch) {
+  updateState = { ...updateState, ...patch, current: app.getVersion() };
+  try { win?.webContents.send("update:state", updateState); } catch { /* window gone */ }
+  return updateState;
+}
+const semver = (v) => String(v ?? "").replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+function isNewer(a, b) { // a > b ?
+  const [x, y] = [semver(a), semver(b)];
+  for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
+}
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.logger = null;
+autoUpdater.on("update-available", (info) => pushUpdate({ state: "available", version: info.version }));
+autoUpdater.on("update-not-available", () => pushUpdate({ state: "none" }));
+autoUpdater.on("download-progress", (p) => pushUpdate({ state: "downloading", percent: Math.round(p.percent) }));
+autoUpdater.on("update-downloaded", (info) => pushUpdate({ state: "ready", version: info.version }));
+autoUpdater.on("error", (e) => pushUpdate({ state: "error", message: e?.message || String(e) }));
+
+async function checkGithubRelease() {
+  const res = await fetch(RELEASES_API, { headers: { "User-Agent": "walmart-listing-browser", Accept: "application/vnd.github+json" } });
+  if (!res.ok) throw new Error(`GitHub responded ${res.status}`);
+  const rel = await res.json();
+  const version = String(rel.tag_name || "").replace(/^v/, "");
+  const asset = (rel.assets || []).find((a) => /\.dmg$/i.test(a.name));
+  return { version, url: asset?.browser_download_url || rel.html_url || RELEASES_PAGE };
+}
+
+async function checkForUpdates(manual = false) {
+  if (!app.isPackaged) return pushUpdate({ state: "none", manual, dev: true });
+  pushUpdate({ state: "checking", manual });
+  try {
+    if (process.platform === "win32") {
+      const r = await autoUpdater.checkForUpdates();
+      // the event handlers above push the resulting state; echo it back
+      const version = r?.updateInfo?.version;
+      return pushUpdate(version && isNewer(version, app.getVersion())
+        ? { state: "available", version, manual } : { state: "none", manual });
+    }
+    const { version, url } = await checkGithubRelease();
+    return pushUpdate(isNewer(version, app.getVersion())
+      ? { state: "available", version, url, manual } : { state: "none", manual });
+  } catch (e) {
+    return pushUpdate({ state: "error", message: e?.message || String(e), manual });
+  }
+}
+async function downloadUpdate() {
+  if (process.platform !== "win32") {
+    shell.openExternal(updateState.url || RELEASES_PAGE);
+    return updateState;
+  }
+  pushUpdate({ state: "downloading", percent: 0 });
+  try { await autoUpdater.downloadUpdate(); } catch (e) { pushUpdate({ state: "error", message: e?.message || String(e) }); }
+  return updateState;
+}
+function installUpdate() {
+  if (process.platform === "win32" && updateState.state === "ready") {
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    return true;
+  }
+  shell.openExternal(updateState.url || RELEASES_PAGE);
+  return false;
+}
+const UPDATE_EVERY = 4 * 60 * 60 * 1000;
+
 // ---- app lifecycle ---------------------------------------------------------
 // Own taskbar identity (icon grouping, notifications) instead of Electron's.
 app.setAppUserModelId("com.imrantursun.walmart-listing-browser");
@@ -506,8 +583,16 @@ app.whenReady().then(() => {
   ipcMain.handle("sheet:template", () => saveImportTemplate());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
   ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
+  ipcMain.handle("update:check", (_e, manual) => checkForUpdates(!!manual));
+  ipcMain.handle("update:download", () => downloadUpdate());
+  ipcMain.handle("update:install", () => installUpdate());
+  ipcMain.handle("update:state", () => updateState);
+  ipcMain.handle("app:version", () => app.getVersion());
 
   createWindow();
+  // quiet check shortly after launch, then every few hours while running
+  setTimeout(() => checkForUpdates(false), 8000);
+  setInterval(() => { if (updateState.state !== "downloading" && updateState.state !== "ready") checkForUpdates(false); }, UPDATE_EVERY);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
