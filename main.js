@@ -426,13 +426,68 @@ function makePane(mode) {
       customerItem = m[1]; // a later row click on this item won't reload
       try { win?.webContents.send("listing:navigated", m[1]); } catch { /* window gone */ }
     };
-    v.webContents.on("did-navigate", (_e, url) => report(url));
+    v.webContents.on("did-navigate", (_e, url) => { report(url); sendPrice(null); scheduleReadPrice(v); });
     v.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => {
-      if (isMainFrame) report(url);
+      if (isMainFrame) { report(url); sendPrice(null); scheduleReadPrice(v); }
     });
+    v.webContents.on("did-finish-load", () => scheduleReadPrice(v));
   }
   win.contentView.addChildView(v);
   return v;
+}
+
+// ---- buy-box price from the docked listing ----------------------------------
+// Runs inside walmart.com after a listing loads and pulls the current ("Now")
+// price and the crossed-out "was" price: structured data first (stable across
+// redesigns), then the page's Next.js payload, then the visible price element.
+// The renderer offers the result as a one-click During Incentive value.
+const PRICE_SCRIPT = `(() => {
+  const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
+  const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  try {
+    for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
+      const j = JSON.parse(el.textContent); const arr = Array.isArray(j) ? j : [j];
+      for (const o of arr) {
+        if (!o || !/product/i.test(String(o["@type"]))) continue;
+        const offs = Array.isArray(o.offers) ? o.offers : o.offers ? [o.offers] : [];
+        for (const of_ of offs) { const p = num(of_?.price ?? of_?.lowPrice); if (ok(p)) return { price: p, was: null, src: "ld" }; }
+      }
+    }
+  } catch {}
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const pi = nd?.props?.pageProps?.initialData?.data?.product?.priceInfo;
+    const p = pi?.currentPrice?.price, w = pi?.wasPrice?.price ?? pi?.listPrice?.price;
+    if (ok(p)) return { price: p, was: ok(w) ? w : null, src: "next" };
+  } catch {}
+  const el = document.querySelector('[itemprop="price"]') || document.querySelector('[data-testid="price-wrap"] [itemprop="price"]') || document.querySelector('span[data-seo-id="hero-price"]');
+  const p = num(el?.getAttribute?.("content") || el?.textContent);
+  if (ok(p)) { const w = num(document.querySelector('[data-testid="price-wrap"] .strike, [data-seo-id="strike-through-price"]')?.textContent); return { price: p, was: ok(w) ? w : null, src: "dom" }; }
+  return null;
+})()`;
+let priceTimers = [];
+let lastPrice = null;
+function sendPrice(p) {
+  lastPrice = p;
+  try { win?.webContents.send("listing:price", p); } catch { /* window gone */ }
+}
+function scheduleReadPrice(v) {
+  for (const t of priceTimers) clearTimeout(t);
+  priceTimers = [];
+  const item = customerItem;
+  const attempt = async () => {
+    if (panes.customer !== v || customerItem !== item || v.webContents.isDestroyed()) return false;
+    try {
+      const r = await v.webContents.executeJavaScript(PRICE_SCRIPT, true);
+      if (r && r.price) { sendPrice({ itemId: item, price: r.price, was: r.was ?? null }); return true; }
+    } catch { /* page navigated mid-read */ }
+    return false;
+  };
+  // walmart.com hydrates late; retry a few times, stop at the first hit
+  let done = false;
+  for (const ms of [400, 1500, 3500, 7000]) {
+    priceTimers.push(setTimeout(async () => { if (!done && await attempt()) done = true; }, ms));
+  }
 }
 
 const customerUrl = (itemId) => `https://www.walmart.com/ip/${encodeURIComponent(itemId)}`;
@@ -583,6 +638,7 @@ app.whenReady().then(() => {
   ipcMain.handle("sheet:template", () => saveImportTemplate());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
   ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
+  ipcMain.handle("listing:price", () => lastPrice);
   ipcMain.handle("update:check", (_e, manual) => checkForUpdates(!!manual));
   ipcMain.handle("update:download", () => downloadUpdate());
   ipcMain.handle("update:install", () => installUpdate());

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("api", {
   openExternal: (itemId) => ipcRenderer.invoke("listing:openExternal", itemId),
   onListingLoading: (cb) => ipcRenderer.on("listing:loading", (_e, loading) => cb(loading)),
   onListingNavigated: (cb) => ipcRenderer.on("listing:navigated", (_e, itemId) => cb(itemId)),
+  onListingPrice: (cb) => ipcRenderer.on("listing:price", (_e, p) => cb(p)),
+  listingPrice: () => ipcRenderer.invoke("listing:price"),
   readClipboard: () => ipcRenderer.invoke("clip:read"),
   writeClipboard: (t) => ipcRenderer.invoke("clip:write", t),
   importSheet: () => ipcRenderer.invoke("sheet:import"),

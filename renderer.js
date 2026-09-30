@@ -730,7 +730,32 @@ function renderDetailBar() {
   $("curItem").textContent = it ? (it.itemId ? `item ${it.itemId}` : "no item ID yet") : "";
   $("prevBtn").disabled = !(selected > 0);
   $("nextBtn").disabled = !(selected >= 0 && selected < items.length - 1);
+  renderBuyBox();
 }
+
+// ---- buy-box suggestion ----------------------------------------------------
+// main.js reads the listing's current price after each load; when it belongs
+// to the selected row, offer it as that row's During Incentive price.
+let livePrice = null; // { itemId, price, was } | null
+function renderBuyBox() {
+  const it = items[selected];
+  const pill = $("buyBox");
+  const show = !!(it && livePrice && it.itemId && String(it.itemId).trim() === String(livePrice.itemId) && paneMode === "customer" && !paneClosed);
+  pill.classList.toggle("hidden", !show);
+  if (!show) return;
+  $("buyBoxPrice").textContent = money(livePrice.price);
+  pill.title = livePrice.was ? `Walmart shows $${money(livePrice.price)} (was $${money(livePrice.was)})` : `Walmart shows $${money(livePrice.price)}`;
+  pill.classList.toggle("matched", Math.abs(safe(selected, "during") - livePrice.price) < 0.005);
+}
+$("buyBoxUse").addEventListener("click", () => {
+  const it = items[selected];
+  if (!it || !livePrice || String(it.itemId).trim() !== String(livePrice.itemId)) return;
+  applyMutation(() => setCell(selected, "during", String(livePrice.price)));
+  persist();
+  render();
+});
+window.api.onListingPrice((p) => { livePrice = p; renderBuyBox(); });
+window.api.listingPrice().then((p) => { if (p) { livePrice = p; renderBuyBox(); } });
 
 // ---- selection + docked listing --------------------------------------------
 function slotBounds() {
