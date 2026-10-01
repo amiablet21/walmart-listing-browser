@@ -63,6 +63,16 @@
           <path d="M17 21v-8H7v8" /><path d="M7 3v5h8" />
         </svg>
       </button>
+      <span class="tb-right">
+        <!-- walks every listing through the hidden Walmart view; click again to stop -->
+        <button id="scanBtn" class="tb-ghost scan" title="Read the buy box of every listing, one by one, and suggest prices on all rows">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" />
+          </svg>
+          <span>Scan buy boxes</span>
+        </button>
+        <button id="applyAllBtn" class="primary apply-all hidden" title="Write every pending During / Before suggestion into the sheet (one undo step)">Apply suggestions</button>
+      </span>
       <!-- only shown while the listing pane is closed -->
       <button id="paneOpenBtn" class="tb-ghost pane-open" title="Show the Walmart listing pane" aria-label="Show listing pane">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

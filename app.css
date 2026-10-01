@@ -57,7 +57,14 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* listing pane closed: the sheet takes the whole window */
 body.pane-closed #detail, body.pane-closed #splitBar { display: none; }
 body.pane-closed #side { width: auto !important; flex: 1 1 auto; }
-.toolbar #paneOpenBtn { display: none; margin-left: auto; gap: 6px; font-size: 12px; }
+.toolbar .tb-right { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.toolbar #scanBtn { gap: 6px; font-size: 12px; }
+.toolbar #scanBtn.scanning { color: var(--accent); background: var(--accent-tint); }
+.toolbar #scanBtn.scanning svg { animation: sugSpin2 1.2s linear infinite; }
+@keyframes sugSpin2 { to { transform: rotate(360deg); } }
+.toolbar #applyAllBtn { padding: 5px 12px; font-size: 12px; }
+.toolbar #applyAllBtn.hidden { display: none; }
+.toolbar #paneOpenBtn { display: none; gap: 6px; font-size: 12px; }
 body.pane-closed .toolbar #paneOpenBtn { display: inline-flex; }
 .detail-bar #paneCloseBtn { font-size: 18px; margin-left: 4px; }
 
