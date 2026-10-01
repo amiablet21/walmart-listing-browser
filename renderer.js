@@ -772,10 +772,20 @@ function decorateBuyBox(tb) {
     const before = safe(selected, "before");
     const pct = row.querySelector('td[data-field="pct"]');
     if (pct && before > 0) { pct.textContent = chPct((p - before) / before * 100); pct.classList.add("sug-ghost"); }
+    td.appendChild(tag);
   } else {
-    tag.textContent = `↵ ${money(p)}`;
+    // keep the real value where it is; the tag floats in the cell's spare
+    // left space, shrinking to just the arrow when the column is narrow
+    const val = document.createElement("span");
+    val.textContent = td.textContent;
+    td.textContent = "";
+    td.appendChild(val);
+    td.classList.add("has-sug");
+    tag.textContent = `↵${money(p)}`;
+    td.appendChild(tag);
+    const free = td.clientWidth - val.offsetWidth - 18; // right padding + tag offset + gap
+    if (tag.offsetWidth > free) tag.textContent = "↵";
   }
-  td.appendChild(tag);
   td.title = tag.title;
 }
 window.api.onListingPrice((p) => { livePrice = p; render(); });

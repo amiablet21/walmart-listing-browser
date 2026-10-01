@@ -316,6 +316,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   line-height: 16px; white-space: nowrap; cursor: pointer; opacity: 1;
 }
 #sheet td .sug-tag:hover { background: var(--accent-hover); }
+/* on a row that already has a price the tag sits in the cell's free left
+   space (numbers are right-aligned) so the value never gets clipped */
+#sheet td.has-sug { position: relative; }
+#sheet td.has-sug .sug-tag { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); margin: 0; padding: 0 5px; font-size: 9.5px; }
 .detail-actions { margin-left: auto; display: flex; gap: 6px; }
 
 #listingSlot { flex: 1; position: relative; background: var(--card); }
