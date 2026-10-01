@@ -1,7 +1,7 @@
 // Walmart Listing Browser — Electron main process.
 // Keeps a local list of { sku, itemId } rows and loads the live walmart.com
 // listing for the selected row into a docked browser pane on the right.
-const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
@@ -380,7 +380,23 @@ let paneZoom = 1; // 100% by default; the user's adjustment persists (ui.json)
 let paneWanted = false;  // whether the renderer currently wants a pane visible
 let paneLoading = false; // true only while WE are loading (not walmart's own background loads)
 
+// While a scan runs the hidden page only has to yield numbers, so images,
+// media and fonts are refused — most of a listing's download. Off again the
+// moment the scan ends, so the visible pane looks normal.
+let leanLoading = false;
+let leanHooked = false;
+function hookLeanLoading() {
+  if (leanHooked) return;
+  leanHooked = true;
+  const ses = session.fromPartition("persist:listing");
+  ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) => {
+    const t = details.resourceType;
+    cb({ cancel: leanLoading && (t === "image" || t === "media" || t === "font") });
+  });
+}
+
 function makePane(mode) {
+  hookLeanLoading();
   const v = new WebContentsView({
     webPreferences: {
       partition: "persist:listing", // one session for both panes: log in once
@@ -430,7 +446,8 @@ function makePane(mode) {
     v.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => {
       if (isMainFrame) { report(url); sendPrice(null); scheduleReadPrice(v); }
     });
-    v.webContents.on("did-finish-load", () => scheduleReadPrice(v));
+    v.webContents.on("dom-ready", () => scheduleReadPrice(v));       // data payload is already in the HTML
+    v.webContents.on("did-finish-load", () => scheduleReadPrice(v));  // fallback for late-hydrating prices
   }
   win.contentView.addChildView(v);
   return v;
@@ -533,9 +550,10 @@ function sendPrice(p) {
   try { win?.webContents.send("listing:price", p); } catch { /* window gone */ }
 }
 function scheduleReadPrice(v) {
+  const item = customerItem;
+  if (lastPrice && lastPrice.itemId === item) return; // already read since this navigation
   for (const t of priceTimers) clearTimeout(t);
   priceTimers = [];
-  const item = customerItem;
   const attempt = async () => {
     if (panes.customer !== v || customerItem !== item || v.webContents.isDestroyed()) return false;
     try {
@@ -543,7 +561,7 @@ function scheduleReadPrice(v) {
       if (r && r.price) {
         let sellers = {}, offers = [];
         try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
-        if (sellers.others > 0) {
+        if (sellers.others > 0 && !leanLoading) { // the panel costs ~2 s; scans skip it, hovering fetches it later
           try { offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { /* optional */ }
         }
         if (customerItem !== item) return false; // user moved on while the panel was loading
@@ -555,7 +573,7 @@ function scheduleReadPrice(v) {
   };
   // walmart.com hydrates late; retry a few times, stop at the first hit
   let done = false;
-  for (const ms of [400, 1500, 3500, 7000]) {
+  for (const ms of [0, 400, 1500, 3500, 7000]) {
     priceTimers.push(setTimeout(async () => { if (!done && await attempt()) done = true; }, ms));
   }
 }
@@ -615,6 +633,18 @@ function panePrefetch(itemId) {
     scheduleReadPrice(v);          // page is there, price wasn't caught yet
   }
   return true;
+}
+// Fetch the other sellers' prices for the item currently loaded in the
+// customer pane (used when a hover card needs them after a lean scan).
+async function paneOffers(itemId) {
+  const v = panes.customer;
+  if (!v || v.webContents.isDestroyed() || customerItem !== itemId) return null;
+  try {
+    const offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || [];
+    if (customerItem !== itemId) return null;
+    if (lastPrice && lastPrice.itemId === itemId) sendPrice({ ...lastPrice, offers });
+    return offers;
+  } catch { return null; }
 }
 function paneHide() {
   paneWanted = false;
@@ -722,6 +752,8 @@ app.whenReady().then(() => {
   ipcMain.handle("listing:show", (_e, { itemId, bounds, mode }) => paneShow(itemId, bounds, mode));
   ipcMain.handle("listing:hide", () => paneHide());
   ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
+  ipcMain.handle("listing:offers", (_e, itemId) => paneOffers(itemId));
+  ipcMain.handle("listing:lean", (_e, on) => { leanLoading = !!on; return leanLoading; });
   ipcMain.handle("listing:zoom", (_e, dir) => paneZoomBy(dir));
   ipcMain.handle("listing:openExternal", (_e, itemId) =>
     shell.openExternal(`https://www.walmart.com/ip/${encodeURIComponent(itemId)}`));

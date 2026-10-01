@@ -927,7 +927,14 @@ function showCard(i, anchor) {
   let rows = shown.map((o, k) =>
     `<div class="row${k === 0 ? " bb" : ""}"><span class="n">${k + 1}</span><span class="s">${esc(o.seller)}</span>` +
     `${isMyStore(o.seller) ? '<span class="you">YOU</span>' : ""}<span class="p">$${money(o.price)}</span></div>`).join("");
-  if (!shown.length) rows = `<div class="row"><span class="s muted">${others != null ? `${others} other seller${others === 1 ? "" : "s"} · prices not read` : "Seller details not read"}</span></div>`;
+  if (others > 0 && shown.length < 2 && !have.offersTried && !scanning) {
+    // a lean scan skips the sellers panel — load it now for this one item
+    const id = String(it.itemId ?? "").trim();
+    have.offersTried = true;
+    (paneClosed ? window.api.prefetchListing(id).then(() => window.api.listingOffers(id)) : window.api.listingOffers(id))
+      .then((o) => { if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor); } });
+  }
+  if (!shown.length) rows = `<div class="row"><span class="s muted">${others > 0 && have.offersTried && !scanning ? `${others} other seller${others === 1 ? "" : "s"} · loading prices…` : others != null ? `${others} other seller${others === 1 ? "" : "s"} · prices not read` : "Seller details not read"}</span></div>`;
   const more = total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
   const yours = !(during > 0) ? "No During price yet"
     : Math.abs(diff) < 0.005 ? "Your During matches the buy box"
@@ -980,8 +987,11 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); 
 // the button again stops it. Afterwards "Apply N suggestions" writes every
 // pending During (and blank Before) suggestion in one undoable step.
 let scanning = false, scanQueue = [], scanDone = 0, scanTotal = 0;
-const SCAN_PAUSE_MS = 1000;     // breathing room between listings
+const SCAN_PAUSE_MS = 350;      // breathing room between listings
 const SCAN_TIMEOUT_MS = 25000;  // give up on a listing after this
+const SCAN_FRESH_MS = 24 * 60 * 60 * 1000; // rows read this recently are skipped (Shift+click to force)
+const isFresh = (it) => !!(it.buyBox?.price && Date.now() - (it.buyBox.at || 0) < SCAN_FRESH_MS);
+let scanSkipped = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function waitForPrice(id, ms) {
   return new Promise((resolve) => {
@@ -1001,10 +1011,11 @@ function renderScanState() {
   btn.classList.toggle("paused", scanPaused());
   btn.querySelector("span").textContent = scanning ? `Stop scan · ${scanDone}/${scanTotal}`
     : scanPaused() ? `Resume scan · ${scanDone}/${scanTotal}` : "Scan buy boxes";
+  const skipped = scanSkipped ? ` (${scanSkipped} read in the last 24 h skipped)` : "";
   btn.title = scanning
-    ? "Reading every listing's buy box one by one — click to stop"
+    ? `Reading every listing's buy box one by one${skipped} — click to stop`
     : scanPaused() ? `Stopped with ${scanQueue.length} listing${scanQueue.length === 1 ? "" : "s"} left — click to continue where it left off`
-    : "Read the buy box of every listing, one by one, and suggest prices on all rows";
+    : "Read the buy box of every listing not read in the last 24 h, one by one, and suggest prices on all rows. Shift+click to re-read everything.";
   $("scanRestartBtn").classList.toggle("hidden", !scanPaused());
   const n = suggestionCount();
   const apply = $("applyAllBtn");
@@ -1015,15 +1026,20 @@ function renderScanState() {
   else ph.textContent = PLACEHOLDER_TEXT;
 }
 const PLACEHOLDER_TEXT = $("slotPlaceholder").textContent;
-async function startScan(fresh = !scanPaused()) {
+async function startScan(fresh = !scanPaused(), force = false) {
   if (scanning) return;
   if (fresh) {
-    scanQueue = items.map((it) => String(it.itemId ?? "").trim()).filter(Boolean);
+    const withId = items.filter((it) => String(it.itemId ?? "").trim());
+    const todo = force ? withId : withId.filter((it) => !isFresh(it));
+    scanSkipped = withId.length - todo.length;
+    scanQueue = [...new Set(todo.map((it) => String(it.itemId).trim()))];
     scanTotal = scanQueue.length;
     scanDone = 0;
-    if (!scanTotal) { alert("No rows have an Item ID to look up."); return; }
+    if (!withId.length) { alert("No rows have an Item ID to look up."); return; }
+    if (!scanTotal) { alert(`All ${withId.length} rows were read in the last 24 hours. Shift+click Scan to re-read them anyway.`); return; }
   }
   scanning = true;
+  window.api.setLeanLoading(true);
   window.api.hideListing();
   renderScanState();
   while (scanning && scanQueue.length) {
@@ -1047,6 +1063,7 @@ async function startScan(fresh = !scanPaused()) {
 }
 function stopScan() {
   scanning = false;              // the queue is kept, so the scan can resume
+  window.api.setLeanLoading(false);
   const w = [...priceWaiters.values()];
   priceWaiters.clear();
   w.forEach((resolve) => resolve(null));
@@ -1055,6 +1072,7 @@ function stopScan() {
 function finishScan() {
   scanning = false;              // scanQueue still has entries only if it was stopped
   priceWait = null;
+  window.api.setLeanLoading(false);
   renderScanState();
   render();
   dockListing(); // back to the selected row's page
@@ -1073,8 +1091,8 @@ function applyAllSuggestions() {
   render();
   if (n) alert(`Applied ${n} suggestion${n === 1 ? "" : "s"}. Check the rows (amber % Change = under 4%), and Ctrl+Z undoes all of it.`);
 }
-$("scanBtn").addEventListener("click", () => (scanning ? stopScan() : startScan()));
-$("scanRestartBtn").addEventListener("click", () => { if (!scanning) { scanQueue = []; startScan(true); } });
+$("scanBtn").addEventListener("click", (e) => (scanning ? stopScan() : startScan(e.shiftKey ? true : !scanPaused(), e.shiftKey)));
+$("scanRestartBtn").addEventListener("click", (e) => { if (!scanning) { scanQueue = []; startScan(true, e.shiftKey); } });
 $("applyAllBtn").addEventListener("click", applyAllSuggestions);
 
 // ---- before-price suggestion -----------------------------------------------
