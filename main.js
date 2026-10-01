@@ -380,10 +380,10 @@ let paneZoom = 1; // 100% by default; the user's adjustment persists (ui.json)
 let paneWanted = false;  // whether the renderer currently wants a pane visible
 let paneLoading = false; // true only while WE are loading (not walmart's own background loads)
 
-// While a scan runs the hidden page only has to yield numbers, so images,
-// media and fonts are refused — most of a listing's download. Off again the
-// moment the scan ends, so the visible pane looks normal.
-let leanLoading = false;
+// The worker view only ever has to yield numbers, so its images, media and
+// fonts are refused — most of a listing's download. The visible panes are
+// untouched (the filter checks which view is asking).
+let workerContentsId = -1;
 let leanHooked = false;
 function hookLeanLoading() {
   if (leanHooked) return;
@@ -391,7 +391,7 @@ function hookLeanLoading() {
   const ses = session.fromPartition("persist:listing");
   ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) => {
     const t = details.resourceType;
-    cb({ cancel: leanLoading && (t === "image" || t === "media" || t === "font") });
+    cb({ cancel: details.webContentsId === workerContentsId && (t === "image" || t === "media" || t === "font") });
   });
 }
 
@@ -435,21 +435,33 @@ function makePane(mode) {
   // When the user browses to another listing or variant inside the customer
   // pane, tell the renderer so it can jump to that row. Variant clicks are
   // SPA history pushes, hence also did-navigate-in-page.
-  if (mode === "customer") {
+  // Listing views (the visible customer pane and the hidden worker) read the
+  // price after every navigation. Only the visible pane reports where the
+  // user browsed, so the sheet can jump to that row.
+  if (mode === "customer" || mode === "worker") {
     const report = (url) => {
       const m = /\/ip\/(?:[^/]+\/)?(\d{5,})(?:[/?#]|$)/.exec(url);
-      if (!m || m[1] === customerItem) return;
-      customerItem = m[1]; // a later row click on this item won't reload
-      try { win?.webContents.send("listing:navigated", m[1]); } catch { /* window gone */ }
+      if (!m || m[1] === v.__item) return;
+      v.__item = m[1];
+      v.__lastPrice = null;
+      if (mode === "customer") {
+        customerItem = m[1]; // a later row click on this item won't reload
+        try { win?.webContents.send("listing:navigated", m[1]); } catch { /* window gone */ }
+      }
     };
-    v.webContents.on("did-navigate", (_e, url) => { report(url); sendPrice(null); scheduleReadPrice(v); });
+    v.webContents.on("did-navigate", (_e, url) => { report(url); scheduleReadPrice(v); });
     v.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => {
-      if (isMainFrame) { report(url); sendPrice(null); scheduleReadPrice(v); }
+      if (isMainFrame) { report(url); scheduleReadPrice(v); }
     });
     v.webContents.on("dom-ready", () => scheduleReadPrice(v));       // data payload is already in the HTML
     v.webContents.on("did-finish-load", () => scheduleReadPrice(v));  // fallback for late-hydrating prices
   }
   win.contentView.addChildView(v);
+  if (mode === "worker") {
+    workerContentsId = v.webContents.id;
+    v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); // real size: the page lays out and hydrates normally
+    v.setVisible(false);
+  }
   return v;
 }
 
@@ -543,29 +555,31 @@ const OFFERS_SCRIPT = `(async () => {
   } catch {}
   return dedupe(found);
 })()`;
-let priceTimers = [];
-let lastPrice = null;
-function sendPrice(p) {
+// Each listing view tracks its own item, last read and retry timers.
+let lastPrice = null; // most recent read from any view (the renderer asks for it on startup)
+function sendPrice(v, p) {
+  if (v) v.__lastPrice = p;
   lastPrice = p;
   try { win?.webContents.send("listing:price", p); } catch { /* window gone */ }
 }
-function scheduleReadPrice(v) {
-  const item = customerItem;
-  if (lastPrice && lastPrice.itemId === item) return; // already read since this navigation
-  for (const t of priceTimers) clearTimeout(t);
-  priceTimers = [];
+function scheduleReadPrice(v, withOffers = v !== panes.worker) {
+  const item = v.__item;
+  if (!item) return;
+  if (v.__lastPrice && v.__lastPrice.itemId === item) return; // already read since this navigation
+  for (const t of v.__timers || []) clearTimeout(t);
+  v.__timers = [];
   const attempt = async () => {
-    if (panes.customer !== v || customerItem !== item || v.webContents.isDestroyed()) return false;
+    if (v.__item !== item || v.webContents.isDestroyed()) return false;
     try {
       const r = await v.webContents.executeJavaScript(PRICE_SCRIPT, true);
       if (r && r.price) {
         let sellers = {}, offers = [];
         try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
-        if (sellers.others > 0 && !leanLoading) { // the panel costs ~2 s; scans skip it, hovering fetches it later
+        if (sellers.others > 0 && withOffers) { // the panel costs ~2 s; scans skip it, hovering fetches it later
           try { offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { /* optional */ }
         }
-        if (customerItem !== item) return false; // user moved on while the panel was loading
-        sendPrice({ itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, offers });
+        if (v.__item !== item) return false; // moved on while the panel was loading
+        sendPrice(v, { itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, offers });
         return true;
       }
     } catch { /* page navigated mid-read */ }
@@ -574,7 +588,7 @@ function scheduleReadPrice(v) {
   // walmart.com hydrates late; retry a few times, stop at the first hit
   let done = false;
   for (const ms of [0, 400, 1500, 3500, 7000]) {
-    priceTimers.push(setTimeout(async () => { if (!done && await attempt()) done = true; }, ms));
+    v.__timers.push(setTimeout(async () => { if (!done && await attempt()) done = true; }, ms));
   }
 }
 
@@ -605,6 +619,8 @@ function paneShow(itemId, b, mode) {
     }
   } else if (itemId && customerItem !== itemId) {
     customerItem = itemId;
+    v.__item = itemId;
+    v.__lastPrice = null;
     paneLoading = true;
     v.webContents.loadURL(customerUrl(itemId));
   }
@@ -612,37 +628,47 @@ function paneShow(itemId, b, mode) {
   if (paneLoading && v.webContents.isLoading()) v.setVisible(false);
   return true;
 }
-// Load a listing into the customer pane without showing it, so the price
-// suggestion keeps working while the user has the pane closed. The view
-// stays invisible (paneWanted=false) through did-stop-loading.
+
+// ---- hidden worker view ------------------------------------------------------
+// All background reads (pane closed, scans, seller lookups for the hover
+// card) go through a view that is never shown, so what the user is looking
+// at in the pane is never disturbed.
+function ensureWorker() {
+  if (!panes.worker) panes.worker = makePane("worker");
+  return panes.worker;
+}
+function workerLoad(itemId) {
+  const w = ensureWorker();
+  if (w.__item !== itemId) {
+    w.__item = itemId;
+    w.__lastPrice = null;
+    w.webContents.loadURL(customerUrl(itemId));
+    return true;
+  }
+  return false;
+}
 function panePrefetch(itemId) {
   if (!itemId) return false;
-  const created = !panes.customer;
-  if (created) panes.customer = makePane("customer");
-  const v = panes.customer;
-  activePane = "customer";
-  paneWanted = false;
-  for (const o of Object.values(panes)) o?.setVisible(false);
-  if (customerItem !== itemId) {
-    customerItem = itemId;
-    paneLoading = true;
-    v.webContents.loadURL(customerUrl(itemId));
-  } else if (lastPrice && lastPrice.itemId === itemId) {
-    sendPrice(lastPrice);          // already read — answer from memory
-  } else {
-    scheduleReadPrice(v);          // page is there, price wasn't caught yet
+  const w = ensureWorker();
+  if (!workerLoad(itemId)) {
+    if (w.__lastPrice && w.__lastPrice.itemId === itemId) sendPrice(w, w.__lastPrice); // answer from memory
+    else scheduleReadPrice(w);                                                           // page is there, price wasn't caught yet
   }
   return true;
 }
-// Fetch the other sellers' prices for the item currently loaded in the
-// customer pane (used when a hover card needs them after a lean scan).
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// The other sellers' prices for one item, on demand (the hover card). Loads
+// the item in the worker if needed, waits for its price, then opens the panel.
 async function paneOffers(itemId) {
-  const v = panes.customer;
-  if (!v || v.webContents.isDestroyed() || customerItem !== itemId) return null;
+  if (!itemId) return null;
+  const w = ensureWorker();
+  workerLoad(itemId);
+  for (let i = 0; i < 50 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤15 s
+  if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
   try {
-    const offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || [];
-    if (customerItem !== itemId) return null;
-    if (lastPrice && lastPrice.itemId === itemId) sendPrice({ ...lastPrice, offers });
+    const offers = (await w.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || [];
+    if (w.__item !== itemId) return null;
+    sendPrice(w, { ...w.__lastPrice, offers });
     return offers;
   } catch { return null; }
 }
@@ -753,7 +779,6 @@ app.whenReady().then(() => {
   ipcMain.handle("listing:hide", () => paneHide());
   ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
   ipcMain.handle("listing:offers", (_e, itemId) => paneOffers(itemId));
-  ipcMain.handle("listing:lean", (_e, on) => { leanLoading = !!on; return leanLoading; });
   ipcMain.handle("listing:zoom", (_e, dir) => paneZoomBy(dir));
   ipcMain.handle("listing:openExternal", (_e, itemId) =>
     shell.openExternal(`https://www.walmart.com/ip/${encodeURIComponent(itemId)}`));

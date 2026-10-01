@@ -776,13 +776,41 @@ function startPriceWait(id) {
 function rowsWithItem(id) {
   return items.map((r, i) => (String(r.itemId ?? "").trim() === id ? i : -1)).filter((i) => i >= 0);
 }
+// Buy boxes belong to the item ID, not the row: a re-imported or pasted list
+// gets its reads back (from the current rows first, then a cache of the last
+// few thousand reads), so a scan afterwards only visits what's new or stale.
+const BB_CACHE_KEY = "buyBoxCache";
+let buyBoxCache = {};
+try { buyBoxCache = JSON.parse(localStorage.getItem(BB_CACHE_KEY) || "{}") || {}; } catch { buyBoxCache = {}; }
+function cacheBuyBoxes() {
+  for (const it of items) {
+    const id = String(it.itemId ?? "").trim();
+    if (id && it.buyBox?.price && (it.buyBox.at || 0) >= (buyBoxCache[id]?.at || 0)) buyBoxCache[id] = it.buyBox;
+  }
+  const ids = Object.keys(buyBoxCache);
+  if (ids.length > 3000) {
+    ids.sort((a, b) => (buyBoxCache[a].at || 0) - (buyBoxCache[b].at || 0));
+    for (const id of ids.slice(0, ids.length - 3000)) delete buyBoxCache[id];
+  }
+  try { localStorage.setItem(BB_CACHE_KEY, JSON.stringify(buyBoxCache)); } catch { /* quota */ }
+}
+function restoreBuyBoxes(rows) {
+  let n = 0;
+  for (const r of rows) {
+    const id = String(r.itemId ?? "").trim();
+    if (id && !r.buyBox?.price && buyBoxCache[id]?.price) { r.buyBox = buyBoxCache[id]; n++; }
+  }
+  return n;
+}
 function rememberPrice(p) {
   const id = String(p.itemId);
   for (const i of rowsWithItem(id)) {
+    const prev = items[i].buyBox;
     items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null,
-      offers: Array.isArray(p.offers) ? p.offers.slice(0, 12) : [], at: Date.now() };
+      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : (prev?.offers || []), at: Date.now() };
   }
   window.api.saveItems(items); // quiet save — not a user edit, so no undo step / flash
+  cacheBuyBoxes();
 }
 function markNoPrice(id) {
   for (const i of rowsWithItem(id)) {
@@ -927,14 +955,24 @@ function showCard(i, anchor) {
   let rows = shown.map((o, k) =>
     `<div class="row${k === 0 ? " bb" : ""}"><span class="n">${k + 1}</span><span class="s">${esc(o.seller)}</span>` +
     `${isMyStore(o.seller) ? '<span class="you">YOU</span>' : ""}<span class="p">$${money(o.price)}</span></div>`).join("");
-  if (others > 0 && shown.length < 2 && !have.offersTried && !scanning) {
-    // a lean scan skips the sellers panel — load it now for this one item
+  if (others > 0 && shown.length < 2 && !have.offersTried) {
+    // scans skip the sellers panel — the hidden worker loads it now for this one item
     const id = String(it.itemId ?? "").trim();
-    have.offersTried = true;
-    (paneClosed ? window.api.prefetchListing(id).then(() => window.api.listingOffers(id)) : window.api.listingOffers(id))
-      .then((o) => { if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor); } });
+    have.offersTried = "loading";
+    window.api.listingOffers(id).then((o) => {
+      have.offersTried = Array.isArray(o) && o.length ? "ok" : "none";
+      if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); }
+      if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor);
+    });
   }
-  if (!shown.length) rows = `<div class="row"><span class="s muted">${others > 0 && have.offersTried && !scanning ? `${others} other seller${others === 1 ? "" : "s"} · loading prices…` : others != null ? `${others} other seller${others === 1 ? "" : "s"} · prices not read` : "Seller details not read"}</span></div>`;
+  if (!shown.length || (others > 0 && shown.length < 2)) {
+    const note = others > 0
+      ? (have.offersTried === "loading" ? `${others} other seller${others === 1 ? "" : "s"} · loading prices…`
+        : have.offersTried === "none" ? `${others} other seller${others === 1 ? "" : "s"} · prices couldn't be read`
+        : `${others} other seller${others === 1 ? "" : "s"}`)
+      : others === 0 ? "No other sellers" : "Seller details not read";
+    rows += `<div class="row"><span class="s muted">${note}</span></div>`;
+  }
   const more = total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
   const yours = !(during > 0) ? "No During price yet"
     : Math.abs(diff) < 0.005 ? "Your During matches the buy box"
@@ -1021,11 +1059,7 @@ function renderScanState() {
   const apply = $("applyAllBtn");
   apply.classList.toggle("hidden", n === 0);
   apply.textContent = `Apply ${n} suggestion${n === 1 ? "" : "s"}`;
-  const ph = $("slotPlaceholder");
-  if (scanning) { ph.textContent = `Scanning listings… ${scanDone}/${scanTotal}`; if (!paneClosed) ph.style.display = ""; }
-  else ph.textContent = PLACEHOLDER_TEXT;
 }
-const PLACEHOLDER_TEXT = $("slotPlaceholder").textContent;
 async function startScan(fresh = !scanPaused(), force = false) {
   if (scanning) return;
   if (fresh) {
@@ -1039,8 +1073,6 @@ async function startScan(fresh = !scanPaused(), force = false) {
     if (!scanTotal) { alert(`All ${withId.length} rows were read in the last 24 hours. Shift+click Scan to re-read them anyway.`); return; }
   }
   scanning = true;
-  window.api.setLeanLoading(true);
-  window.api.hideListing();
   renderScanState();
   while (scanning && scanQueue.length) {
     const id = scanQueue.shift();
@@ -1063,7 +1095,6 @@ async function startScan(fresh = !scanPaused(), force = false) {
 }
 function stopScan() {
   scanning = false;              // the queue is kept, so the scan can resume
-  window.api.setLeanLoading(false);
   const w = [...priceWaiters.values()];
   priceWaiters.clear();
   w.forEach((resolve) => resolve(null));
@@ -1072,10 +1103,8 @@ function stopScan() {
 function finishScan() {
   scanning = false;              // scanQueue still has entries only if it was stopped
   priceWait = null;
-  window.api.setLeanLoading(false);
   renderScanState();
   render();
-  dockListing(); // back to the selected row's page
 }
 function applyAllSuggestions() {
   let n = 0;
@@ -1186,7 +1215,6 @@ $("paneCloseBtn").addEventListener("click", () => setPaneClosed(true));
 $("paneOpenBtn").addEventListener("click", () => setPaneClosed(false));
 
 function dockListing() {
-  if (scanning) return;   // the scan owns the pane until it finishes
   if (paneClosed) {
     // pane hidden: still load the listing off-screen so the buy-box price
     // suggestion keeps working; the During cell spins until it arrives
@@ -1404,6 +1432,7 @@ function handlePaste(text) {
         rows.push(fillComs({ sku: parts[0], itemId: parts[1] ?? "", before: parseNum(parts[2]), during: parseNum(parts[3]) }));
       }
       if (!rows.length) return;
+      restoreBuyBoxes(rows); // pasted rows get their remembered buy boxes back
       const at = selected >= 0 ? selected + 1 : items.length;
       items.splice(at, 0, ...rows);
     }
@@ -1962,28 +1991,40 @@ function finishImport(mode) {
   if (!mode || !rows.length) { closeImportModal(); return; }
   let added = rows.length;
   let skipped = 0;
+  let kept = 0;
+  cacheBuyBoxes(); // the rows about to go still hold reads worth keeping
   applyMutation(() => {
     if (mode === "replace") {
+      kept = restoreBuyBoxes(rows);
       items = rows;
       selected = -1;
       activeCell = null;
       $("slotPlaceholder").style.display = "";
     } else {
-      // add to bottom, skipping rows already in the table (same SKU + item ID)
-      const seen = new Set(items.map((r) => `${r.sku} ${r.itemId}`));
-      const fresh = rows.filter((r) => !seen.has(`${r.sku} ${r.itemId}`));
+      // add to bottom, skipping rows already in the table: same SKU + item ID,
+      // or same SKU when either side has no item ID yet
+      const key = (r) => `${r.sku} ${r.itemId}`;
+      const seen = new Set(items.map(key));
+      const skus = new Set(items.map((r) => r.sku));
+      const skusNoId = new Set(items.filter((r) => !r.itemId).map((r) => r.sku));
+      const dup = (r) => seen.has(key(r)) || skusNoId.has(r.sku) || (!r.itemId && skus.has(r.sku));
+      const fresh = rows.filter((r) => !dup(r));
       added = fresh.length;
       skipped = rows.length - fresh.length;
+      kept = restoreBuyBoxes(fresh);
       items.push(...fresh);
     }
   });
   persist();
   render();
   closeImportModal(); // restores the Walmart pane if a row is still selected
+  const keptNote = kept ? ` ${kept} of them already have a scanned buy box; Scan will only visit the rest.` : "";
   if (mode === "append") {
-    alert(skipped
+    alert((skipped
       ? `Added ${added} new row${added === 1 ? "" : "s"}. Skipped ${skipped} already in the table.`
-      : `Added ${added} row${added === 1 ? "" : "s"}.`);
+      : `Added ${added} row${added === 1 ? "" : "s"}.`) + keptNote);
+  } else if (kept) {
+    alert(`Replaced the table with ${rows.length} row${rows.length === 1 ? "" : "s"}.${keptNote}`);
   }
 }
 

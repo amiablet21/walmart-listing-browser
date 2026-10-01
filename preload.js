@@ -8,7 +8,6 @@ contextBridge.exposeInMainWorld("api", {
   hideListing: () => ipcRenderer.invoke("listing:hide"),
   prefetchListing: (itemId) => ipcRenderer.invoke("listing:prefetch", itemId),
   listingOffers: (itemId) => ipcRenderer.invoke("listing:offers", itemId),
-  setLeanLoading: (on) => ipcRenderer.invoke("listing:lean", on),
   zoomListing: (dir) => ipcRenderer.invoke("listing:zoom", dir),
   openExternal: (itemId) => ipcRenderer.invoke("listing:openExternal", itemId),
   onListingLoading: (cb) => ipcRenderer.on("listing:loading", (_e, loading) => cb(loading)),
