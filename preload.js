@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("api", {
   saveItems: (items) => ipcRenderer.invoke("items:save", items),
   showListing: (itemId, bounds, opts) => ipcRenderer.invoke("listing:show", { itemId, bounds, ...opts }),
   hideListing: () => ipcRenderer.invoke("listing:hide"),
+  prefetchListing: (itemId) => ipcRenderer.invoke("listing:prefetch", itemId),
   zoomListing: (dir) => ipcRenderer.invoke("listing:zoom", dir),
   openExternal: (itemId) => ipcRenderer.invoke("listing:openExternal", itemId),
   onListingLoading: (cb) => ipcRenderer.on("listing:loading", (_e, loading) => cb(loading)),

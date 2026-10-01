@@ -465,6 +465,27 @@ const PRICE_SCRIPT = `(() => {
   if (ok(p)) { const w = num(document.querySelector('[data-testid="price-wrap"] .strike, [data-seo-id="strike-through-price"]')?.textContent); return { price: p, was: ok(w) ? w : null, src: "dom" }; }
   return null;
 })()`;
+// Who holds the buy box and how many other sellers there are. Best effort:
+// the Next.js payload first, then the page text ("Sold and shipped by X",
+// "Compare all N sellers" / "More seller options (N)").
+const SELLERS_SCRIPT = `(() => {
+  const out = { seller: null, others: null };
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const pr = nd?.props?.pageProps?.initialData?.data?.product;
+    if (pr?.sellerName) out.seller = String(pr.sellerName).trim();
+    if (Number.isInteger(pr?.additionalOfferCount)) out.others = pr.additionalOfferCount;
+  } catch {}
+  try {
+    const text = document.body?.innerText || "";
+    if (!out.seller) { const m = /Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/i.exec(text); if (m) out.seller = m[1].trim(); }
+    if (out.others == null) {
+      const m = /Compare all (\\d+) sellers/i.exec(text) || /More seller options \\((\\d+)\\)/i.exec(text) || /(\\d+) more sellers?/i.exec(text);
+      if (m) out.others = Math.max(0, Number(m[1]) - (/Compare all/i.test(m[0]) ? 1 : 0));
+    }
+  } catch {}
+  return out;
+})()`;
 let priceTimers = [];
 let lastPrice = null;
 function sendPrice(p) {
@@ -479,7 +500,12 @@ function scheduleReadPrice(v) {
     if (panes.customer !== v || customerItem !== item || v.webContents.isDestroyed()) return false;
     try {
       const r = await v.webContents.executeJavaScript(PRICE_SCRIPT, true);
-      if (r && r.price) { sendPrice({ itemId: item, price: r.price, was: r.was ?? null }); return true; }
+      if (r && r.price) {
+        let sellers = {};
+        try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
+        sendPrice({ itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null });
+        return true;
+      }
     } catch { /* page navigated mid-read */ }
     return false;
   };
@@ -522,6 +548,28 @@ function paneShow(itemId, b, mode) {
   }
   // a load we started is still in flight → stay hidden behind the spinner
   if (paneLoading && v.webContents.isLoading()) v.setVisible(false);
+  return true;
+}
+// Load a listing into the customer pane without showing it, so the price
+// suggestion keeps working while the user has the pane closed. The view
+// stays invisible (paneWanted=false) through did-stop-loading.
+function panePrefetch(itemId) {
+  if (!itemId) return false;
+  const created = !panes.customer;
+  if (created) panes.customer = makePane("customer");
+  const v = panes.customer;
+  activePane = "customer";
+  paneWanted = false;
+  for (const o of Object.values(panes)) o?.setVisible(false);
+  if (customerItem !== itemId) {
+    customerItem = itemId;
+    paneLoading = true;
+    v.webContents.loadURL(customerUrl(itemId));
+  } else if (lastPrice && lastPrice.itemId === itemId) {
+    sendPrice(lastPrice);          // already read — answer from memory
+  } else {
+    scheduleReadPrice(v);          // page is there, price wasn't caught yet
+  }
   return true;
 }
 function paneHide() {
@@ -629,6 +677,7 @@ app.whenReady().then(() => {
   ipcMain.handle("items:save", (_e, items) => saveItems(Array.isArray(items) ? items : []));
   ipcMain.handle("listing:show", (_e, { itemId, bounds, mode }) => paneShow(itemId, bounds, mode));
   ipcMain.handle("listing:hide", () => paneHide());
+  ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
   ipcMain.handle("listing:zoom", (_e, dir) => paneZoomBy(dir));
   ipcMain.handle("listing:openExternal", (_e, itemId) =>
     shell.openExternal(`https://www.walmart.com/ip/${encodeURIComponent(itemId)}`));

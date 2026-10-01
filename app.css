@@ -319,7 +319,24 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* on a row that already has a price the tag sits in the cell's free left
    space (numbers are right-aligned) so the value never gets clipped */
 #sheet td.has-sug { position: relative; }
-#sheet td.has-sug .sug-tag { position: absolute; left: 4px; top: 50%; transform: translateY(-50%); margin: 0; padding: 0 5px; font-size: 9.5px; }
+#sheet td.has-sug .sug-tag, #sheet td.has-sug .sug-note, #sheet td.has-sug .sug-spin {
+  position: absolute; left: 4px; top: 50%; transform: translateY(-50%); margin: 0;
+}
+#sheet td.has-sug .sug-tag { padding: 0 5px; font-size: 9.5px; }
+/* quiet notes (pane closed): "✓ buy box", "+3 sellers" */
+#sheet td .sug-note {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; vertical-align: 1px;
+  background: var(--card-2); color: var(--muted); border: 1px solid var(--line);
+  font-size: 9.5px; font-style: normal; font-weight: 600; line-height: 14px; white-space: nowrap;
+}
+#sheet td.has-note { position: relative; }
+#sheet td.has-note .sug-note-right { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); margin: 0; }
+/* spinner while the hidden pane is still reading the price */
+#sheet td .sug-spin {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; box-sizing: border-box;
+  border: 2px solid var(--line); border-top-color: var(--accent); animation: sugSpin 0.8s linear infinite;
+}
+@keyframes sugSpin { from { transform: translateY(-50%) rotate(0deg); } to { transform: translateY(-50%) rotate(360deg); } }
 .detail-actions { margin-left: auto; display: flex; gap: 6px; }
 
 #listingSlot { flex: 1; position: relative; background: var(--card); }

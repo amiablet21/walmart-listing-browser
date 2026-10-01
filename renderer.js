@@ -739,13 +739,26 @@ function renderDetailBar() {
 // During cell shows it as a ghost value (with a % Change preview if the row is
 // still blank) or as a small tag after the existing value. Enter on that cell,
 // or a click on the tag, writes it in — after which it's an ordinary value.
-let livePrice = null; // { itemId, price, was } | null
+let livePrice = null; // { itemId, price, was, seller, others } | null
+let priceWait = null; // itemId being read in the background (pane closed)
+let priceWaitTimer = null;
+function startPriceWait(id) {
+  if (livePrice && String(livePrice.itemId) === id) { priceWait = null; return; }
+  priceWait = id;
+  clearTimeout(priceWaitTimer);
+  priceWaitTimer = setTimeout(() => { if (priceWait === id) { priceWait = null; render(); } }, 20000);
+}
+function liveFor(it) {
+  const id = String(it?.itemId ?? "").trim();
+  return id && livePrice && String(livePrice.itemId) === id ? livePrice : null;
+}
 function buyBoxSuggestion() {
   const it = items[selected];
-  if (!it || !livePrice || paneMode !== "customer" || paneClosed) return null;
-  if (String(it.itemId ?? "").trim() !== String(livePrice.itemId)) return null;
-  if (Math.abs(safe(selected, "during") - livePrice.price) < 0.005) return null;
-  return livePrice.price;
+  if (!it || !(paneClosed || paneMode === "customer")) return null;
+  const have = liveFor(it);
+  if (!have) return null;
+  if (Math.abs(safe(selected, "during") - have.price) < 0.005) return null;
+  return have.price;
 }
 function applyBuyBox() {
   const p = buyBoxSuggestion();
@@ -755,14 +768,80 @@ function applyBuyBox() {
   render();
 }
 function decorateBuyBox(tb) {
-  const p = buyBoxSuggestion();
-  if (p == null) return;
+  const it = items[selected];
+  if (!it || !(paneClosed || paneMode === "customer")) return;
   const row = tb.querySelectorAll(".sku-row")[selected];
   const td = row?.querySelector('td[data-field="during"]');
   if (!td || td.classList.contains("editing")) return;
+  const id = String(it.itemId ?? "").trim();
+  const have = liveFor(it);
+  // keep the real value where it is; notes float in the cell's spare left space
+  const floatLeft = () => {
+    const val = document.createElement("span");
+    val.textContent = td.textContent;
+    td.textContent = "";
+    td.appendChild(val);
+    td.classList.add("has-sug");
+    return val;
+  };
+  if (!have) {
+    if (paneClosed && id && priceWait === id) {
+      floatLeft();
+      const sp = document.createElement("span");
+      sp.className = "sug-spin";
+      td.appendChild(sp);
+      td.title = "Reading Walmart's price…";
+    }
+    return;
+  }
+  const others = Number.isInteger(have.others) ? have.others : null;
+  const tip = [
+    `Walmart buy box is $${money(have.price)}`,
+    have.seller ? `sold by ${have.seller}` : null,
+    others != null ? `${others} other seller${others === 1 ? "" : "s"}` : null,
+  ].filter(Boolean).join(" · ");
+  if (paneClosed && (others != null || have.seller)) {
+    // only when the page isn't on screen: who else is selling. Lives in the
+    // Item ID cell, which has spare room; skipped if it would collide.
+    const idTd = row.querySelector('td[data-field="itemId"]');
+    if (idTd) {
+      const note = document.createElement("span");
+      note.className = "sug-note sug-note-right";
+      note.title = tip;
+      const txt = document.createElement("span");
+      txt.textContent = idTd.textContent;
+      idTd.textContent = "";
+      idTd.appendChild(txt);
+      idTd.classList.add("has-note");
+      idTd.appendChild(note);
+      // longest wording that fits beside the item ID, else nothing
+      const options = others != null
+        ? (others === 0 ? ["only seller", "only"] : [`+${others} other seller${others === 1 ? "" : "s"}`, `+${others} seller${others === 1 ? "" : "s"}`, `+${others}`])
+        : [`sold by ${have.seller}`, have.seller];
+      const fits = () => txt.offsetWidth + note.offsetWidth + 20 <= idTd.clientWidth; // paddings + gap
+      let placed = false;
+      for (const text of options) { note.textContent = text; if (fits()) { placed = true; break; } }
+      if (!placed) { note.remove(); idTd.classList.remove("has-note"); }
+      else idTd.title = tip;
+    }
+  }
+  const p = buyBoxSuggestion();
+  if (p == null) {
+    // already matches — with the pane closed say so (there's no page to see)
+    if (paneClosed) {
+      const val = floatLeft();
+      const ok = document.createElement("span");
+      ok.className = "sug-note";
+      ok.textContent = "✓ buy box";
+      td.appendChild(ok);
+      if (val.offsetWidth + ok.offsetWidth + 18 > td.clientWidth) ok.textContent = "✓";
+      td.title = tip;
+    }
+    return;
+  }
   const tag = document.createElement("span");
   tag.className = "sug-tag";
-  tag.title = `Walmart buy box is $${money(p)} — click or press Enter to use it`;
+  tag.title = `${tip} — click or press Enter to use it`;
   tag.addEventListener("click", (e) => { e.stopPropagation(); applyBuyBox(); });
   const blank = !(safe(selected, "during") > 0);
   if (blank) {
@@ -773,14 +852,9 @@ function decorateBuyBox(tb) {
     const pct = row.querySelector('td[data-field="pct"]');
     if (pct && before > 0) { pct.textContent = chPct((p - before) / before * 100); pct.classList.add("sug-ghost"); }
     td.appendChild(tag);
+    if (td.scrollWidth > td.clientWidth) tag.textContent = "↵";
   } else {
-    // keep the real value where it is; the tag floats in the cell's spare
-    // left space, shrinking to just the arrow when the column is narrow
-    const val = document.createElement("span");
-    val.textContent = td.textContent;
-    td.textContent = "";
-    td.appendChild(val);
-    td.classList.add("has-sug");
+    const val = floatLeft();
     tag.textContent = `↵${money(p)}`;
     td.appendChild(tag);
     const free = td.clientWidth - val.offsetWidth - 18; // right padding + tag offset + gap
@@ -788,7 +862,11 @@ function decorateBuyBox(tb) {
   }
   td.title = tag.title;
 }
-window.api.onListingPrice((p) => { livePrice = p; render(); });
+window.api.onListingPrice((p) => {
+  if (p) { livePrice = p; if (priceWait === String(p.itemId)) priceWait = null; }
+  else if (!paneClosed) livePrice = null;   // a visible navigation started; keep the last price while prefetching
+  render();
+});
 window.api.listingPrice().then((p) => { if (p) { livePrice = p; render(); } });
 
 // ---- selection + docked listing --------------------------------------------
@@ -811,13 +889,22 @@ function setPaneClosed(closed) {
   document.body.classList.toggle("pane-closed", closed);
   if (closed) window.api.hideListing();
   else setTimeout(dockListing, 0); // after layout, so the slot has its size
+  render(); // cell notes differ between open and closed
 }
 document.body.classList.toggle("pane-closed", paneClosed);
 $("paneCloseBtn").addEventListener("click", () => setPaneClosed(true));
 $("paneOpenBtn").addEventListener("click", () => setPaneClosed(false));
 
 function dockListing() {
-  if (paneClosed) { window.api.hideListing(); return; }
+  if (paneClosed) {
+    // pane hidden: still load the listing off-screen so the buy-box price
+    // suggestion keeps working; the During cell spins until it arrives
+    const it = items[selected];
+    const id = String(it?.itemId ?? "").trim();
+    if (id) { startPriceWait(id); window.api.prefetchListing(id); }
+    else { priceWait = null; window.api.hideListing(); }
+    return;
+  }
   const it = items[selected];
   if (paneMode === "seller") {
     $("slotPlaceholder").style.display = "none";
