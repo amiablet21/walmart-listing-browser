@@ -72,6 +72,13 @@
           <span>Scan buy boxes</span>
         </button>
         <button id="scanRestartBtn" class="tb-ghost hidden" title="Forget the stopped scan and start again from the first row">Start over</button>
+        <!-- hides / shows every scan decoration in the sheet -->
+        <button id="sugToggleBtn" class="tb-ghost hidden" title="Hide the scan results from the sheet">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" /><circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>Hide suggestions</span>
+        </button>
         <button id="applyAllBtn" class="primary apply-all hidden" title="Write every pending During / Before suggestion into the sheet (one undo step)">Apply suggestions</button>
       </span>
       <!-- only shown while the listing pane is closed -->

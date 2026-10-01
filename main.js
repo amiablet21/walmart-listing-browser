@@ -562,7 +562,9 @@ function sendPrice(v, p) {
   lastPrice = p;
   try { win?.webContents.send("listing:price", p); } catch { /* window gone */ }
 }
-function scheduleReadPrice(v, withOffers = v !== panes.worker) {
+// Never opens the sellers panel on its own: that visibly jumps the page the
+// user is reading. Seller prices come only from paneOffers (hidden worker).
+function scheduleReadPrice(v, withOffers = false) {
   const item = v.__item;
   if (!item) return;
   if (v.__lastPrice && v.__lastPrice.itemId === item) return; // already read since this navigation
@@ -575,7 +577,7 @@ function scheduleReadPrice(v, withOffers = v !== panes.worker) {
       if (r && r.price) {
         let sellers = {}, offers = [];
         try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
-        if (sellers.others > 0 && withOffers) { // the panel costs ~2 s; scans skip it, hovering fetches it later
+        if (sellers.others > 0 && withOffers) { // only on explicit request
           try { offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { /* optional */ }
         }
         if (v.__item !== item) return false; // moved on while the panel was loading

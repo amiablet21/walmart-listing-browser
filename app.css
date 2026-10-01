@@ -57,7 +57,8 @@ body.resizing { cursor: col-resize; user-select: none; }
 /* listing pane closed: the sheet takes the whole window */
 body.pane-closed #detail, body.pane-closed #splitBar { display: none; }
 body.pane-closed #side { width: auto !important; flex: 1 1 auto; }
-.toolbar .tb-right { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.toolbar .tb-right { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.toolbar .tb-right button { white-space: nowrap; }
 .toolbar #scanBtn { gap: 6px; font-size: 12px; }
 .toolbar #scanBtn.scanning { color: var(--accent); background: var(--accent-tint); }
 .toolbar #scanBtn.scanning svg { animation: sugSpin2 1.2s linear infinite; }
@@ -65,6 +66,9 @@ body.pane-closed #side { width: auto !important; flex: 1 1 auto; }
 .toolbar #scanBtn.paused { color: var(--accent); border: 1px solid var(--accent); }
 .toolbar #scanRestartBtn { font-size: 12px; }
 .toolbar #scanRestartBtn.hidden { display: none; }
+.toolbar #sugToggleBtn { gap: 5px; font-size: 12px; }
+.toolbar #sugToggleBtn.hidden { display: none; }
+.toolbar #sugToggleBtn.off { color: var(--accent); }
 .toolbar #applyAllBtn { padding: 5px 12px; font-size: 12px; }
 .toolbar #applyAllBtn.hidden { display: none; }
 .toolbar #paneOpenBtn { display: none; gap: 6px; font-size: 12px; }
@@ -356,6 +360,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .bbcard .row .p { font-variant-numeric: tabular-nums; margin-left: 8px; }
 .bbcard .you { color: var(--green); font-size: 10px; margin-left: 6px; font-weight: 700; }
 .bbcard .more { padding: 3px 0 0; }
+.bbcard button.mini { padding: 2px 8px; font-size: 11px; margin-left: 8px; white-space: nowrap; flex: none; }
 .bbcard .ft { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
 .bbcard .ft button { padding: 4px 12px; font-size: 11.5px; white-space: nowrap; flex: none; }
 .bbcard .ok { color: var(--green); font-weight: 600; white-space: nowrap; }

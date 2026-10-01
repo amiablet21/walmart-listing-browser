@@ -742,8 +742,8 @@ function render() {
     $("findCount").textContent = findMatches.length ? `${findIdx + 1} of ${findMatches.length}` : "0 results";
   }
 
-  decorateBuyBox(tb);
-  decorateBeforeSuggestion(tb);
+  if (hideSug) decorateSpinnerOnly(tb);
+  else { decorateBuyBox(tb); decorateBeforeSuggestion(tb); }
   renderScanState();
   renderDetailBar();
 }
@@ -842,6 +842,21 @@ const ago = (t) => {
   const m = Math.round((Date.now() - t) / 60000);
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
 };
+// With suggestions hidden, the row being read still shows its spinner
+function decorateSpinnerOnly(tb) {
+  if (!priceWait) return;
+  const i = items.findIndex((it) => String(it.itemId ?? "").trim() === priceWait);
+  const td = tb.querySelectorAll(".sku-row")[i]?.querySelector('td[data-field="during"]');
+  if (!td || td.classList.contains("editing")) return;
+  const val = document.createElement("span");
+  val.textContent = td.textContent;
+  td.textContent = "";
+  td.appendChild(val);
+  td.classList.add("has-sug");
+  const sp = document.createElement("span");
+  sp.className = "sug-spin";
+  td.appendChild(sp);
+}
 function decorateBuyBox(tb) {
   const rows = tb.querySelectorAll(".sku-row");
   // keep the real value where it is; notes float in the cell's spare left space
@@ -893,6 +908,7 @@ function decorateBuyBox(tb) {
         const ok = document.createElement("span");
         ok.className = "sug-note";
         ok.textContent = "✓ buy box";
+        ok.addEventListener("click", (e) => { e.stopPropagation(); showCard(i, td); });
         td.appendChild(ok);
         if (val.offsetWidth + ok.offsetWidth + 18 > td.clientWidth) ok.textContent = "✓";
         td.title = tip;
@@ -901,8 +917,8 @@ function decorateBuyBox(tb) {
     }
     const tag = document.createElement("span");
     tag.className = "sug-tag";
-    tag.title = `${tip} — click or press Enter to use it`;
-    tag.addEventListener("click", (e) => { e.stopPropagation(); applyBuyBox(i); });
+    tag.title = `${tip} — click for details, Enter to use it`;
+    tag.addEventListener("click", (e) => { e.stopPropagation(); showCard(i, td); });
     const blank = !(safe(i, "during") > 0);
     if (blank) {
       td.textContent = money(p);
@@ -924,10 +940,10 @@ function decorateBuyBox(tb) {
   });
 }
 
-// ---- buy-box hover card ------------------------------------------------------
-// Hovering a During cell that has a remembered buy box opens a card: the buy
+// ---- buy-box card ------------------------------------------------------------
+// Clicking a suggestion pill (or a "✓ buy box" note) opens a card: the buy
 // box price and age, the cheapest sellers (your own store marked once you've
-// named it), your During vs the buy box, and a Use button.
+// named it), your During vs the buy box, and a Use button that confirms.
 let cardTimer = null;
 let myStore = localStorage.getItem("myStoreName") || "";
 const isMyStore = (name) => !!myStore && !!name && name.trim().toLowerCase() === myStore.trim().toLowerCase();
@@ -955,25 +971,19 @@ function showCard(i, anchor) {
   let rows = shown.map((o, k) =>
     `<div class="row${k === 0 ? " bb" : ""}"><span class="n">${k + 1}</span><span class="s">${esc(o.seller)}</span>` +
     `${isMyStore(o.seller) ? '<span class="you">YOU</span>' : ""}<span class="p">$${money(o.price)}</span></div>`).join("");
-  if (others > 0 && shown.length < 2 && !have.offersTried) {
-    // scans skip the sellers panel — the hidden worker loads it now for this one item
-    const id = String(it.itemId ?? "").trim();
-    have.offersTried = "loading";
-    window.api.listingOffers(id).then((o) => {
-      have.offersTried = Array.isArray(o) && o.length ? "ok" : "none";
-      if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); }
-      if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor);
-    });
+  // Other sellers' prices are looked up only on request (the lookup opens
+  // Walmart's sellers panel, in the hidden worker — never in the pane).
+  const needLookup = others !== 0 && shown.length < 2;
+  if (needLookup) {
+    const note = have.offersTried === "loading" ? "Looking for other sellers…"
+      : have.offersTried === "none" ? `${others > 0 ? `${others} other seller${others === 1 ? "" : "s"} · ` : ""}prices couldn't be read`
+      : others > 0 ? `${others} other seller${others === 1 ? "" : "s"}` : "Other sellers not checked";
+    rows += `<div class="row"><span class="s muted">${note}</span>` +
+      (have.offersTried === "loading" ? "" : `<button id="bbLookup" class="mini">Look for other sellers</button>`) + `</div>`;
+  } else if (others === 0 && shown.length < 2) {
+    rows += `<div class="row"><span class="s muted">No other sellers</span></div>`;
   }
-  if (!shown.length || (others > 0 && shown.length < 2)) {
-    const note = others > 0
-      ? (have.offersTried === "loading" ? `${others} other seller${others === 1 ? "" : "s"} · loading prices…`
-        : have.offersTried === "none" ? `${others} other seller${others === 1 ? "" : "s"} · prices couldn't be read`
-        : `${others} other seller${others === 1 ? "" : "s"}`)
-      : others === 0 ? "No other sellers" : "Seller details not read";
-    rows += `<div class="row"><span class="s muted">${note}</span></div>`;
-  }
-  const more = total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
+  const more = shown.length >= 2 && total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
   const yours = !(during > 0) ? "No During price yet"
     : Math.abs(diff) < 0.005 ? "Your During matches the buy box"
     : `Your During: ${money(during)} (${diff > 0 ? "+" : "−"}${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"})`;
@@ -983,6 +993,16 @@ function showCard(i, anchor) {
     `<div class="hd"><span><b>$${money(have.price)}</b> <span class="sub">buy box</span></span><span class="sub">read ${have.at ? ago(have.at) : "—"}</span></div>` +
     rows + more + `<div class="ft"><span>${yours}</span>${act}</div>` + (mark ? `<div class="mk">${mark}</div>` : "");
   card.querySelector("#bbUse")?.addEventListener("click", () => { hideCard(); applyBuyBox(i); });
+  card.querySelector("#bbLookup")?.addEventListener("click", () => {
+    const id = String(it.itemId ?? "").trim();
+    have.offersTried = "loading";
+    showCard(i, anchor);
+    window.api.listingOffers(id).then((o) => {
+      have.offersTried = Array.isArray(o) && o.length ? "ok" : "none";
+      if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); }
+      if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor);
+    });
+  });
   card.querySelector("#bbMark")?.addEventListener("click", (e) => {
     e.preventDefault();
     const name = prompt("Your store name as it appears on Walmart (so it can be marked YOU in the seller list):", have.seller || "");
@@ -998,23 +1018,6 @@ function showCard(i, anchor) {
   card.style.top = top + "px";
 }
 function hideCard() { clearTimeout(cardTimer); $("bbCard").classList.add("hidden"); }
-$("sheet").addEventListener("mouseover", (e) => {
-  const td = e.target.closest('td[data-field="during"]');
-  if (!td || td.classList.contains("editing")) return;
-  const i = rowIndexOf(td);
-  if (i < 0 || !liveFor(items[i])) return;
-  clearTimeout(cardTimer);
-  cardTimer = setTimeout(() => showCard(i, td), 250);
-});
-$("sheet").addEventListener("mouseout", (e) => {
-  const td = e.target.closest('td[data-field="during"]');
-  if (!td) return;
-  if (e.relatedTarget && (td.contains(e.relatedTarget) || $("bbCard").contains(e.relatedTarget))) return;
-  clearTimeout(cardTimer);
-  cardTimer = setTimeout(hideCard, 200);
-});
-$("bbCard").addEventListener("mouseenter", () => clearTimeout(cardTimer));
-$("bbCard").addEventListener("mouseleave", () => { cardTimer = setTimeout(hideCard, 200); });
 document.querySelector(".sheet-wrap").addEventListener("scroll", hideCard, { passive: true });
 window.addEventListener("mousedown", (e) => { if (!$("bbCard").contains(e.target)) hideCard(); });
 window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
@@ -1025,6 +1028,7 @@ window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); 
 // the button again stops it. Afterwards "Apply N suggestions" writes every
 // pending During (and blank Before) suggestion in one undoable step.
 let scanning = false, scanQueue = [], scanDone = 0, scanTotal = 0;
+let hideSug = localStorage.getItem("hideSuggestions") === "1"; // hide pills, ghosts and notes
 const SCAN_PAUSE_MS = 350;      // breathing room between listings
 const SCAN_TIMEOUT_MS = 25000;  // give up on a listing after this
 const SCAN_FRESH_MS = 24 * 60 * 60 * 1000; // rows read this recently are skipped (Shift+click to force)
@@ -1044,21 +1048,28 @@ function suggestionCount() {
 }
 const scanPaused = () => !scanning && scanQueue.length > 0;
 function renderScanState() {
+  const n = suggestionCount();
   const btn = $("scanBtn");
   btn.classList.toggle("scanning", scanning);
   btn.classList.toggle("paused", scanPaused());
-  btn.querySelector("span").textContent = scanning ? `Stop scan · ${scanDone}/${scanTotal}`
-    : scanPaused() ? `Resume scan · ${scanDone}/${scanTotal}` : "Scan buy boxes";
+  btn.querySelector("span").textContent = scanning ? `Stop · ${scanDone}/${scanTotal}`
+    : scanPaused() ? `Resume · ${scanDone}/${scanTotal}` : "Scan buy boxes";
   const skipped = scanSkipped ? ` (${scanSkipped} read in the last 24 h skipped)` : "";
   btn.title = scanning
     ? `Reading every listing's buy box one by one${skipped} — click to stop`
     : scanPaused() ? `Stopped with ${scanQueue.length} listing${scanQueue.length === 1 ? "" : "s"} left — click to continue where it left off`
     : "Read the buy box of every listing not read in the last 24 h, one by one, and suggest prices on all rows. Shift+click to re-read everything.";
   $("scanRestartBtn").classList.toggle("hidden", !scanPaused());
-  const n = suggestionCount();
+  const anyMarks = items.some((it) => it.buyBox) || n > 0;
+  const tog = $("sugToggleBtn");
+  tog.classList.toggle("hidden", !anyMarks);
+  tog.classList.toggle("off", hideSug);
+  tog.querySelector("span").textContent = hideSug ? "Show" : "Hide";
+  tog.title = hideSug ? "Show the scan results again (pills, ghost prices, notes)" : "Hide the scan results from the sheet (pills, ghost prices, notes) — nothing is lost";
   const apply = $("applyAllBtn");
   apply.classList.toggle("hidden", n === 0);
-  apply.textContent = `Apply ${n} suggestion${n === 1 ? "" : "s"}`;
+  apply.textContent = `Apply ${n}`;
+  apply.title = `Write all ${n} pending suggestion${n === 1 ? "" : "s"} (During from the buy box, Before at the 4% floor) — one undo step`;
 }
 async function startScan(fresh = !scanPaused(), force = false) {
   if (scanning) return;
@@ -1120,6 +1131,12 @@ function applyAllSuggestions() {
   render();
   if (n) alert(`Applied ${n} suggestion${n === 1 ? "" : "s"}. Check the rows (amber % Change = under 4%), and Ctrl+Z undoes all of it.`);
 }
+$("sugToggleBtn").addEventListener("click", () => {
+  hideSug = !hideSug;
+  localStorage.setItem("hideSuggestions", hideSug ? "1" : "0");
+  hideCard();
+  render();
+});
 $("scanBtn").addEventListener("click", (e) => (scanning ? stopScan() : startScan(e.shiftKey ? true : !scanPaused(), e.shiftKey)));
 $("scanRestartBtn").addEventListener("click", (e) => { if (!scanning) { scanQueue = []; startScan(true, e.shiftKey); } });
 $("applyAllBtn").addEventListener("click", applyAllSuggestions);
@@ -2064,10 +2081,10 @@ window.addEventListener("keydown", (e) => {
   if (activeCell) {
     const { i, field } = activeCell;
     if (e.key === "Escape") { activeCell = null; render(); return; }
-    if (e.key === "Enter" && field === "during" && buyBoxSuggestion(i) != null) {
+    if (e.key === "Enter" && !hideSug && field === "during" && buyBoxSuggestion(i) != null) {
       e.preventDefault(); applyBuyBox(i); return;      // accept the buy-box suggestion
     }
-    if (e.key === "Enter" && field === "before" && beforeSuggestion(i) != null) {
+    if (e.key === "Enter" && !hideSug && field === "before" && beforeSuggestion(i) != null) {
       e.preventDefault(); applyBeforeSuggestion(i); return; // accept the floor-price suggestion
     }
     if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); editActive(); return; }
