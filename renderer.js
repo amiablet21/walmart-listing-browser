@@ -1340,6 +1340,15 @@ const columnEntries = (f) => {
   return entries;
 };
 
+// Cells aren't text-selectable, and Chromium then leaves keyboard focus where
+// it was (e.g. in the search box) when you click one — so Enter/arrows/typing
+// would keep going to that box. Hand focus back to the sheet on every click.
+$("sheet").addEventListener("mousedown", (e) => {
+  if (e.target.closest("input, textarea, button")) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && typeof a.blur === "function") a.blur();
+});
+
 $("sheet").addEventListener("contextmenu", (e) => {
   if (e.target.closest("input")) return;          // cell editor → native menu
   if (String(window.getSelection())) return;      // highlighted text → native copy
