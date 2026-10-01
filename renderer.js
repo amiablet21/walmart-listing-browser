@@ -721,6 +721,7 @@ function render() {
     $("findCount").textContent = findMatches.length ? `${findIdx + 1} of ${findMatches.length}` : "0 results";
   }
 
+  decorateBuyBox(tb);
   renderDetailBar();
 }
 
@@ -730,32 +731,55 @@ function renderDetailBar() {
   $("curItem").textContent = it ? (it.itemId ? `item ${it.itemId}` : "no item ID yet") : "";
   $("prevBtn").disabled = !(selected > 0);
   $("nextBtn").disabled = !(selected >= 0 && selected < items.length - 1);
-  renderBuyBox();
 }
 
 // ---- buy-box suggestion ----------------------------------------------------
-// main.js reads the listing's current price after each load; when it belongs
-// to the selected row, offer it as that row's During Incentive price.
+// main.js reads the listing's current price after each load. When it belongs
+// to the selected row and differs from that row's During Incentive price, the
+// During cell shows it as a ghost value (with a % Change preview if the row is
+// still blank) or as a small tag after the existing value. Enter on that cell,
+// or a click on the tag, writes it in — after which it's an ordinary value.
 let livePrice = null; // { itemId, price, was } | null
-function renderBuyBox() {
+function buyBoxSuggestion() {
   const it = items[selected];
-  const pill = $("buyBox");
-  const show = !!(it && livePrice && it.itemId && String(it.itemId).trim() === String(livePrice.itemId) && paneMode === "customer" && !paneClosed);
-  pill.classList.toggle("hidden", !show);
-  if (!show) return;
-  $("buyBoxPrice").textContent = money(livePrice.price);
-  pill.title = livePrice.was ? `Walmart shows $${money(livePrice.price)} (was $${money(livePrice.was)})` : `Walmart shows $${money(livePrice.price)}`;
-  pill.classList.toggle("matched", Math.abs(safe(selected, "during") - livePrice.price) < 0.005);
+  if (!it || !livePrice || paneMode !== "customer" || paneClosed) return null;
+  if (String(it.itemId ?? "").trim() !== String(livePrice.itemId)) return null;
+  if (Math.abs(safe(selected, "during") - livePrice.price) < 0.005) return null;
+  return livePrice.price;
 }
-$("buyBoxUse").addEventListener("click", () => {
-  const it = items[selected];
-  if (!it || !livePrice || String(it.itemId).trim() !== String(livePrice.itemId)) return;
-  applyMutation(() => setCell(selected, "during", String(livePrice.price)));
+function applyBuyBox() {
+  const p = buyBoxSuggestion();
+  if (p == null) return;
+  applyMutation(() => setCell(selected, "during", String(p)));
   persist();
   render();
-});
-window.api.onListingPrice((p) => { livePrice = p; renderBuyBox(); });
-window.api.listingPrice().then((p) => { if (p) { livePrice = p; renderBuyBox(); } });
+}
+function decorateBuyBox(tb) {
+  const p = buyBoxSuggestion();
+  if (p == null) return;
+  const row = tb.querySelectorAll(".sku-row")[selected];
+  const td = row?.querySelector('td[data-field="during"]');
+  if (!td || td.classList.contains("editing")) return;
+  const tag = document.createElement("span");
+  tag.className = "sug-tag";
+  tag.title = `Walmart buy box is $${money(p)} — click or press Enter to use it`;
+  tag.addEventListener("click", (e) => { e.stopPropagation(); applyBuyBox(); });
+  const blank = !(safe(selected, "during") > 0);
+  if (blank) {
+    td.textContent = money(p);
+    td.classList.add("sug-ghost");
+    tag.textContent = "Enter ↵";
+    const before = safe(selected, "before");
+    const pct = row.querySelector('td[data-field="pct"]');
+    if (pct && before > 0) { pct.textContent = chPct((p - before) / before * 100); pct.classList.add("sug-ghost"); }
+  } else {
+    tag.textContent = `↵ ${money(p)}`;
+  }
+  td.appendChild(tag);
+  td.title = tag.title;
+}
+window.api.onListingPrice((p) => { livePrice = p; render(); });
+window.api.listingPrice().then((p) => { if (p) { livePrice = p; render(); } });
 
 // ---- selection + docked listing --------------------------------------------
 function slotBounds() {
@@ -1598,6 +1622,9 @@ window.addEventListener("keydown", (e) => {
   if (activeCell) {
     const { i, field } = activeCell;
     if (e.key === "Escape") { activeCell = null; render(); return; }
+    if (e.key === "Enter" && i === selected && field === "during" && buyBoxSuggestion() != null) {
+      e.preventDefault(); applyBuyBox(); return;      // accept the buy-box suggestion
+    }
     if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); editActive(); return; }
     if (e.key === "Delete" || e.key === "Backspace") {
       if (isEditableField(field)) {
