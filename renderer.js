@@ -74,17 +74,32 @@ function afterHistory() {
   render();
 }
 
+// Buy-box reads (it.buyBox) aren't edits, so a history snapshot taken before
+// a scan read must not wipe it on undo: keep the newest read per item ID.
+function keepNewestBuyBoxes(from, to) {
+  const newest = new Map();
+  for (const r of from) {
+    const id = String(r.itemId ?? "").trim();
+    if (id && r.buyBox && (r.buyBox.at || 0) >= (newest.get(id)?.at || 0)) newest.set(id, r.buyBox);
+  }
+  for (const r of to) {
+    const id = String(r.itemId ?? "").trim();
+    const b = newest.get(id);
+    if (b && (b.at || 0) > (r.buyBox?.at || 0)) r.buyBox = b;
+  }
+  return to;
+}
 function undo() {
   if (!undoStack.length) return;
   redoStack.push(JSON.parse(JSON.stringify(items)));
-  items = undoStack.pop();
+  items = keepNewestBuyBoxes(items, undoStack.pop());
   afterHistory();
 }
 
 function redo() {
   if (!redoStack.length) return;
   undoStack.push(JSON.parse(JSON.stringify(items)));
-  items = redoStack.pop();
+  items = keepNewestBuyBoxes(items, redoStack.pop());
   afterHistory();
 }
 
@@ -127,7 +142,8 @@ function getRaw(i, field) {
 // ---- column widths (drag the edge of a header to resize) -------------------
 let colWidths = {};
 try { colWidths = JSON.parse(localStorage.getItem("colWidths") || "{}") || {}; } catch { colWidths = {}; }
-const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95 };
+const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 160, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95 };
+if (colWidths.during === 115) delete colWidths.during; // old default → the new, roomier one
 const colW = (f) => colWidths[f] || DEFAULT_W[f] || 110;
 
 function addResizeHandle(th, field) {
@@ -763,7 +779,8 @@ function rowsWithItem(id) {
 function rememberPrice(p) {
   const id = String(p.itemId);
   for (const i of rowsWithItem(id)) {
-    items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null, at: Date.now() };
+    items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null,
+      offers: Array.isArray(p.offers) ? p.offers.slice(0, 12) : [], at: Date.now() };
   }
   window.api.saveItems(items); // quiet save — not a user edit, so no undo step / flash
 }
@@ -840,30 +857,6 @@ function decorateBuyBox(tb) {
       others != null ? `${others} other seller${others === 1 ? "" : "s"}` : null,
       have.at ? `read ${ago(have.at)}` : null,
     ].filter(Boolean).join(" · ");
-    if (paneClosed && (others != null || have.seller)) {
-      // only when the page isn't on screen: who else is selling. Lives in the
-      // Item ID cell, which has spare room; wording shrinks to fit, else skipped.
-      const idTd = row.querySelector('td[data-field="itemId"]');
-      if (idTd) {
-        const note = document.createElement("span");
-        note.className = "sug-note sug-note-right";
-        note.title = tip;
-        const txt = document.createElement("span");
-        txt.textContent = idTd.textContent;
-        idTd.textContent = "";
-        idTd.appendChild(txt);
-        idTd.classList.add("has-note");
-        idTd.appendChild(note);
-        const options = others != null
-          ? (others === 0 ? ["only seller", "only"] : [`+${others} other seller${others === 1 ? "" : "s"}`, `+${others} seller${others === 1 ? "" : "s"}`, `+${others}`])
-          : [`sold by ${have.seller}`, have.seller];
-        const fits = () => txt.offsetWidth + note.offsetWidth + 20 <= idTd.clientWidth;
-        let placed = false;
-        for (const text of options) { note.textContent = text; if (fits()) { placed = true; break; } }
-        if (!placed) { note.remove(); idTd.classList.remove("has-note"); }
-        else idTd.title = tip;
-      }
-    }
     const p = buyBoxSuggestion(i);
     if (p == null) {
       // already matches — with the pane closed say so (there's no page to see)
@@ -894,14 +887,92 @@ function decorateBuyBox(tb) {
       if (td.scrollWidth > td.clientWidth) tag.textContent = "↵";
     } else {
       const val = floatLeft(td);
-      tag.textContent = `↵${money(p)}`;
+      tag.innerHTML = `<span class="ar">↵</span>${money(p)}`;
       td.appendChild(tag);
-      const free = td.clientWidth - val.offsetWidth - 18; // right padding + tag offset + gap
+      const free = td.clientWidth - val.offsetWidth - 20; // right padding + tag offset + gap
       if (tag.offsetWidth > free) tag.textContent = "↵";
     }
     td.title = tag.title;
   });
 }
+
+// ---- buy-box hover card ------------------------------------------------------
+// Hovering a During cell that has a remembered buy box opens a card: the buy
+// box price and age, the cheapest sellers (your own store marked once you've
+// named it), your During vs the buy box, and a Use button.
+let cardTimer = null;
+let myStore = localStorage.getItem("myStoreName") || "";
+const isMyStore = (name) => !!myStore && !!name && name.trim().toLowerCase() === myStore.trim().toLowerCase();
+function rowIndexOf(el) {
+  const tr = el?.closest(".sku-row");
+  return tr ? [...document.querySelectorAll(".sku-row")].indexOf(tr) : -1;
+}
+function showCard(i, anchor) {
+  const it = items[i];
+  const have = liveFor(it);
+  if (!have) return;
+  const card = $("bbCard");
+  const others = Number.isInteger(have.others) ? have.others : null;
+  let offers = Array.isArray(have.offers) ? have.offers.slice() : [];
+  if (have.seller && !offers.some((o) => Math.abs(o.price - have.price) < 0.005 && o.seller.toLowerCase() === have.seller.toLowerCase())) {
+    offers.unshift({ seller: have.seller, price: have.price });
+  }
+  offers.sort((a, b) => a.price - b.price);
+  const total = Math.max(offers.length, others != null ? others + 1 : 0);
+  const shown = offers.slice(0, 3);
+  const during = safe(i, "during");
+  const diff = during - have.price;
+  const p = buyBoxSuggestion(i);
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let rows = shown.map((o, k) =>
+    `<div class="row${k === 0 ? " bb" : ""}"><span class="n">${k + 1}</span><span class="s">${esc(o.seller)}</span>` +
+    `${isMyStore(o.seller) ? '<span class="you">YOU</span>' : ""}<span class="p">$${money(o.price)}</span></div>`).join("");
+  if (!shown.length) rows = `<div class="row"><span class="s muted">${others != null ? `${others} other seller${others === 1 ? "" : "s"} · prices not read` : "Seller details not read"}</span></div>`;
+  const more = total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
+  const yours = !(during > 0) ? "No During price yet"
+    : Math.abs(diff) < 0.005 ? "Your During matches the buy box"
+    : `Your During: ${money(during)} (${diff > 0 ? "+" : "−"}${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"})`;
+  const act = p != null ? `<button class="primary" id="bbUse">Use ${money(p)} ↵</button>` : `<span class="ok">✓ matched</span>`;
+  const mark = myStore ? "" : `<a href="#" id="bbMark" class="muted">Mark your store</a>`;
+  card.innerHTML =
+    `<div class="hd"><span><b>$${money(have.price)}</b> <span class="sub">buy box</span></span><span class="sub">read ${have.at ? ago(have.at) : "—"}</span></div>` +
+    rows + more + `<div class="ft"><span>${yours}</span>${act}</div>` + (mark ? `<div class="mk">${mark}</div>` : "");
+  card.querySelector("#bbUse")?.addEventListener("click", () => { hideCard(); applyBuyBox(i); });
+  card.querySelector("#bbMark")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const name = prompt("Your store name as it appears on Walmart (so it can be marked YOU in the seller list):", have.seller || "");
+    if (name != null) { myStore = name.trim(); localStorage.setItem("myStoreName", myStore); showCard(i, anchor); }
+  });
+  card.classList.remove("hidden");
+  const r = anchor.getBoundingClientRect();
+  const w = card.offsetWidth, h = card.offsetHeight;
+  let left = Math.min(Math.max(8, r.left - 30), window.innerWidth - w - 8);
+  let top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  card.style.left = left + "px";
+  card.style.top = top + "px";
+}
+function hideCard() { clearTimeout(cardTimer); $("bbCard").classList.add("hidden"); }
+$("sheet").addEventListener("mouseover", (e) => {
+  const td = e.target.closest('td[data-field="during"]');
+  if (!td || td.classList.contains("editing")) return;
+  const i = rowIndexOf(td);
+  if (i < 0 || !liveFor(items[i])) return;
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => showCard(i, td), 250);
+});
+$("sheet").addEventListener("mouseout", (e) => {
+  const td = e.target.closest('td[data-field="during"]');
+  if (!td) return;
+  if (e.relatedTarget && (td.contains(e.relatedTarget) || $("bbCard").contains(e.relatedTarget))) return;
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(hideCard, 200);
+});
+$("bbCard").addEventListener("mouseenter", () => clearTimeout(cardTimer));
+$("bbCard").addEventListener("mouseleave", () => { cardTimer = setTimeout(hideCard, 200); });
+document.querySelector(".sheet-wrap").addEventListener("scroll", hideCard, { passive: true });
+window.addEventListener("mousedown", (e) => { if (!$("bbCard").contains(e.target)) hideCard(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
 
 // ---- scan all listings -------------------------------------------------------
 // One button walks every row with an item ID through the off-screen Walmart
@@ -923,13 +994,18 @@ function suggestionCount() {
   items.forEach((_, i) => { if (buyBoxSuggestion(i) != null) n++; if (beforeSuggestion(i) != null) n++; });
   return n;
 }
+const scanPaused = () => !scanning && scanQueue.length > 0;
 function renderScanState() {
   const btn = $("scanBtn");
   btn.classList.toggle("scanning", scanning);
-  btn.querySelector("span").textContent = scanning ? `Stop scan · ${scanDone}/${scanTotal}` : "Scan buy boxes";
+  btn.classList.toggle("paused", scanPaused());
+  btn.querySelector("span").textContent = scanning ? `Stop scan · ${scanDone}/${scanTotal}`
+    : scanPaused() ? `Resume scan · ${scanDone}/${scanTotal}` : "Scan buy boxes";
   btn.title = scanning
     ? "Reading every listing's buy box one by one — click to stop"
+    : scanPaused() ? `Stopped with ${scanQueue.length} listing${scanQueue.length === 1 ? "" : "s"} left — click to continue where it left off`
     : "Read the buy box of every listing, one by one, and suggest prices on all rows";
+  $("scanRestartBtn").classList.toggle("hidden", !scanPaused());
   const n = suggestionCount();
   const apply = $("applyAllBtn");
   apply.classList.toggle("hidden", n === 0);
@@ -939,19 +1015,21 @@ function renderScanState() {
   else ph.textContent = PLACEHOLDER_TEXT;
 }
 const PLACEHOLDER_TEXT = $("slotPlaceholder").textContent;
-async function startScan() {
+async function startScan(fresh = !scanPaused()) {
   if (scanning) return;
-  scanQueue = items.map((it, i) => (String(it.itemId ?? "").trim() ? i : -1)).filter((i) => i >= 0);
-  scanTotal = scanQueue.length;
-  scanDone = 0;
-  if (!scanTotal) { alert("No rows have an Item ID to look up."); return; }
+  if (fresh) {
+    scanQueue = items.map((it) => String(it.itemId ?? "").trim()).filter(Boolean);
+    scanTotal = scanQueue.length;
+    scanDone = 0;
+    if (!scanTotal) { alert("No rows have an Item ID to look up."); return; }
+  }
   scanning = true;
   window.api.hideListing();
   renderScanState();
   while (scanning && scanQueue.length) {
-    const i = scanQueue.shift();
-    const id = String(items[i]?.itemId ?? "").trim();
-    if (!id) { scanDone++; continue; }
+    const id = scanQueue.shift();
+    const i = items.findIndex((it) => String(it.itemId ?? "").trim() === id);
+    if (i < 0) { scanDone++; continue; } // row removed meanwhile
     priceWait = id;
     renderScanState();
     render();
@@ -968,15 +1046,14 @@ async function startScan() {
   finishScan();
 }
 function stopScan() {
-  scanning = false;
-  scanQueue = [];
+  scanning = false;              // the queue is kept, so the scan can resume
   const w = [...priceWaiters.values()];
   priceWaiters.clear();
   w.forEach((resolve) => resolve(null));
   renderScanState(); // button flips back at once; finishScan() follows when the loop unwinds
 }
 function finishScan() {
-  scanning = false;
+  scanning = false;              // scanQueue still has entries only if it was stopped
   priceWait = null;
   renderScanState();
   render();
@@ -997,6 +1074,7 @@ function applyAllSuggestions() {
   if (n) alert(`Applied ${n} suggestion${n === 1 ? "" : "s"}. Check the rows (amber % Change = under 4%), and Ctrl+Z undoes all of it.`);
 }
 $("scanBtn").addEventListener("click", () => (scanning ? stopScan() : startScan()));
+$("scanRestartBtn").addEventListener("click", () => { if (!scanning) { scanQueue = []; startScan(true); } });
 $("applyAllBtn").addEventListener("click", applyAllSuggestions);
 
 // ---- before-price suggestion -----------------------------------------------

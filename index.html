@@ -71,6 +71,7 @@
           </svg>
           <span>Scan buy boxes</span>
         </button>
+        <button id="scanRestartBtn" class="tb-ghost hidden" title="Forget the stopped scan and start again from the first row">Start over</button>
         <button id="applyAllBtn" class="primary apply-all hidden" title="Write every pending During / Before suggestion into the sheet (one undo step)">Apply suggestions</button>
       </span>
       <!-- only shown while the listing pane is closed -->
@@ -226,6 +227,9 @@
       </div>
     </div>
   </div>
+
+  <!-- buy-box hover card (filled by renderer.js) -->
+  <div id="bbCard" class="bbcard hidden"></div>
 
   <script src="renderer.js"></script>
 </body>

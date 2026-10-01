@@ -486,6 +486,46 @@ const SELLERS_SCRIPT = `(() => {
   } catch {}
   return out;
 })()`;
+// The other sellers' names and prices. Walmart's data payload sometimes has
+// them; otherwise open the "Compare all sellers" panel once and read it.
+const OFFERS_SCRIPT = `(async () => {
+  const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
+  const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  const found = [];
+  const dedupe = (arr) => { const out = [], seen = new Set(); for (const o of arr) { const k = o.seller.toLowerCase() + "|" + o.price; if (!seen.has(k)) { seen.add(k); out.push(o); } } return out.sort((a, b) => a.price - b.price).slice(0, 12); };
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const seen = new Set();
+    const walk = (o, d) => {
+      if (!o || typeof o !== "object" || d > 14 || seen.has(o)) return; seen.add(o);
+      if (Array.isArray(o)) {
+        if (o.length > 1 && o.every((e) => e && typeof e === "object" && (e.sellerName || e.sellerDisplayName))) {
+          for (const e of o) { const p = num(e.priceInfo?.currentPrice?.price ?? e.currentPrice?.price ?? e.price?.price ?? e.price); const n = e.sellerName || e.sellerDisplayName; if (n && ok(p)) found.push({ seller: String(n).trim(), price: p }); }
+        }
+        for (const e of o) walk(e, d + 1); return;
+      }
+      for (const k in o) walk(o[k], d + 1);
+    };
+    walk(nd, 0);
+  } catch {}
+  if (found.length > 1) return dedupe(found);
+  try {
+    if (!window.__wlbOffersTried) {
+      window.__wlbOffersTried = true;
+      const btn = [...document.querySelectorAll("button, a")].find((b) => /Compare all \\d+ sellers|More seller options/i.test(b.textContent || ""));
+      if (btn) {
+        btn.click();
+        await new Promise((r) => setTimeout(r, 1800));
+        const root = document.querySelector('[role="dialog"]') || document.body;
+        const text = root.innerText || "";
+        const re = /\\$\\s?(\\d[\\d,]*\\.\\d{2})[\\s\\S]{0,400}?Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/gi;
+        let m; while ((m = re.exec(text))) { const p = num(m[1]); if (ok(p)) found.push({ seller: m[2].trim(), price: p }); }
+        try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
+      }
+    }
+  } catch {}
+  return dedupe(found);
+})()`;
 let priceTimers = [];
 let lastPrice = null;
 function sendPrice(p) {
@@ -501,9 +541,13 @@ function scheduleReadPrice(v) {
     try {
       const r = await v.webContents.executeJavaScript(PRICE_SCRIPT, true);
       if (r && r.price) {
-        let sellers = {};
+        let sellers = {}, offers = [];
         try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
-        sendPrice({ itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null });
+        if (sellers.others > 0) {
+          try { offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { /* optional */ }
+        }
+        if (customerItem !== item) return false; // user moved on while the panel was loading
+        sendPrice({ itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, offers });
         return true;
       }
     } catch { /* page navigated mid-read */ }
