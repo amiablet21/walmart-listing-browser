@@ -331,6 +331,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 #sheet td.has-note { position: relative; }
 #sheet td.has-note .sug-note-right { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); margin: 0; }
+/* reduction under Walmart's 4% floor — the commission break won't be granted */
+#sheet td.floor-warn { background: #FDECC8 !important; color: #8A5A00 !important; }
 /* spinner while the hidden pane is still reading the price */
 #sheet td .sug-spin {
   display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; box-sizing: border-box;

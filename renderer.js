@@ -626,6 +626,11 @@ function render() {
         const v = safe(i, f);
         td.className = "num" + (v < 0 ? " neg" : "") + (Number.isFinite(v) ? "" : " err");
         td.textContent = f === "change" ? chDollar(v) : chPct(v);
+        if (f === "pct" && Number.isFinite(v) && safe(i, "before") > 0 && safe(i, "during") > 0 && v > -MIN_REDUCTION_PCT + 1e-9) {
+          td.classList.add("floor-warn");
+          td.title = (v < 0 ? `Only ${(-v).toFixed(1)}% off` : "No reduction") +
+            ` — Walmart needs at least ${MIN_REDUCTION_PCT}% off for the commission break`;
+        }
       } else if (f === "regCom" || f === "incCom") {
         const v = safe(i, f);
         td.className = "num" + (Number.isFinite(v) ? "" : " err");
@@ -722,6 +727,7 @@ function render() {
   }
 
   decorateBuyBox(tb);
+  decorateBeforeSuggestion(tb);
   renderDetailBar();
 }
 
@@ -764,6 +770,10 @@ function applyBuyBox() {
   const p = buyBoxSuggestion();
   if (p == null) return;
   applyMutation(() => setCell(selected, "during", String(p)));
+  // next stop: the Before cell, if it's blank and now has a suggestion
+  if (activeCell?.i === selected && beforeSuggestion() != null && visibleOrder().includes("before")) {
+    activeCell = { i: selected, field: "before" };
+  }
   persist();
   render();
 }
@@ -862,6 +872,57 @@ function decorateBuyBox(tb) {
   }
   td.title = tag.title;
 }
+// ---- before-price suggestion -----------------------------------------------
+// Walmart grants the commission break only when During is at least 4% under
+// Before. When a row has a During price but no Before yet, suggest the
+// smallest .99 price that clears the floor with a little headroom. Existing
+// Before values are never touched (last month's are usually resubmitted).
+const MIN_REDUCTION_PCT = 4;
+const SUGGEST_REDUCTION_PCT = 4.1;
+function beforeSuggestion(i = selected) {
+  const it = items[i];
+  if (!it) return null;
+  const during = safe(i, "during"), before = safe(i, "before");
+  if (!(during > 0) || before > 0) return null;
+  const min = during / (1 - SUGGEST_REDUCTION_PCT / 100);
+  let c = Math.floor(min) + 0.99;
+  if (c < min - 1e-9) c += 1;
+  return Math.round(c * 100) / 100;
+}
+function applyBeforeSuggestion() {
+  const p = beforeSuggestion();
+  if (p == null) return;
+  applyMutation(() => setCell(selected, "before", String(p)));
+  persist();
+  render();
+}
+function decorateBeforeSuggestion(tb) {
+  const p = beforeSuggestion();
+  if (p == null) return;
+  const row = tb.querySelectorAll(".sku-row")[selected];
+  const td = row?.querySelector('td[data-field="before"]');
+  if (!td || td.classList.contains("editing")) return;
+  const during = safe(selected, "during");
+  const pctV = (during - p) / p * 100;
+  td.textContent = money(p);
+  td.classList.add("sug-ghost");
+  const tag = document.createElement("span");
+  tag.className = "sug-tag";
+  tag.textContent = "Enter ↵";
+  tag.title = `Smallest .99 price at least ${SUGGEST_REDUCTION_PCT}% above ${money(during)} (${(-pctV).toFixed(1)}% off) — click or press Enter to use it`;
+  tag.addEventListener("click", (e) => { e.stopPropagation(); applyBeforeSuggestion(); });
+  td.appendChild(tag);
+  if (td.scrollWidth > td.clientWidth) tag.textContent = "↵";
+  td.title = tag.title;
+  const pct = row.querySelector('td[data-field="pct"]');
+  if (pct && !pct.classList.contains("sug-ghost")) {
+    pct.textContent = chPct(pctV);
+    pct.classList.add("sug-ghost");
+    pct.classList.remove("floor-warn");
+    pct.title = "";
+  }
+}
+
 window.api.onListingPrice((p) => {
   if (p) { livePrice = p; if (priceWait === String(p.itemId)) priceWait = null; }
   else if (!paneClosed) livePrice = null;   // a visible navigation started; keep the last price while prefetching
@@ -1721,6 +1782,9 @@ window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") { activeCell = null; render(); return; }
     if (e.key === "Enter" && i === selected && field === "during" && buyBoxSuggestion() != null) {
       e.preventDefault(); applyBuyBox(); return;      // accept the buy-box suggestion
+    }
+    if (e.key === "Enter" && i === selected && field === "before" && beforeSuggestion() != null) {
+      e.preventDefault(); applyBeforeSuggestion(); return; // accept the floor-price suggestion
     }
     if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); editActive(); return; }
     if (e.key === "Delete" || e.key === "Backspace") {
