@@ -7,6 +7,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "verify": "node scripts/verify-walmart-ids.js",
     "dist": "electron-builder --win",
     "dist:mac": "electron-builder --mac"
   },
