@@ -16,7 +16,7 @@ Keep an incentive price sheet on the left, and click any row to see its **live w
 - **Walmart Listing ⇄ Seller Center toggle** — flip the pane between the customer-facing listing and a free-browsing Seller Center session (sign in once; loads once; row clicks never disturb it).
 - **Row auto-jump** — browse to another listing or variant inside the pane and the sheet selects that row automatically.
 - **Import** — pull rows in from `.xlsx` / `.csv` / `.tsv`, or paste straight from Google Sheets with Ctrl+V; optional per-row commission columns are picked up by header name.
-- **Export** — the regular sheet (live formulas), or the 11-column incentive template the Walmart rep uploads, prefilled with partner details and per-row commission rates.
+- **Export** — the regular sheet (live formulas), Walmart's Repricer Bulk Upload file, or the Account Manager's "Item & Partner Level Comm Break" template — their exact file, filled with one row per Item ID (partner ID, commission rates, prices, incentive dates) and revealed in Finder / Explorer ready to email.
 - **Auto-computed columns** — `$ Change` and `% Change` recompute from Before / During prices.
 - **Local-first** — everything is stored in a local JSON file; no accounts, no server.
 
@@ -59,7 +59,7 @@ The first four columns of your sheet, in this order (a header row is fine — it
 
 Only SKU and Item ID are required; extra columns (`$ Change`, `% Change`, …) are ignored on import and recomputed in-app.
 
-Optionally add `Regular Commission` and `During Incentive Commission` columns (any position — they're matched by header name). Rows without them default to 6% / 2%; the values fill the commission rates in the "For Walmart rep" export.
+Optionally add `Regular Commission` and `During Incentive Commission` columns (any position — they're matched by header name). Rows without them default to 6% / 2%; the values fill the commission rate columns in the Account Manager export.
 
 ## Tech notes
 

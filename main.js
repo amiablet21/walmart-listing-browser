@@ -5,6 +5,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipb
 const path = require("path");
 const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
+const { buildIncentiveBuffer } = require("./incentive");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
@@ -269,6 +270,53 @@ async function exportRepricer(payload) {
   }
 }
 
+// ---- Account Manager incentive export ---------------------------------------
+// Fills the Account Manager's "Item & Partner Level Comm Break" template with
+// one row per Item ID, saves it via a dialog, then reveals the file in
+// Finder / Explorer so it can be dragged straight into an email.
+async function exportIncentive(payload) {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+  const opts = payload?.opts && typeof payload.opts === "object" ? payload.opts : {};
+  const stamp = new Date().toISOString().slice(0, 10);
+  const res = await dialog.showSaveDialog(win, {
+    title: "Export for Account Manager",
+    defaultPath: `Item & Partner Level Comm Break ${stamp}.xlsx`,
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  const file = res.filePath;
+  const LOCKED = ["EBUSY", "EPERM", "EACCES"];
+  try {
+    const buf = await buildIncentiveBuffer(rows, opts);
+    const write = (target) => fs.writeFileSync(target, buf);
+    let saved = file, note;
+    try {
+      write(file);
+    } catch (e) {
+      // target open in Excel? save under "name (2).xlsx" instead of failing
+      if (!LOCKED.includes(e.code)) throw e;
+      const ext = path.extname(file);
+      const base = file.slice(0, file.length - ext.length);
+      let alt = null;
+      for (let n = 2; n <= 50; n++) {
+        const cand = `${base} (${n})${ext}`;
+        if (!fs.existsSync(cand)) { alt = cand; break; }
+      }
+      if (!alt) throw e;
+      write(alt);
+      saved = alt;
+      note = `"${path.basename(file)}" is open in another program (likely Excel), so the export was saved as "${path.basename(alt)}". Close the old file to overwrite it next time.`;
+    }
+    shell.showItemInFolder(saved);
+    return { saved: true, path: saved, note };
+  } catch (e) {
+    if (LOCKED.includes(e.code)) {
+      return { error: "The file is open in another program (probably Excel). Close it there and export again." };
+    }
+    return { error: e.message || String(e) };
+  }
+}
+
 // ---- right-click menu (copy/paste in fields, copy links) ------------------
 function attachContextMenu(contents) {
   contents.on("context-menu", (_e, params) => {
@@ -471,6 +519,7 @@ app.whenReady().then(() => {
   ipcMain.handle("sheet:import", () => importSheet());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
   ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
+  ipcMain.handle("sheet:exportIncentive", (_e, payload) => exportIncentive(payload));
 
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

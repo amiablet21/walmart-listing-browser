@@ -181,12 +181,63 @@
         <b>Regular sheet</b> exports every column with live formulas.<br />
         <b>Repricer</b> exports Walmart's Repricer Bulk Upload file with every SKU
         set to the <b>IMRAN BUY BOX</b> strategy — Maximum Seller Allowed Price is
-        the During Incentive price, and Minimum is $10 below it.
+        the During Incentive price, and Minimum is $10 below it.<br />
+        <b>Account Manager</b> fills the "Item &amp; Partner Level Comm Break" template
+        your Account Manager sends — Item ID, partner ID, commission rates, prices and
+        incentive dates in their exact layout, ready to email.
       </p>
       <div class="confirm-actions">
         <button id="exportCancel">Cancel</button>
         <button id="exportRepricer">Repricer</button>
+        <button id="exportIncentive">Account Manager</button>
         <button id="exportRegular" class="primary">Regular sheet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Manager export: the few template fields the sheet doesn't hold -->
+  <div id="incentiveModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal popup-form">
+      <h2>Export for Account Manager</h2>
+      <p class="hint">
+        One row per Item ID in the Account Manager's template. These apply to every row;
+        leave the dates blank if your Account Manager fills them in.
+      </p>
+      <div class="popup-form-grid">
+        <div>
+          <label for="incPartnerId">Partner ID</label>
+          <input id="incPartnerId" type="text" inputmode="numeric" maxlength="20" />
+        </div>
+        <div>
+          <label for="incCondition">Item condition</label>
+          <select id="incCondition">
+            <option value="1">1 — New</option>
+            <option value="2">2 — New without box</option>
+            <option value="3">3 — New without tags</option>
+            <option value="4">4 — Restored: Premium</option>
+            <option value="5">5 — Restored: Like New</option>
+            <option value="6">6 — Restored: Good</option>
+            <option value="7">7 — Restored: Fair</option>
+            <option value="8">8 — Remanufactured</option>
+            <option value="9">9 — Open Box</option>
+            <option value="10">10 — Pre-Owned: Like New</option>
+            <option value="11">11 — Pre-Owned: Good</option>
+            <option value="12">12 — Pre-Owned: Fair</option>
+            <option value="13">13 — New with defects</option>
+          </select>
+        </div>
+        <div>
+          <label for="incStart">Incentive start date</label>
+          <input id="incStart" type="date" />
+        </div>
+        <div>
+          <label for="incEnd">Incentive end date</label>
+          <input id="incEnd" type="date" />
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button id="incentiveCancel">Cancel</button>
+        <button id="incentiveOk" class="primary">Export</button>
       </div>
     </div>
   </div>

@@ -1439,6 +1439,65 @@ async function exportRepricer() {
   finishExport(res, rows.length);
 }
 
+// Account Manager "Item & Partner Level Comm Break" template: one row per
+// Item ID with partner ID, commission rates, prices and the incentive dates.
+// The template fields the sheet doesn't hold are asked for once in a small
+// modal and remembered for next time.
+const INC_PARTNER_ID_DEFAULT = "10001467995";
+const INC_FIELDS = [["incPartnerId", "incPartnerId", INC_PARTNER_ID_DEFAULT],
+                    ["incCondition", "incCondition", "1"],
+                    ["incStart", "incStart", ""], ["incEnd", "incEnd", ""]];
+
+function openIncentiveModal() {
+  for (const [id, key, dflt] of INC_FIELDS) $(id).value = localStorage.getItem(key) ?? dflt;
+  window.api.hideListing();
+  $("incentiveModal").classList.remove("hidden");
+  $("incPartnerId").focus();
+}
+function closeIncentiveModal() {
+  $("incentiveModal").classList.add("hidden");
+  dockListing();
+}
+async function exportIncentive() {
+  const round2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+  const partnerId = $("incPartnerId").value.trim();
+  if (!/^\d{1,20}$/.test(partnerId)) { alert("Partner ID must be a number."); $("incPartnerId").focus(); return; }
+  const startDate = $("incStart").value, endDate = $("incEnd").value;
+  if (startDate && endDate && endDate < startDate) { alert("The incentive end date is before the start date."); $("incEnd").focus(); return; }
+  for (const [id, key] of INC_FIELDS) localStorage.setItem(key, $(id).value);
+  const seen = new Set();
+  const rows = [];
+  for (let i = 0; i < items.length; i++) {
+    const itemId = String(items[i].itemId ?? "").trim();
+    if (!itemId || seen.has(itemId)) continue;
+    seen.add(itemId);
+    rows.push({
+      itemId,
+      regCom: round2(safe(i, "regCom")) ?? DEFAULT_REG_COM,
+      incCom: round2(safe(i, "incCom")) ?? DEFAULT_INC_COM,
+      before: round2(safe(i, "before")),
+      during: round2(safe(i, "during")),
+    });
+  }
+  if (!rows.length) { alert("No rows with an Item ID to export."); return; }
+  closeIncentiveModal();
+  const res = await window.api.exportIncentive({
+    rows,
+    opts: { partnerId, conditionCode: Number($("incCondition").value), startDate, endDate },
+  });
+  finishExport(res, rows.length);
+}
+$("incentiveOk").addEventListener("click", exportIncentive);
+$("incentiveCancel").addEventListener("click", closeIncentiveModal);
+$("incentiveModal").addEventListener("click", (e) => {
+  if (e.target.id === "incentiveModal") closeIncentiveModal();
+});
+$("incentiveModal").addEventListener("keydown", (e) => {
+  e.stopPropagation();
+  if (e.key === "Enter" && e.target.tagName !== "SELECT") exportIncentive();
+  if (e.key === "Escape") closeIncentiveModal();
+});
+
 // Export opens a format chooser first; the Walmart pane is a native layer
 // that would cover the dialog, so it hides while the modal is open.
 function closeExportModal() {
@@ -1456,6 +1515,7 @@ $("exportModal").addEventListener("click", (e) => {
 });
 $("exportRegular").addEventListener("click", () => { closeExportModal(); exportRegular(); });
 $("exportRepricer").addEventListener("click", () => { closeExportModal(); exportRepricer(); });
+$("exportIncentive").addEventListener("click", () => { $("exportModal").classList.add("hidden"); openIncentiveModal(); });
 
 // ---- import ----------------------------------------------------------------
 // The Import button opens an instructions dialog first; "Choose file…" runs
