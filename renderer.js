@@ -74,17 +74,32 @@ function afterHistory() {
   render();
 }
 
+// Buy-box reads (it.buyBox) aren't edits, so a history snapshot taken before
+// a scan read must not wipe it on undo: keep the newest read per item ID.
+function keepNewestBuyBoxes(from, to) {
+  const newest = new Map();
+  for (const r of from) {
+    const id = String(r.itemId ?? "").trim();
+    if (id && r.buyBox && (r.buyBox.at || 0) >= (newest.get(id)?.at || 0)) newest.set(id, r.buyBox);
+  }
+  for (const r of to) {
+    const id = String(r.itemId ?? "").trim();
+    const b = newest.get(id);
+    if (b && (b.at || 0) > (r.buyBox?.at || 0)) r.buyBox = b;
+  }
+  return to;
+}
 function undo() {
   if (!undoStack.length) return;
   redoStack.push(JSON.parse(JSON.stringify(items)));
-  items = undoStack.pop();
+  items = keepNewestBuyBoxes(items, undoStack.pop());
   afterHistory();
 }
 
 function redo() {
   if (!redoStack.length) return;
   undoStack.push(JSON.parse(JSON.stringify(items)));
-  items = redoStack.pop();
+  items = keepNewestBuyBoxes(items, redoStack.pop());
   afterHistory();
 }
 
@@ -127,7 +142,8 @@ function getRaw(i, field) {
 // ---- column widths (drag the edge of a header to resize) -------------------
 let colWidths = {};
 try { colWidths = JSON.parse(localStorage.getItem("colWidths") || "{}") || {}; } catch { colWidths = {}; }
-const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95 };
+const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 160, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95 };
+if (colWidths.during === 115) delete colWidths.during; // old default → the new, roomier one
 const colW = (f) => colWidths[f] || DEFAULT_W[f] || 110;
 
 function addResizeHandle(th, field) {
@@ -192,11 +208,6 @@ function moveColumn(src, target, before) {
 }
 
 const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H", cost: "I", shipping: "J", profit: "K" };
-function fieldToLetter(f) {
-  if (BASE_LETTER[f]) return BASE_LETTER[f];
-  const idx = customCols.findIndex((c) => "c_" + c.key === f);
-  return idx >= 0 ? String.fromCharCode(76 + idx) : "?";
-}
 function letterToField(L) {
   const inv = { A: "sku", B: "itemId", C: "before", D: "during", E: "change", F: "pct", G: "regCom", H: "incCom", I: "cost", J: "shipping", K: "profit" };
   if (inv[L]) return inv[L];
@@ -631,6 +642,11 @@ function render() {
         const v = safe(i, f);
         td.className = "num" + (v < 0 ? " neg" : "") + (Number.isFinite(v) ? "" : " err");
         td.textContent = f === "change" ? chDollar(v) : chPct(v);
+        if (f === "pct" && Number.isFinite(v) && safe(i, "before") > 0 && safe(i, "during") > 0 && v > -MIN_REDUCTION_PCT + 1e-9) {
+          td.classList.add("floor-warn");
+          td.title = (v < 0 ? `Only ${(-v).toFixed(1)}% off` : "No reduction") +
+            ` — Walmart needs at least ${MIN_REDUCTION_PCT}% off for the commission break`;
+        }
       } else if (f === "regCom" || f === "incCom") {
         const v = safe(i, f);
         td.className = "num" + (Number.isFinite(v) ? "" : " err");
@@ -726,8 +742,10 @@ function render() {
     $("findCount").textContent = findMatches.length ? `${findIdx + 1} of ${findMatches.length}` : "0 results";
   }
 
+  if (hideSug) decorateSpinnerOnly(tb);
+  else { decorateBuyBox(tb); decorateBeforeSuggestion(tb); }
+  renderScanState();
   renderDetailBar();
-  updateFxBar();
 }
 
 function renderDetailBar() {
@@ -737,6 +755,455 @@ function renderDetailBar() {
   $("prevBtn").disabled = !(selected > 0);
   $("nextBtn").disabled = !(selected >= 0 && selected < items.length - 1);
 }
+
+// ---- buy-box suggestion ----------------------------------------------------
+// main.js reads a listing's current price after it loads (visible pane or
+// off-screen). The result is remembered on the row (it.buyBox) so it survives
+// re-renders, restarts and a full scan. Wherever a row's buy box differs from
+// its During Incentive price, the During cell shows it as a ghost value (row
+// still blank) or a small tag after the value. Enter on that cell, or a click
+// on the tag, writes it in — after which it's an ordinary editable value.
+let priceWait = null; // itemId being read right now (spinner on that row)
+let priceWaitTimer = null;
+const priceWaiters = new Map(); // itemId → resolve(result|null), used by the scan
+function startPriceWait(id) {
+  const it = items.find((r) => String(r.itemId ?? "").trim() === id);
+  if (it?.buyBox?.price && Date.now() - (it.buyBox.at || 0) < 60000) { priceWait = null; return; } // fresh enough
+  priceWait = id;
+  clearTimeout(priceWaitTimer);
+  priceWaitTimer = setTimeout(() => { if (priceWait === id) { priceWait = null; markNoPrice(id); render(); } }, 20000);
+}
+function rowsWithItem(id) {
+  return items.map((r, i) => (String(r.itemId ?? "").trim() === id ? i : -1)).filter((i) => i >= 0);
+}
+// Buy boxes belong to the item ID, not the row: a re-imported or pasted list
+// gets its reads back (from the current rows first, then a cache of the last
+// few thousand reads), so a scan afterwards only visits what's new or stale.
+const BB_CACHE_KEY = "buyBoxCache";
+let buyBoxCache = {};
+try { buyBoxCache = JSON.parse(localStorage.getItem(BB_CACHE_KEY) || "{}") || {}; } catch { buyBoxCache = {}; }
+function cacheBuyBoxes() {
+  for (const it of items) {
+    const id = String(it.itemId ?? "").trim();
+    if (id && it.buyBox?.price && (it.buyBox.at || 0) >= (buyBoxCache[id]?.at || 0)) buyBoxCache[id] = it.buyBox;
+  }
+  const ids = Object.keys(buyBoxCache);
+  if (ids.length > 3000) {
+    ids.sort((a, b) => (buyBoxCache[a].at || 0) - (buyBoxCache[b].at || 0));
+    for (const id of ids.slice(0, ids.length - 3000)) delete buyBoxCache[id];
+  }
+  try { localStorage.setItem(BB_CACHE_KEY, JSON.stringify(buyBoxCache)); } catch { /* quota */ }
+}
+function restoreBuyBoxes(rows) {
+  let n = 0;
+  for (const r of rows) {
+    const id = String(r.itemId ?? "").trim();
+    if (id && !r.buyBox?.price && buyBoxCache[id]?.price) { r.buyBox = buyBoxCache[id]; n++; }
+  }
+  return n;
+}
+function rememberPrice(p) {
+  const id = String(p.itemId);
+  for (const i of rowsWithItem(id)) {
+    const prev = items[i].buyBox;
+    items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null,
+      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : (prev?.offers || []), at: Date.now() };
+  }
+  window.api.saveItems(items); // quiet save — not a user edit, so no undo step / flash
+  cacheBuyBoxes();
+}
+function markNoPrice(id) {
+  for (const i of rowsWithItem(id)) {
+    if (!items[i].buyBox?.price) items[i].buyBox = { failed: true, at: Date.now() };
+  }
+  window.api.saveItems(items);
+}
+const liveFor = (it) => (it?.buyBox?.price > 0 ? it.buyBox : null);
+function buyBoxSuggestion(i = activeCell?.i ?? selected) {
+  const it = items[i];
+  if (!it) return null;
+  const have = liveFor(it);
+  if (!have) return null;
+  if (Math.abs(safe(i, "during") - have.price) < 0.005) return null;
+  return have.price;
+}
+function applyBuyBox(i = activeCell?.i ?? selected) {
+  const p = buyBoxSuggestion(i);
+  if (p == null) return;
+  applyMutation(() => setCell(i, "during", String(p)));
+  // next stop: the Before cell, if it's blank and now has a suggestion
+  if (activeCell?.i === i && beforeSuggestion(i) != null && visibleOrder().includes("before")) {
+    activeCell = { i, field: "before" };
+  }
+  persist();
+  render();
+}
+const ago = (t) => {
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+};
+// With suggestions hidden, the row being read still shows its spinner
+function decorateSpinnerOnly(tb) {
+  if (!priceWait) return;
+  const i = items.findIndex((it) => String(it.itemId ?? "").trim() === priceWait);
+  const td = tb.querySelectorAll(".sku-row")[i]?.querySelector('td[data-field="during"]');
+  if (!td || td.classList.contains("editing")) return;
+  const val = document.createElement("span");
+  val.textContent = td.textContent;
+  td.textContent = "";
+  td.appendChild(val);
+  td.classList.add("has-sug");
+  const sp = document.createElement("span");
+  sp.className = "sug-spin";
+  td.appendChild(sp);
+}
+function decorateBuyBox(tb) {
+  const rows = tb.querySelectorAll(".sku-row");
+  // keep the real value where it is; notes float in the cell's spare left space
+  const floatLeft = (td) => {
+    const val = document.createElement("span");
+    val.textContent = td.textContent;
+    td.textContent = "";
+    td.appendChild(val);
+    td.classList.add("has-sug");
+    return val;
+  };
+  items.forEach((it, i) => {
+    const row = rows[i];
+    const td = row?.querySelector('td[data-field="during"]');
+    if (!td || td.classList.contains("editing")) return;
+    const id = String(it.itemId ?? "").trim();
+    if (id && priceWait === id) {
+      floatLeft(td);
+      const sp = document.createElement("span");
+      sp.className = "sug-spin";
+      td.appendChild(sp);
+      td.title = "Reading Walmart's price…";
+      return;
+    }
+    if (it.buyBox?.failed && !it.buyBox.price) {
+      const val = floatLeft(td);
+      const no = document.createElement("span");
+      no.className = "sug-note";
+      no.textContent = "no price";
+      td.appendChild(no);
+      if (val.offsetWidth + no.offsetWidth + 18 > td.clientWidth) no.textContent = "?";
+      td.title = `Couldn't read a price from Walmart (${ago(it.buyBox.at)}) — open the listing to check`;
+      return;
+    }
+    const have = liveFor(it);
+    if (!have) return;
+    const others = Number.isInteger(have.others) ? have.others : null;
+    const tip = [
+      `Walmart buy box is $${money(have.price)}`,
+      have.seller ? `sold by ${have.seller}` : null,
+      others != null ? `${others} other seller${others === 1 ? "" : "s"}` : null,
+      have.at ? `read ${ago(have.at)}` : null,
+    ].filter(Boolean).join(" · ");
+    const p = buyBoxSuggestion(i);
+    if (p == null) {
+      // already matches — with the pane closed say so (there's no page to see)
+      if (paneClosed) {
+        const val = floatLeft(td);
+        const ok = document.createElement("span");
+        ok.className = "sug-note";
+        ok.textContent = "✓ buy box";
+        ok.addEventListener("click", (e) => { e.stopPropagation(); showCard(i, td); });
+        td.appendChild(ok);
+        if (val.offsetWidth + ok.offsetWidth + 18 > td.clientWidth) ok.textContent = "✓";
+        td.title = tip;
+      }
+      return;
+    }
+    const tag = document.createElement("span");
+    tag.className = "sug-tag";
+    tag.title = `${tip} — click for details, Enter to use it`;
+    tag.addEventListener("click", (e) => { e.stopPropagation(); showCard(i, td); });
+    const blank = !(safe(i, "during") > 0);
+    if (blank) {
+      td.textContent = money(p);
+      td.classList.add("sug-ghost");
+      tag.textContent = "Enter ↵";
+      const before = safe(i, "before");
+      const pct = row.querySelector('td[data-field="pct"]');
+      if (pct && before > 0) { pct.textContent = chPct((p - before) / before * 100); pct.classList.add("sug-ghost"); pct.classList.remove("floor-warn"); pct.title = ""; }
+      td.appendChild(tag);
+      if (td.scrollWidth > td.clientWidth) tag.textContent = "↵";
+    } else {
+      const val = floatLeft(td);
+      tag.innerHTML = `<span class="ar">↵</span>${money(p)}`;
+      td.appendChild(tag);
+      const free = td.clientWidth - val.offsetWidth - 20; // right padding + tag offset + gap
+      if (tag.offsetWidth > free) tag.textContent = "↵";
+    }
+    td.title = tag.title;
+  });
+}
+
+// ---- buy-box card ------------------------------------------------------------
+// Clicking a suggestion pill (or a "✓ buy box" note) opens a card: the buy
+// box price and age, the cheapest sellers (your own store marked once you've
+// named it), your During vs the buy box, and a Use button that confirms.
+let cardTimer = null;
+let myStore = localStorage.getItem("myStoreName") || "";
+const isMyStore = (name) => !!myStore && !!name && name.trim().toLowerCase() === myStore.trim().toLowerCase();
+function rowIndexOf(el) {
+  const tr = el?.closest(".sku-row");
+  return tr ? [...document.querySelectorAll(".sku-row")].indexOf(tr) : -1;
+}
+function showCard(i, anchor) {
+  const it = items[i];
+  const have = liveFor(it);
+  if (!have) return;
+  const card = $("bbCard");
+  const others = Number.isInteger(have.others) ? have.others : null;
+  let offers = Array.isArray(have.offers) ? have.offers.slice() : [];
+  if (have.seller && !offers.some((o) => Math.abs(o.price - have.price) < 0.005 && o.seller.toLowerCase() === have.seller.toLowerCase())) {
+    offers.unshift({ seller: have.seller, price: have.price });
+  }
+  offers.sort((a, b) => a.price - b.price);
+  const total = Math.max(offers.length, others != null ? others + 1 : 0);
+  const shown = offers.slice(0, 3);
+  const during = safe(i, "during");
+  const diff = during - have.price;
+  const p = buyBoxSuggestion(i);
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let rows = shown.map((o, k) =>
+    `<div class="row${k === 0 ? " bb" : ""}"><span class="n">${k + 1}</span><span class="s">${esc(o.seller)}</span>` +
+    `${isMyStore(o.seller) ? '<span class="you">YOU</span>' : ""}<span class="p">$${money(o.price)}</span></div>`).join("");
+  // Other sellers' prices are looked up only on request (the lookup opens
+  // Walmart's sellers panel, in the hidden worker — never in the pane).
+  const needLookup = others !== 0 && shown.length < 2;
+  if (needLookup) {
+    const note = have.offersTried === "loading" ? "Looking for other sellers…"
+      : have.offersTried === "none" ? `${others > 0 ? `${others} other seller${others === 1 ? "" : "s"} · ` : ""}prices couldn't be read`
+      : others > 0 ? `${others} other seller${others === 1 ? "" : "s"}` : "Other sellers not checked";
+    rows += `<div class="row"><span class="s muted">${note}</span>` +
+      (have.offersTried === "loading" ? "" : `<button id="bbLookup" class="mini">Look for other sellers</button>`) + `</div>`;
+  } else if (others === 0 && shown.length < 2) {
+    rows += `<div class="row"><span class="s muted">No other sellers</span></div>`;
+  }
+  const more = shown.length >= 2 && total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
+  const yours = !(during > 0) ? "No During price yet"
+    : Math.abs(diff) < 0.005 ? "Your During matches the buy box"
+    : `Your During: ${money(during)} (${diff > 0 ? "+" : "−"}${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"})`;
+  const act = p != null ? `<button class="primary" id="bbUse">Use ${money(p)} ↵</button>` : `<span class="ok">✓ matched</span>`;
+  const mark = myStore ? "" : `<a href="#" id="bbMark" class="muted">Mark your store</a>`;
+  card.innerHTML =
+    `<div class="hd"><span><b>$${money(have.price)}</b> <span class="sub">buy box</span></span><span class="sub">read ${have.at ? ago(have.at) : "—"}</span></div>` +
+    rows + more + `<div class="ft"><span>${yours}</span>${act}</div>` + (mark ? `<div class="mk">${mark}</div>` : "");
+  card.querySelector("#bbUse")?.addEventListener("click", () => { hideCard(); applyBuyBox(i); });
+  card.querySelector("#bbLookup")?.addEventListener("click", () => {
+    const id = String(it.itemId ?? "").trim();
+    have.offersTried = "loading";
+    showCard(i, anchor);
+    window.api.listingOffers(id).then((o) => {
+      have.offersTried = Array.isArray(o) && o.length ? "ok" : "none";
+      if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); }
+      if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor);
+    });
+  });
+  card.querySelector("#bbMark")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const name = prompt("Your store name as it appears on Walmart (so it can be marked YOU in the seller list):", have.seller || "");
+    if (name != null) { myStore = name.trim(); localStorage.setItem("myStoreName", myStore); showCard(i, anchor); }
+  });
+  card.classList.remove("hidden");
+  const r = anchor.getBoundingClientRect();
+  const w = card.offsetWidth, h = card.offsetHeight;
+  let left = Math.min(Math.max(8, r.left - 30), window.innerWidth - w - 8);
+  let top = r.bottom + 6;
+  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  card.style.left = left + "px";
+  card.style.top = top + "px";
+}
+function hideCard() { clearTimeout(cardTimer); $("bbCard").classList.add("hidden"); }
+document.querySelector(".sheet-wrap").addEventListener("scroll", hideCard, { passive: true });
+window.addEventListener("mousedown", (e) => { if (!$("bbCard").contains(e.target)) hideCard(); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
+
+// ---- scan all listings -------------------------------------------------------
+// One button walks every row with an item ID through the off-screen Walmart
+// view, one listing at a time, remembering each buy box on its row. Pressing
+// the button again stops it. Afterwards "Apply N suggestions" writes every
+// pending During (and blank Before) suggestion in one undoable step.
+let scanning = false, scanQueue = [], scanDone = 0, scanTotal = 0;
+let hideSug = localStorage.getItem("hideSuggestions") === "1"; // hide pills, ghosts and notes
+const SCAN_PAUSE_MS = 350;      // breathing room between listings
+const SCAN_TIMEOUT_MS = 25000;  // give up on a listing after this
+const SCAN_FRESH_MS = 24 * 60 * 60 * 1000; // rows read this recently are skipped (Shift+click to force)
+const isFresh = (it) => !!(it.buyBox?.price && Date.now() - (it.buyBox.at || 0) < SCAN_FRESH_MS);
+let scanSkipped = 0;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function waitForPrice(id, ms) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => { priceWaiters.delete(id); resolve(null); }, ms);
+    priceWaiters.set(id, (p) => { clearTimeout(t); priceWaiters.delete(id); resolve(p); });
+  });
+}
+function suggestionCount() {
+  let n = 0;
+  items.forEach((_, i) => { if (buyBoxSuggestion(i) != null) n++; if (beforeSuggestion(i) != null) n++; });
+  return n;
+}
+const scanPaused = () => !scanning && scanQueue.length > 0;
+function renderScanState() {
+  const n = suggestionCount();
+  const btn = $("scanBtn");
+  btn.classList.toggle("scanning", scanning);
+  btn.classList.toggle("paused", scanPaused());
+  btn.querySelector("span").textContent = scanning ? `Stop · ${scanDone}/${scanTotal}`
+    : scanPaused() ? `Resume · ${scanDone}/${scanTotal}` : "Scan buy boxes";
+  const skipped = scanSkipped ? ` (${scanSkipped} read in the last 24 h skipped)` : "";
+  btn.title = scanning
+    ? `Reading every listing's buy box one by one${skipped} — click to stop`
+    : scanPaused() ? `Stopped with ${scanQueue.length} listing${scanQueue.length === 1 ? "" : "s"} left — click to continue where it left off`
+    : "Read the buy box of every listing not read in the last 24 h, one by one, and suggest prices on all rows. Shift+click to re-read everything.";
+  $("scanRestartBtn").classList.toggle("hidden", !scanPaused());
+  const anyMarks = items.some((it) => it.buyBox) || n > 0;
+  const tog = $("sugToggleBtn");
+  tog.classList.toggle("hidden", !anyMarks);
+  tog.classList.toggle("off", hideSug);
+  tog.querySelector("span").textContent = hideSug ? "Show" : "Hide";
+  tog.title = hideSug ? "Show the scan results again (pills, ghost prices, notes)" : "Hide the scan results from the sheet (pills, ghost prices, notes) — nothing is lost";
+  const apply = $("applyAllBtn");
+  apply.classList.toggle("hidden", n === 0);
+  apply.textContent = `Apply ${n}`;
+  apply.title = `Write all ${n} pending suggestion${n === 1 ? "" : "s"} (During from the buy box, Before at the 4% floor) — one undo step`;
+}
+async function startScan(fresh = !scanPaused(), force = false) {
+  if (scanning) return;
+  if (fresh) {
+    const withId = items.filter((it) => String(it.itemId ?? "").trim());
+    const todo = force ? withId : withId.filter((it) => !isFresh(it));
+    scanSkipped = withId.length - todo.length;
+    scanQueue = [...new Set(todo.map((it) => String(it.itemId).trim()))];
+    scanTotal = scanQueue.length;
+    scanDone = 0;
+    if (!withId.length) { alert("No rows have an Item ID to look up."); return; }
+    if (!scanTotal) { alert(`All ${withId.length} rows were read in the last 24 hours. Shift+click Scan to re-read them anyway.`); return; }
+  }
+  scanning = true;
+  renderScanState();
+  while (scanning && scanQueue.length) {
+    const id = scanQueue.shift();
+    const i = items.findIndex((it) => String(it.itemId ?? "").trim() === id);
+    if (i < 0) { scanDone++; continue; } // row removed meanwhile
+    priceWait = id;
+    renderScanState();
+    render();
+    document.querySelectorAll(".sku-row")[i]?.scrollIntoView({ block: "nearest" });
+    window.api.prefetchListing(id);
+    const p = await waitForPrice(id, SCAN_TIMEOUT_MS);
+    if (!p && scanning) markNoPrice(id); // a stop mid-read isn't a failure
+    if (priceWait === id) priceWait = null;
+    scanDone++;
+    renderScanState();
+    render();
+    if (scanning && scanQueue.length) await sleep(SCAN_PAUSE_MS);
+  }
+  finishScan();
+}
+function stopScan() {
+  scanning = false;              // the queue is kept, so the scan can resume
+  const w = [...priceWaiters.values()];
+  priceWaiters.clear();
+  w.forEach((resolve) => resolve(null));
+  renderScanState(); // button flips back at once; finishScan() follows when the loop unwinds
+}
+function finishScan() {
+  scanning = false;              // scanQueue still has entries only if it was stopped
+  priceWait = null;
+  renderScanState();
+  render();
+}
+function applyAllSuggestions() {
+  let n = 0;
+  applyMutation(() => {
+    items.forEach((_, i) => {
+      const d = buyBoxSuggestion(i);
+      if (d != null) { setCell(i, "during", String(d)); n++; }
+      const b = beforeSuggestion(i);
+      if (b != null) { setCell(i, "before", String(b)); n++; }
+    });
+  });
+  persist();
+  render();
+  if (n) alert(`Applied ${n} suggestion${n === 1 ? "" : "s"}. Check the rows (amber % Change = under 4%), and Ctrl+Z undoes all of it.`);
+}
+$("sugToggleBtn").addEventListener("click", () => {
+  hideSug = !hideSug;
+  localStorage.setItem("hideSuggestions", hideSug ? "1" : "0");
+  hideCard();
+  render();
+});
+$("scanBtn").addEventListener("click", (e) => (scanning ? stopScan() : startScan(e.shiftKey ? true : !scanPaused(), e.shiftKey)));
+$("scanRestartBtn").addEventListener("click", (e) => { if (!scanning) { scanQueue = []; startScan(true, e.shiftKey); } });
+$("applyAllBtn").addEventListener("click", applyAllSuggestions);
+
+// ---- before-price suggestion -----------------------------------------------
+// Walmart grants the commission break only when During is at least 4% under
+// Before. When a row has a During price but no Before yet, suggest the
+// smallest .99 price that clears the floor with a little headroom. Existing
+// Before values are never touched (last month's are usually resubmitted).
+const MIN_REDUCTION_PCT = 4;
+const SUGGEST_REDUCTION_PCT = 4.1;
+function beforeSuggestion(i = selected) {
+  const it = items[i];
+  if (!it) return null;
+  const during = safe(i, "during"), before = safe(i, "before");
+  if (!(during > 0) || before > 0) return null;
+  const min = during / (1 - SUGGEST_REDUCTION_PCT / 100);
+  let c = Math.floor(min) + 0.99;
+  if (c < min - 1e-9) c += 1;
+  return Math.round(c * 100) / 100;
+}
+function applyBeforeSuggestion(i = activeCell?.i ?? selected) {
+  const p = beforeSuggestion(i);
+  if (p == null) return;
+  applyMutation(() => setCell(i, "before", String(p)));
+  persist();
+  render();
+}
+function decorateBeforeSuggestion(tb) {
+  const rows = tb.querySelectorAll(".sku-row");
+  items.forEach((_, i) => {
+    const p = beforeSuggestion(i);
+    if (p == null) return;
+    const row = rows[i];
+    const td = row?.querySelector('td[data-field="before"]');
+    if (!td || td.classList.contains("editing")) return;
+    const during = safe(i, "during");
+    const pctV = (during - p) / p * 100;
+    td.textContent = money(p);
+    td.classList.add("sug-ghost");
+    const tag = document.createElement("span");
+    tag.className = "sug-tag";
+    tag.textContent = "Enter ↵";
+    tag.title = `Smallest .99 price at least ${SUGGEST_REDUCTION_PCT}% above ${money(during)} (${(-pctV).toFixed(1)}% off) — click or press Enter to use it`;
+    tag.addEventListener("click", (e) => { e.stopPropagation(); applyBeforeSuggestion(i); });
+    td.appendChild(tag);
+    if (td.scrollWidth > td.clientWidth) tag.textContent = "↵";
+    td.title = tag.title;
+    const pct = row.querySelector('td[data-field="pct"]');
+    if (pct && !pct.classList.contains("sug-ghost")) {
+      pct.textContent = chPct(pctV);
+      pct.classList.add("sug-ghost");
+      pct.classList.remove("floor-warn");
+      pct.title = "";
+    }
+  });
+}
+
+window.api.onListingPrice((p) => {
+  if (!p) return;                      // a navigation started; keep what we know
+  const id = String(p.itemId);
+  rememberPrice(p);
+  if (priceWait === id) priceWait = null;
+  priceWaiters.get(id)?.(p);
+  render();
+});
+window.api.listingPrice().then((p) => { if (p) { rememberPrice(p); render(); } });
 
 // ---- selection + docked listing --------------------------------------------
 function slotBounds() {
@@ -749,7 +1216,31 @@ function slotBounds() {
 // row selection — it loads once and row clicks never navigate it)
 let paneMode = localStorage.getItem("paneMode") === "seller" ? "seller" : "customer";
 
+// The whole right pane can be closed (× in its header) so the sheet gets the
+// full window; "Show listing pane" in the toolbar brings it back. Remembered.
+let paneClosed = localStorage.getItem("paneClosed") === "1";
+function setPaneClosed(closed) {
+  paneClosed = closed;
+  localStorage.setItem("paneClosed", closed ? "1" : "0");
+  document.body.classList.toggle("pane-closed", closed);
+  if (closed) window.api.hideListing();
+  else setTimeout(dockListing, 0); // after layout, so the slot has its size
+  render(); // cell notes differ between open and closed
+}
+document.body.classList.toggle("pane-closed", paneClosed);
+$("paneCloseBtn").addEventListener("click", () => setPaneClosed(true));
+$("paneOpenBtn").addEventListener("click", () => setPaneClosed(false));
+
 function dockListing() {
+  if (paneClosed) {
+    // pane hidden: still load the listing off-screen so the buy-box price
+    // suggestion keeps working; the During cell spins until it arrives
+    const it = items[selected];
+    const id = String(it?.itemId ?? "").trim();
+    if (id) { startPriceWait(id); window.api.prefetchListing(id); }
+    else { priceWait = null; window.api.hideListing(); }
+    return;
+  }
   const it = items[selected];
   if (paneMode === "seller") {
     $("slotPlaceholder").style.display = "none";
@@ -862,11 +1353,12 @@ window.api.onListingNavigated((itemId) => {
 });
 
 // ---- copy & paste ----------------------------------------------------------
-// Click a cell, then Ctrl+C copies that cell (formulas copy as "=…"), Ctrl+V
-// pastes into it — including multi-cell grids from Sheets, anchored at the
-// cell. With no cell clicked, Ctrl+C copies the whole selected row and Ctrl+V
-// inserts pasted lines as new rows. Inside a cell editor, native copy/paste
-// applies as usual.
+// Click a cell, then Ctrl+C (Cmd+C) copies that cell (formulas copy as "=…"),
+// Ctrl+V pastes into it — including multi-cell grids from Sheets, anchored at
+// the cell. With no cell clicked, Ctrl+C copies the whole selected row and
+// Ctrl+V inserts pasted lines as new rows. Inside a cell editor, native
+// copy/paste applies as usual. Cells aren't text-selectable (like Sheets), so
+// a copy is always the cell or the row, never a stray highlight.
 const parseNum = (s) => {
   const str = String(s ?? "").trim();
   const negative = /^\(.*\)$/.test(str);      // "(5.31)" style negatives
@@ -888,7 +1380,11 @@ function cellRaw(i, field) {
 
 function setCell(i, field, text) {
   const t = String(text).trim();
-  if (field === "sku" || field === "itemId") { items[i][field] = t; return; }
+  if (field === "sku" || field === "itemId") {
+    if (field === "itemId" && t !== String(items[i].itemId ?? "")) delete items[i].buyBox;
+    items[i][field] = t;
+    return;
+  }
   if (field.startsWith("c_")) {
     // custom column — stores text, numbers, or "=" formulas as typed
     const key = field.slice(2);
@@ -948,11 +1444,12 @@ function handlePaste(text) {
         let parts = line.split("\t");                 // Sheets copies as TSV
         if (parts.length < 2) parts = line.split(/[,;]+/);
         parts = parts.map((s) => s.trim());
-        if (parts.length < 2) continue;
+        if (!parts[0]) continue;                      // SKU is the only required column
         if (/^sku$/i.test(parts[0])) continue;        // header row
-        rows.push(fillComs({ sku: parts[0], itemId: parts[1], before: parseNum(parts[2]), during: parseNum(parts[3]) }));
+        rows.push(fillComs({ sku: parts[0], itemId: parts[1] ?? "", before: parseNum(parts[2]), during: parseNum(parts[3]) }));
       }
       if (!rows.length) return;
+      restoreBuyBoxes(rows); // pasted rows get their remembered buy boxes back
       const at = selected >= 0 ? selected + 1 : items.length;
       items.splice(at, 0, ...rows);
     }
@@ -969,18 +1466,43 @@ window.addEventListener("keydown", async (e) => {
   if (k === "y") { e.preventDefault(); redo(); return; }
   if (k === "f") { e.preventDefault(); openFind(); return; }
   if (k === "c") {
-    if (String(window.getSelection())) return;      // highlighted text — native copy
-    if (activeCell) {
-      e.preventDefault();
-      window.api.writeClipboard(cellRaw(activeCell.i, activeCell.field));
-    } else if (selected >= 0) {
-      e.preventDefault();
-      window.api.writeClipboard(visibleOrder().map((f) => cellRaw(selected, f)).join("\t"));
-    }
+    const text = sheetCopyText();
+    if (text == null) return;                       // let the browser copy highlighted text
+    e.preventDefault();
+    window.api.writeClipboard(text);
   } else if (k === "v") {
     e.preventDefault();
     handlePaste(await window.api.readClipboard());
   }
+});
+
+// What a copy should put on the clipboard: the active cell if there is one,
+// else the selected row as tab-separated values, else null (native copy).
+// The active cell always wins — a stray text highlight across the row must
+// never turn a cell copy into a row copy.
+function sheetCopyText() {
+  if (activeCell && items[activeCell.i]) return cellRaw(activeCell.i, activeCell.field);
+  if (String(window.getSelection())) return null;
+  if (selected >= 0) return visibleOrder().map((f) => cellRaw(selected, f)).join("\t");
+  return null;
+}
+const inTextEditor = (el) => !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+
+// Native copy/paste commands (the macOS Edit menu, right-click → Copy) don't
+// go through the keydown handler above, so serve them from the sheet too.
+document.addEventListener("copy", (e) => {
+  if (inTextEditor(e.target)) return;
+  const text = sheetCopyText();
+  if (text == null) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", text);
+});
+document.addEventListener("paste", (e) => {
+  if (inTextEditor(e.target)) return;
+  const text = e.clipboardData?.getData("text/plain");
+  if (!text) return;
+  e.preventDefault();
+  handlePaste(text);
 });
 
 // ---- wiring -----------------------------------------------------------------
@@ -1098,6 +1620,15 @@ const columnEntries = (f) => {
   return entries;
 };
 
+// Cells aren't text-selectable, and Chromium then leaves keyboard focus where
+// it was (e.g. in the search box) when you click one — so Enter/arrows/typing
+// would keep going to that box. Hand focus back to the sheet on every click.
+$("sheet").addEventListener("mousedown", (e) => {
+  if (e.target.closest("input, textarea, button")) return;
+  const a = document.activeElement;
+  if (a && a !== document.body && typeof a.blur === "function") a.blur();
+});
+
 $("sheet").addEventListener("contextmenu", (e) => {
   if (e.target.closest("input")) return;          // cell editor → native menu
   if (String(window.getSelection())) return;      // highlighted text → native copy
@@ -1155,63 +1686,48 @@ function editActive(initial) {
   }
 }
 
-// ---- formula bar -----------------------------------------------------------
-function updateFxBar() {
-  const fxRef = $("fxRef");
-  const fxInput = $("fxInput");
-  if (document.activeElement === fxInput) return; // don't clobber while typing
-  if (!activeCell || !items[activeCell.i]) {
-    fxRef.textContent = "—";
-    fxInput.value = "";
-    fxInput.disabled = true;
-    return;
-  }
-  const { i, field } = activeCell;
-  const r = i + 2;
-  fxRef.textContent = fieldToLetter(field) + r;
-  fxInput.disabled = false;
-  const raw = getRaw(i, field);
-  const isFormula = typeof raw === "string" && raw.trim().startsWith("=");
-  if (field === "change" || field === "pct") {
-    fxInput.value = isFormula
-      ? raw.trim()
-      : raw == null || raw === ""
-        ? (field === "change" ? `=D${r}-C${r}` : `=(D${r}-C${r})/C${r}*100`)
-        : String(raw);
-  } else {
-    fxInput.value = isFormula
-      ? raw.trim()
-      : ["before", "during", "cost", "shipping", "profit"].includes(field)
-        ? money(safe(i, field))
-        : String(raw ?? "");
+// ---- updates ---------------------------------------------------------------
+// main.js does the checking; we just show a banner. Windows downloads and
+// installs in-app; macOS gets the .dmg link (unsigned builds can't self-swap).
+const IS_MAC = navigator.platform.toLowerCase().includes("mac");
+let updateDismissed = false;
+window.api.appVersion().then((v) => { $("versionBtn").textContent = "v" + v; });
+
+function showUpdate(st) {
+  const bar = $("updateBar"), msg = $("updateMsg"), act = $("updateAct"), later = $("updateLater");
+  const show = (text, action = "", dismissable = true) => {
+    msg.textContent = text; act.textContent = action; later.style.display = dismissable ? "" : "none";
+    bar.classList.remove("hidden");
+  };
+  $("versionBtn").classList.toggle("has-update", ["available", "downloading", "ready"].includes(st.state));
+  switch (st.state) {
+    case "checking": if (st.manual) show("Checking for updates…", "", false); return;
+    case "available":
+      if (updateDismissed && !st.manual) return;
+      show(`Version ${st.version} is available (you have ${st.current}).`, IS_MAC ? "Download" : "Update now");
+      return;
+    case "downloading": show(`Downloading version ${st.version ?? ""}… ${st.percent ?? 0}%`, "", false); return;
+    case "ready": show(`Version ${st.version} is ready to install.`, "Restart to update"); return;
+    case "none":
+      if (st.manual) { show(st.dev ? "Update checks only run in the installed app." : `You're up to date (v${st.current}).`, ""); setTimeout(hideUpdate, 4000); }
+      return;
+    case "error":
+      if (st.manual) show(`Couldn't check for updates: ${st.message}`, "Open releases page");
+      return;
+    default: return;
   }
 }
+function hideUpdate() { $("updateBar").classList.add("hidden"); }
 
-$("fxInput").addEventListener("keydown", (e) => {
-  e.stopPropagation();
-  // Ctrl+Z / Ctrl+Y here mean "undo the sheet", not text-undo in this box —
-  // after committing from the formula bar, focus stays in it, and without
-  // this the shortcut would silently do nothing.
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-    e.preventDefault();
-    if (e.shiftKey) redo(); else undo();
-    return;
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
-    e.preventDefault();
-    redo();
-    return;
-  }
-  if (e.key === "Enter" && activeCell && isEditableField(activeCell.field)) {
-    applyMutation(() => setCell(activeCell.i, activeCell.field, $("fxInput").value));
-    persist();
-    render();
-    $("fxInput").blur();
-  } else if (e.key === "Escape") {
-    $("fxInput").blur();
-    updateFxBar();
-  }
+$("updateAct").addEventListener("click", async () => {
+  const st = await window.api.updateState();
+  if (st.state === "ready") { await window.api.installUpdate(); return; }
+  if (st.state === "available") { await window.api.downloadUpdate(); return; }
+  await window.api.installUpdate(); // error state → opens the releases page
 });
+$("updateLater").addEventListener("click", () => { updateDismissed = true; hideUpdate(); });
+$("versionBtn").addEventListener("click", () => { updateDismissed = false; window.api.checkForUpdates(true); });
+window.api.onUpdateState(showUpdate);
 
 // ---- find (Ctrl+F) ---------------------------------------------------------
 // what a cell "contains" for search: its displayed text plus any formula
@@ -1244,8 +1760,9 @@ function computeMatches() {
   });
 }
 
+// The search box sits in the toolbar and is always visible; Ctrl+F just
+// focuses it. "Closing" clears the term and its highlights.
 function openFind() {
-  $("findBar").classList.remove("hidden");
   $("findInput").focus();
   $("findInput").select();
 }
@@ -1255,7 +1772,8 @@ function closeFind() {
   findIdx = -1;
   findMatches = [];
   $("findInput").value = "";
-  $("findBar").classList.add("hidden");
+  $("findBar").classList.add("empty");
+  $("findInput").blur();
   render();
 }
 
@@ -1274,6 +1792,7 @@ function stepFind(d) {
 
 $("findInput").addEventListener("input", () => {
   findTerm = $("findInput").value.trim();
+  $("findBar").classList.toggle("empty", !findTerm);
   findIdx = 0;
   render();
   scrollToMatch();
@@ -1530,6 +2049,11 @@ function closeImportModal() {
   dockListing();
 }
 $("importBtn").addEventListener("click", openImportModal);
+$("importTemplate").addEventListener("click", async (e) => {
+  e.preventDefault();
+  const res = await window.api.saveImportTemplate();
+  if (res?.error) alert("Couldn't save the template: " + res.error);
+});
 $("importCancel").addEventListener("click", closeImportModal);
 $("importModal").addEventListener("click", (e) => {
   if (e.target.id === "importModal") closeImportModal();
@@ -1544,28 +2068,40 @@ function finishImport(mode) {
   if (!mode || !rows.length) { closeImportModal(); return; }
   let added = rows.length;
   let skipped = 0;
+  let kept = 0;
+  cacheBuyBoxes(); // the rows about to go still hold reads worth keeping
   applyMutation(() => {
     if (mode === "replace") {
+      kept = restoreBuyBoxes(rows);
       items = rows;
       selected = -1;
       activeCell = null;
       $("slotPlaceholder").style.display = "";
     } else {
-      // add to bottom, skipping rows already in the table (same SKU + item ID)
-      const seen = new Set(items.map((r) => `${r.sku} ${r.itemId}`));
-      const fresh = rows.filter((r) => !seen.has(`${r.sku} ${r.itemId}`));
+      // add to bottom, skipping rows already in the table: same SKU + item ID,
+      // or same SKU when either side has no item ID yet
+      const key = (r) => `${r.sku} ${r.itemId}`;
+      const seen = new Set(items.map(key));
+      const skus = new Set(items.map((r) => r.sku));
+      const skusNoId = new Set(items.filter((r) => !r.itemId).map((r) => r.sku));
+      const dup = (r) => seen.has(key(r)) || skusNoId.has(r.sku) || (!r.itemId && skus.has(r.sku));
+      const fresh = rows.filter((r) => !dup(r));
       added = fresh.length;
       skipped = rows.length - fresh.length;
+      kept = restoreBuyBoxes(fresh);
       items.push(...fresh);
     }
   });
   persist();
   render();
   closeImportModal(); // restores the Walmart pane if a row is still selected
+  const keptNote = kept ? ` ${kept} of them already have a scanned buy box; Scan will only visit the rest.` : "";
   if (mode === "append") {
-    alert(skipped
+    alert((skipped
       ? `Added ${added} new row${added === 1 ? "" : "s"}. Skipped ${skipped} already in the table.`
-      : `Added ${added} row${added === 1 ? "" : "s"}.`);
+      : `Added ${added} row${added === 1 ? "" : "s"}.`) + keptNote);
+  } else if (kept) {
+    alert(`Replaced the table with ${rows.length} row${rows.length === 1 ? "" : "s"}.${keptNote}`);
   }
 }
 
@@ -1583,7 +2119,7 @@ $("importChoose").addEventListener("click", async () => {
   if (res.error) { alert("Import failed: " + res.error); closeImportModal(); return; }
   const rows = res.rows || [];
   if (!rows.length) {
-    alert("No usable rows found. Only SKU (column A) and Item ID (column B) are required.");
+    alert("No usable rows found. Only SKU (column A) is required.");
     closeImportModal();
     return;
   }
@@ -1605,6 +2141,12 @@ window.addEventListener("keydown", (e) => {
   if (activeCell) {
     const { i, field } = activeCell;
     if (e.key === "Escape") { activeCell = null; render(); return; }
+    if (e.key === "Enter" && !hideSug && field === "during" && buyBoxSuggestion(i) != null) {
+      e.preventDefault(); applyBuyBox(i); return;      // accept the buy-box suggestion
+    }
+    if (e.key === "Enter" && !hideSug && field === "before" && beforeSuggestion(i) != null) {
+      e.preventDefault(); applyBeforeSuggestion(i); return; // accept the floor-price suggestion
+    }
     if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); editActive(); return; }
     if (e.key === "Delete" || e.key === "Backspace") {
       if (isEditableField(field)) {

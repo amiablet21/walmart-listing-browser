@@ -22,7 +22,15 @@
         </svg>
       </div>
       Incentive price list
+      <button id="versionBtn" class="version" title="Check for updates">v—</button>
       <span id="count" class="badge neutral"></span>
+    </div>
+
+    <!-- update banner: hidden until a newer release exists (or a manual check runs) -->
+    <div id="updateBar" class="update-bar hidden">
+      <span id="updateMsg"></span>
+      <button id="updateAct" class="primary"></button>
+      <button id="updateLater" title="Hide for now">Later</button>
     </div>
 
     <!-- compact icon toolbar -->
@@ -55,23 +63,44 @@
           <path d="M17 21v-8H7v8" /><path d="M7 3v5h8" />
         </svg>
       </button>
+      <span class="tb-right">
+        <!-- walks every listing through the hidden Walmart view; click again to stop -->
+        <button id="scanBtn" class="tb-ghost scan" title="Read the buy box of every listing, one by one, and suggest prices on all rows">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" />
+          </svg>
+          <span>Scan buy boxes</span>
+        </button>
+        <button id="scanRestartBtn" class="tb-ghost hidden" title="Forget the stopped scan and start again from the first row">Start over</button>
+        <!-- hides / shows every scan decoration in the sheet -->
+        <button id="sugToggleBtn" class="tb-ghost hidden" title="Hide the scan results from the sheet">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" /><circle cx="12" cy="12" r="3" />
+          </svg>
+          <span>Hide suggestions</span>
+        </button>
+        <button id="applyAllBtn" class="primary apply-all hidden" title="Write every pending During / Before suggestion into the sheet (one undo step)">Apply suggestions</button>
+      </span>
+      <!-- only shown while the listing pane is closed -->
+      <button id="paneOpenBtn" class="tb-ghost pane-open" title="Show the Walmart listing pane" aria-label="Show listing pane">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M14 4v16" />
+        </svg>
+        <span>Show listing pane</span>
+      </button>
     </div>
 
-    <!-- formula bar: shows the clicked cell's address and raw value/formula -->
-    <div class="fx-bar">
-      <span id="fxRef" class="fx-ref mono">—</span>
-      <input id="fxInput" type="text" class="mono" disabled
-             placeholder="Click a cell to see or edit its value or formula" />
-      <span id="saveState" class="save-state">Saved ✓</span>
-    </div>
-
-    <!-- find bar (Ctrl+F) -->
-    <div id="findBar" class="find-bar hidden">
-      <input id="findInput" type="text" placeholder="Find in sheet" />
+    <!-- search row (Ctrl+F focuses it); autosave indicator on the right -->
+    <div id="findBar" class="find-bar empty">
+      <svg class="find-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+      </svg>
+      <input id="findInput" type="text" placeholder="Search SKU, Item ID, price… (Ctrl+F)" />
       <span id="findCount" class="find-count"></span>
-      <button id="findPrev" title="Previous match (Shift+Enter)">↑</button>
-      <button id="findNext" title="Next match (Enter)">↓</button>
-      <button id="findClose" title="Close (Esc)">×</button>
+      <button id="findPrev" title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button>
+      <button id="findNext" title="Next match (Enter)" aria-label="Next match">↓</button>
+      <button id="findClose" title="Clear search (Esc)" aria-label="Clear search">×</button>
+      <span id="saveState" class="save-state">Saved ✓</span>
     </div>
 
     <div class="sheet-wrap">
@@ -122,6 +151,7 @@
             <line x1="10" y1="14" x2="21" y2="3" />
           </svg>
         </button>
+        <button id="paneCloseBtn" class="ghost" title="Close this pane — the sheet takes the full window" aria-label="Close pane">×</button>
       </div>
     </div>
     <!-- the live walmart.com page is docked over this slot by the main process -->
@@ -145,8 +175,9 @@
             <span class="hint">Comma-separated values (.csv) works too.</span></li>
         <li>Columns must be in this order:<br />
             <code>A&nbsp;SKU</code> <code>B&nbsp;Item&nbsp;ID</code> <code>C&nbsp;Before&nbsp;Price</code> <code>D&nbsp;During&nbsp;Incentive</code><br />
-            <span class="hint">Only SKU and Item ID are required — prices can be blank (they start at 0.00).
-            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.</span></li>
+            <span class="hint">Only SKU is required — Item ID and prices can be blank (prices start at 0.00).
+            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.
+            Not sure about the layout? <a href="#" id="importTemplate">Download a blank template</a>.</span></li>
         <li>Optional commission columns:<br />
             <code>Regular&nbsp;Commission</code> <code>During&nbsp;Incentive&nbsp;Commission</code><br />
             <span class="hint">Found by their header names, so they can sit in any column. Rows without them
@@ -254,6 +285,9 @@
       </div>
     </div>
   </div>
+
+  <!-- buy-box hover card (filled by renderer.js) -->
+  <div id="bbCard" class="bbcard hidden"></div>
 
   <script src="renderer.js"></script>
 </body>

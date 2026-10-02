@@ -1,11 +1,12 @@
 // Walmart Listing Browser — Electron main process.
 // Keeps a local list of { sku, itemId } rows and loads the live walmart.com
 // listing for the selected row into a docked browser pane on the right.
-const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
 const { buildIncentiveBuffer } = require("./incentive");
+const { autoUpdater } = require("electron-updater");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
@@ -35,6 +36,7 @@ function saveItems(items) {
 // ---- spreadsheet import (.xlsx / .csv / .tsv) ------------------------------
 // Reads SKU, Item ID, Before Price, During Incentive from columns A-D, plus
 // per-row commission rates from any header-labeled "…Commission…" columns.
+// Only SKU is required; everything else may be blank.
 const parseNumMain = (s) => Number(String(s ?? "").replace(/[$,()%\s]/g, "")) || 0;
 
 function splitCsvLine(line) {
@@ -79,7 +81,7 @@ function normalizeRows(rows) {
     if (!parts?.length) continue;
     if (/^sku$/i.test(String(parts[0] ?? "").trim())) continue;    // header row
     const [sku, itemId, before, during] = parts;
-    if (!String(sku ?? "").trim() && !String(itemId ?? "").trim()) continue;
+    if (!String(sku ?? "").trim()) continue;                        // SKU is the only required column
     out.push({
       sku: String(sku ?? "").trim(),
       itemId: String(itemId ?? "").trim(),
@@ -142,6 +144,39 @@ async function importSheet() {
       ? await parseXlsx(file)
       : parseDelimited(fs.readFileSync(file, "utf8"));
     return { rows, file };
+  } catch (e) {
+    return { error: e.message || String(e) };
+  }
+}
+
+// ---- import template (.xlsx) ------------------------------------------------
+// A blank sheet laid out exactly the way importSheet() expects it, with one
+// example row so the columns are self-explanatory. Saved wherever the user
+// picks; they fill it in (Excel / Google Sheets) and import it back.
+const TEMPLATE_HEAD = [
+  "SKU", "Item ID", "Before Price", "During Incentive", "Regular Commission", "During Incentive Commission",
+];
+async function saveImportTemplate() {
+  const res = await dialog.showSaveDialog(win, {
+    title: "Save import template",
+    defaultPath: "import-template.xlsx",
+    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+  });
+  if (res.canceled || !res.filePath) return { canceled: true };
+  try {
+    const ExcelJS = require("exceljs");
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Import");
+    ws.addRow(TEMPLATE_HEAD);
+    ws.getRow(1).font = { bold: true };
+    ws.addRow(["EXAMPLE-SKU-001", "123456789", 19.99, 17.99, 6, 2]);
+    ws.addRow(["EXAMPLE-SKU-002", "", "", "", "", ""]); // only SKU is required
+    ws.getRow(2).font = ws.getRow(3).font = { italic: true, color: { argb: "FF888888" } };
+    ws.getCell("A2").note = "Example rows — delete them before importing.";
+    [26, 15, 14, 16, 18, 26].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    await wb.xlsx.writeFile(res.filePath);
+    return { saved: true, path: res.filePath };
   } catch (e) {
     return { error: e.message || String(e) };
   }
@@ -393,7 +428,23 @@ let paneZoom = 1; // 100% by default; the user's adjustment persists (ui.json)
 let paneWanted = false;  // whether the renderer currently wants a pane visible
 let paneLoading = false; // true only while WE are loading (not walmart's own background loads)
 
+// The worker view only ever has to yield numbers, so its images, media and
+// fonts are refused — most of a listing's download. The visible panes are
+// untouched (the filter checks which view is asking).
+let workerContentsId = -1;
+let leanHooked = false;
+function hookLeanLoading() {
+  if (leanHooked) return;
+  leanHooked = true;
+  const ses = session.fromPartition("persist:listing");
+  ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) => {
+    const t = details.resourceType;
+    cb({ cancel: details.webContentsId === workerContentsId && (t === "image" || t === "media" || t === "font") });
+  });
+}
+
 function makePane(mode) {
+  hookLeanLoading();
   const v = new WebContentsView({
     webPreferences: {
       partition: "persist:listing", // one session for both panes: log in once
@@ -432,20 +483,163 @@ function makePane(mode) {
   // When the user browses to another listing or variant inside the customer
   // pane, tell the renderer so it can jump to that row. Variant clicks are
   // SPA history pushes, hence also did-navigate-in-page.
-  if (mode === "customer") {
+  // Listing views (the visible customer pane and the hidden worker) read the
+  // price after every navigation. Only the visible pane reports where the
+  // user browsed, so the sheet can jump to that row.
+  if (mode === "customer" || mode === "worker") {
     const report = (url) => {
       const m = /\/ip\/(?:[^/]+\/)?(\d{5,})(?:[/?#]|$)/.exec(url);
-      if (!m || m[1] === customerItem) return;
-      customerItem = m[1]; // a later row click on this item won't reload
-      try { win?.webContents.send("listing:navigated", m[1]); } catch { /* window gone */ }
+      if (!m || m[1] === v.__item) return;
+      v.__item = m[1];
+      v.__lastPrice = null;
+      if (mode === "customer") {
+        customerItem = m[1]; // a later row click on this item won't reload
+        try { win?.webContents.send("listing:navigated", m[1]); } catch { /* window gone */ }
+      }
     };
-    v.webContents.on("did-navigate", (_e, url) => report(url));
+    v.webContents.on("did-navigate", (_e, url) => { report(url); scheduleReadPrice(v); });
     v.webContents.on("did-navigate-in-page", (_e, url, isMainFrame) => {
-      if (isMainFrame) report(url);
+      if (isMainFrame) { report(url); scheduleReadPrice(v); }
     });
+    v.webContents.on("dom-ready", () => scheduleReadPrice(v));       // data payload is already in the HTML
+    v.webContents.on("did-finish-load", () => scheduleReadPrice(v));  // fallback for late-hydrating prices
   }
   win.contentView.addChildView(v);
+  if (mode === "worker") {
+    workerContentsId = v.webContents.id;
+    v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); // real size: the page lays out and hydrates normally
+    v.setVisible(false);
+  }
   return v;
+}
+
+// ---- buy-box price from the docked listing ----------------------------------
+// Runs inside walmart.com after a listing loads and pulls the current ("Now")
+// price and the crossed-out "was" price: structured data first (stable across
+// redesigns), then the page's Next.js payload, then the visible price element.
+// The renderer offers the result as a one-click During Incentive value.
+const PRICE_SCRIPT = `(() => {
+  const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
+  const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  try {
+    for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
+      const j = JSON.parse(el.textContent); const arr = Array.isArray(j) ? j : [j];
+      for (const o of arr) {
+        if (!o || !/product/i.test(String(o["@type"]))) continue;
+        const offs = Array.isArray(o.offers) ? o.offers : o.offers ? [o.offers] : [];
+        for (const of_ of offs) { const p = num(of_?.price ?? of_?.lowPrice); if (ok(p)) return { price: p, was: null, src: "ld" }; }
+      }
+    }
+  } catch {}
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const pi = nd?.props?.pageProps?.initialData?.data?.product?.priceInfo;
+    const p = pi?.currentPrice?.price, w = pi?.wasPrice?.price ?? pi?.listPrice?.price;
+    if (ok(p)) return { price: p, was: ok(w) ? w : null, src: "next" };
+  } catch {}
+  const el = document.querySelector('[itemprop="price"]') || document.querySelector('[data-testid="price-wrap"] [itemprop="price"]') || document.querySelector('span[data-seo-id="hero-price"]');
+  const p = num(el?.getAttribute?.("content") || el?.textContent);
+  if (ok(p)) { const w = num(document.querySelector('[data-testid="price-wrap"] .strike, [data-seo-id="strike-through-price"]')?.textContent); return { price: p, was: ok(w) ? w : null, src: "dom" }; }
+  return null;
+})()`;
+// Who holds the buy box and how many other sellers there are. Best effort:
+// the Next.js payload first, then the page text ("Sold and shipped by X",
+// "Compare all N sellers" / "More seller options (N)").
+const SELLERS_SCRIPT = `(() => {
+  const out = { seller: null, others: null };
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const pr = nd?.props?.pageProps?.initialData?.data?.product;
+    if (pr?.sellerName) out.seller = String(pr.sellerName).trim();
+    if (Number.isInteger(pr?.additionalOfferCount)) out.others = pr.additionalOfferCount;
+  } catch {}
+  try {
+    const text = document.body?.innerText || "";
+    if (!out.seller) { const m = /Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/i.exec(text); if (m) out.seller = m[1].trim(); }
+    if (out.others == null) {
+      const m = /Compare all (\\d+) sellers/i.exec(text) || /More seller options \\((\\d+)\\)/i.exec(text) || /(\\d+) more sellers?/i.exec(text);
+      if (m) out.others = Math.max(0, Number(m[1]) - (/Compare all/i.test(m[0]) ? 1 : 0));
+    }
+  } catch {}
+  return out;
+})()`;
+// The other sellers' names and prices. Walmart's data payload sometimes has
+// them; otherwise open the "Compare all sellers" panel once and read it.
+const OFFERS_SCRIPT = `(async () => {
+  const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
+  const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  const found = [];
+  const dedupe = (arr) => { const out = [], seen = new Set(); for (const o of arr) { const k = o.seller.toLowerCase() + "|" + o.price; if (!seen.has(k)) { seen.add(k); out.push(o); } } return out.sort((a, b) => a.price - b.price).slice(0, 12); };
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const seen = new Set();
+    const walk = (o, d) => {
+      if (!o || typeof o !== "object" || d > 14 || seen.has(o)) return; seen.add(o);
+      if (Array.isArray(o)) {
+        if (o.length > 1 && o.every((e) => e && typeof e === "object" && (e.sellerName || e.sellerDisplayName))) {
+          for (const e of o) { const p = num(e.priceInfo?.currentPrice?.price ?? e.currentPrice?.price ?? e.price?.price ?? e.price); const n = e.sellerName || e.sellerDisplayName; if (n && ok(p)) found.push({ seller: String(n).trim(), price: p }); }
+        }
+        for (const e of o) walk(e, d + 1); return;
+      }
+      for (const k in o) walk(o[k], d + 1);
+    };
+    walk(nd, 0);
+  } catch {}
+  if (found.length > 1) return dedupe(found);
+  try {
+    if (!window.__wlbOffersTried) {
+      window.__wlbOffersTried = true;
+      const btn = [...document.querySelectorAll("button, a")].find((b) => /Compare all \\d+ sellers|More seller options/i.test(b.textContent || ""));
+      if (btn) {
+        btn.click();
+        await new Promise((r) => setTimeout(r, 1800));
+        const root = document.querySelector('[role="dialog"]') || document.body;
+        const text = root.innerText || "";
+        const re = /\\$\\s?(\\d[\\d,]*\\.\\d{2})[\\s\\S]{0,400}?Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/gi;
+        let m; while ((m = re.exec(text))) { const p = num(m[1]); if (ok(p)) found.push({ seller: m[2].trim(), price: p }); }
+        try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
+      }
+    }
+  } catch {}
+  return dedupe(found);
+})()`;
+// Each listing view tracks its own item, last read and retry timers.
+let lastPrice = null; // most recent read from any view (the renderer asks for it on startup)
+function sendPrice(v, p) {
+  if (v) v.__lastPrice = p;
+  lastPrice = p;
+  try { win?.webContents.send("listing:price", p); } catch { /* window gone */ }
+}
+// Never opens the sellers panel on its own: that visibly jumps the page the
+// user is reading. Seller prices come only from paneOffers (hidden worker).
+function scheduleReadPrice(v, withOffers = false) {
+  const item = v.__item;
+  if (!item) return;
+  if (v.__lastPrice && v.__lastPrice.itemId === item) return; // already read since this navigation
+  for (const t of v.__timers || []) clearTimeout(t);
+  v.__timers = [];
+  const attempt = async () => {
+    if (v.__item !== item || v.webContents.isDestroyed()) return false;
+    try {
+      const r = await v.webContents.executeJavaScript(PRICE_SCRIPT, true);
+      if (r && r.price) {
+        let sellers = {}, offers = [];
+        try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
+        if (sellers.others > 0 && withOffers) { // only on explicit request
+          try { offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { /* optional */ }
+        }
+        if (v.__item !== item) return false; // moved on while the panel was loading
+        sendPrice(v, { itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, offers });
+        return true;
+      }
+    } catch { /* page navigated mid-read */ }
+    return false;
+  };
+  // walmart.com hydrates late; retry a few times, stop at the first hit
+  let done = false;
+  for (const ms of [0, 400, 1500, 3500, 7000]) {
+    v.__timers.push(setTimeout(async () => { if (!done && await attempt()) done = true; }, ms));
+  }
 }
 
 const customerUrl = (itemId) => `https://www.walmart.com/ip/${encodeURIComponent(itemId)}`;
@@ -475,12 +669,58 @@ function paneShow(itemId, b, mode) {
     }
   } else if (itemId && customerItem !== itemId) {
     customerItem = itemId;
+    v.__item = itemId;
+    v.__lastPrice = null;
     paneLoading = true;
     v.webContents.loadURL(customerUrl(itemId));
   }
   // a load we started is still in flight → stay hidden behind the spinner
   if (paneLoading && v.webContents.isLoading()) v.setVisible(false);
   return true;
+}
+
+// ---- hidden worker view ------------------------------------------------------
+// All background reads (pane closed, scans, seller lookups for the hover
+// card) go through a view that is never shown, so what the user is looking
+// at in the pane is never disturbed.
+function ensureWorker() {
+  if (!panes.worker) panes.worker = makePane("worker");
+  return panes.worker;
+}
+function workerLoad(itemId) {
+  const w = ensureWorker();
+  if (w.__item !== itemId) {
+    w.__item = itemId;
+    w.__lastPrice = null;
+    w.webContents.loadURL(customerUrl(itemId));
+    return true;
+  }
+  return false;
+}
+function panePrefetch(itemId) {
+  if (!itemId) return false;
+  const w = ensureWorker();
+  if (!workerLoad(itemId)) {
+    if (w.__lastPrice && w.__lastPrice.itemId === itemId) sendPrice(w, w.__lastPrice); // answer from memory
+    else scheduleReadPrice(w);                                                           // page is there, price wasn't caught yet
+  }
+  return true;
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// The other sellers' prices for one item, on demand (the hover card). Loads
+// the item in the worker if needed, waits for its price, then opens the panel.
+async function paneOffers(itemId) {
+  if (!itemId) return null;
+  const w = ensureWorker();
+  workerLoad(itemId);
+  for (let i = 0; i < 50 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤15 s
+  if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
+  try {
+    const offers = (await w.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || [];
+    if (w.__item !== itemId) return null;
+    sendPrice(w, { ...w.__lastPrice, offers });
+    return offers;
+  } catch { return null; }
 }
 function paneHide() {
   paneWanted = false;
@@ -497,6 +737,82 @@ function paneZoomBy(dir) {
   return paneZoom;
 }
 
+// ---- updates ---------------------------------------------------------------
+// New versions are published as GitHub Releases by the release workflow.
+// Windows: electron-updater fetches latest.yml from the release, downloads the
+// installer in the background and swaps the app on restart. macOS: the build
+// is unsigned, so the OS won't let it replace itself — we check the GitHub API
+// for a newer tag and hand the user the .dmg link instead.
+const RELEASES_API = "https://api.github.com/repos/amiablet21/walmart-listing-browser/releases/latest";
+const RELEASES_PAGE = "https://github.com/amiablet21/walmart-listing-browser/releases/latest";
+let updateState = { state: "idle", current: app.getVersion() };
+function pushUpdate(patch) {
+  updateState = { ...updateState, ...patch, current: app.getVersion() };
+  try { win?.webContents.send("update:state", updateState); } catch { /* window gone */ }
+  return updateState;
+}
+const semver = (v) => String(v ?? "").replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+function isNewer(a, b) { // a > b ?
+  const [x, y] = [semver(a), semver(b)];
+  for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); }
+  return false;
+}
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.logger = null;
+autoUpdater.on("update-available", (info) => pushUpdate({ state: "available", version: info.version }));
+autoUpdater.on("update-not-available", () => pushUpdate({ state: "none" }));
+autoUpdater.on("download-progress", (p) => pushUpdate({ state: "downloading", percent: Math.round(p.percent) }));
+autoUpdater.on("update-downloaded", (info) => pushUpdate({ state: "ready", version: info.version }));
+autoUpdater.on("error", (e) => pushUpdate({ state: "error", message: e?.message || String(e) }));
+
+async function checkGithubRelease() {
+  const res = await fetch(RELEASES_API, { headers: { "User-Agent": "walmart-listing-browser", Accept: "application/vnd.github+json" } });
+  if (!res.ok) throw new Error(`GitHub responded ${res.status}`);
+  const rel = await res.json();
+  const version = String(rel.tag_name || "").replace(/^v/, "");
+  const asset = (rel.assets || []).find((a) => /\.dmg$/i.test(a.name));
+  return { version, url: asset?.browser_download_url || rel.html_url || RELEASES_PAGE };
+}
+
+async function checkForUpdates(manual = false) {
+  if (!app.isPackaged) return pushUpdate({ state: "none", manual, dev: true });
+  pushUpdate({ state: "checking", manual });
+  try {
+    if (process.platform === "win32") {
+      const r = await autoUpdater.checkForUpdates();
+      // the event handlers above push the resulting state; echo it back
+      const version = r?.updateInfo?.version;
+      return pushUpdate(version && isNewer(version, app.getVersion())
+        ? { state: "available", version, manual } : { state: "none", manual });
+    }
+    const { version, url } = await checkGithubRelease();
+    return pushUpdate(isNewer(version, app.getVersion())
+      ? { state: "available", version, url, manual } : { state: "none", manual });
+  } catch (e) {
+    return pushUpdate({ state: "error", message: e?.message || String(e), manual });
+  }
+}
+async function downloadUpdate() {
+  if (process.platform !== "win32") {
+    shell.openExternal(updateState.url || RELEASES_PAGE);
+    return updateState;
+  }
+  pushUpdate({ state: "downloading", percent: 0 });
+  try { await autoUpdater.downloadUpdate(); } catch (e) { pushUpdate({ state: "error", message: e?.message || String(e) }); }
+  return updateState;
+}
+function installUpdate() {
+  if (process.platform === "win32" && updateState.state === "ready") {
+    setImmediate(() => autoUpdater.quitAndInstall(false, true));
+    return true;
+  }
+  shell.openExternal(updateState.url || RELEASES_PAGE);
+  return false;
+}
+const UPDATE_EVERY = 4 * 60 * 60 * 1000;
+
 // ---- app lifecycle ---------------------------------------------------------
 // Own taskbar identity (icon grouping, notifications) instead of Electron's.
 app.setAppUserModelId("com.imrantursun.walmart-listing-browser");
@@ -511,17 +827,29 @@ app.whenReady().then(() => {
   ipcMain.handle("items:save", (_e, items) => saveItems(Array.isArray(items) ? items : []));
   ipcMain.handle("listing:show", (_e, { itemId, bounds, mode }) => paneShow(itemId, bounds, mode));
   ipcMain.handle("listing:hide", () => paneHide());
+  ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
+  ipcMain.handle("listing:offers", (_e, itemId) => paneOffers(itemId));
   ipcMain.handle("listing:zoom", (_e, dir) => paneZoomBy(dir));
   ipcMain.handle("listing:openExternal", (_e, itemId) =>
     shell.openExternal(`https://www.walmart.com/ip/${encodeURIComponent(itemId)}`));
   ipcMain.handle("clip:read", () => clipboard.readText());
   ipcMain.handle("clip:write", (_e, t) => { clipboard.writeText(String(t ?? "")); return true; });
   ipcMain.handle("sheet:import", () => importSheet());
+  ipcMain.handle("sheet:template", () => saveImportTemplate());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
   ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
   ipcMain.handle("sheet:exportIncentive", (_e, payload) => exportIncentive(payload));
+  ipcMain.handle("listing:price", () => lastPrice);
+  ipcMain.handle("update:check", (_e, manual) => checkForUpdates(!!manual));
+  ipcMain.handle("update:download", () => downloadUpdate());
+  ipcMain.handle("update:install", () => installUpdate());
+  ipcMain.handle("update:state", () => updateState);
+  ipcMain.handle("app:version", () => app.getVersion());
 
   createWindow();
+  // quiet check shortly after launch, then every few hours while running
+  setTimeout(() => checkForUpdates(false), 8000);
+  setInterval(() => { if (updateState.state !== "downloading" && updateState.state !== "ready") checkForUpdates(false); }, UPDATE_EVERY);
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
