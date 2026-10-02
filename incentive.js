@@ -13,9 +13,10 @@
 //   G Avg. Units Sold Before Incentive (90d)     H Avg. Price Before Incentive (90d)
 //   I Incentive Start Date  J Incentive End Date K Incentive Commission Rate
 //   L Expected Unit Sales During Incentive       M Price During Incentive
-// Only what the app knows is written: country, Item ID, condition code,
-// partner ID, both commission rates, both prices, and the incentive dates.
-// Base ID and the two unit-sales columns are left blank for the Account Manager.
+// Only what the app knows is written: country, Base ID and Item ID (both the
+// row's Item ID), condition code, partner ID, both commission rates, both
+// prices, and the incentive dates. The two unit-sales columns are left blank
+// for the Account Manager.
 
 const fs = require("fs");
 const path = require("path");
@@ -99,7 +100,7 @@ async function buildIncentiveBuffer(rows, opts = {}) {
     const r = ws.getRow(i + 2);
     const values = [
       MARKETPLACE_COUNTRY,        // A Marketplace Country
-      null,                       // B Base ID
+      idCell(row.itemId),         // B Base ID (same as Item ID)
       idCell(row.itemId),         // C Item ID
       conditionCode,              // D Item Condition Code
       idCell(partnerId),          // E Partner ID
