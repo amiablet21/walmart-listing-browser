@@ -74,7 +74,7 @@ Optionally add `Regular Commission` and `During Incentive Commission` columns (a
 - Electron 33, plain HTML/CSS/JS renderer (no framework).
 - The listing pane is a `WebContentsView` — walmart.com refuses to render into a `<webview>`, so a window-grade view is docked over the layout instead.
 - `exceljs` powers `.xlsx` import/export.
-- Icon assets live in [`build/`](build/) — `icon.svg` is the master; `icon.png` / `icon.ico` are rasterized from it.
+- Icon assets live in [`build/`](build/) — `icon.svg` is the master; `icon.png` / `icon.ico` are rasterized from it. `icon-mac.svg` / `icon-mac.png` place the same artwork on Apple's 1024 icon grid (tile 824 px, clear margin around it) so the Dock shows it at the same size as other Mac apps.
 
 ---
 

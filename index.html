@@ -21,10 +21,10 @@
           </g>
         </svg>
       </div>
-      <div class="seg app-tabs" role="tablist" aria-label="Sections">
-        <button class="seg-btn active" role="tab" data-tab="sheet">Incentive price list</button>
-        <button class="seg-btn" role="tab" data-tab="market">Market</button>
-      </div>
+      <nav class="app-tabs" role="tablist" aria-label="Sections">
+        <button class="app-tab active" role="tab" data-tab="sheet">Incentive price list</button>
+        <button class="app-tab" role="tab" data-tab="market">Market</button>
+      </nav>
       <button id="versionBtn" class="version" title="Check for updates">v—</button>
       <span id="count" class="badge neutral"></span>
     </div>
@@ -287,10 +287,10 @@
         </div>
         <span class="m-title">Walmart Listing Browser</span>
         <span id="mVersion" class="version">v—</span>
-        <div class="seg app-tabs" role="tablist" aria-label="Sections">
-          <button class="seg-btn" role="tab" data-tab="sheet">Incentive price list</button>
-          <button class="seg-btn active" role="tab" data-tab="market">Market</button>
-        </div>
+        <nav class="app-tabs" role="tablist" aria-label="Sections">
+          <button class="app-tab" role="tab" data-tab="sheet">Incentive price list</button>
+          <button class="app-tab active" role="tab" data-tab="market">Market</button>
+        </nav>
         <span id="mLastScan" class="m-last"></span>
       </div>
     </div>
@@ -301,9 +301,11 @@
         <span>Run market scan</span>
       </button>
       <label class="m-sched" title="Run the scan by itself every day at this time, while the app is open">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6B5C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         <input id="mSchedOn" type="checkbox" />
         <span>Every day at</span>
         <input id="mSchedTime" type="time" value="09:00" />
+        <span id="mSchedState" class="m-sched-state">off</span>
       </label>
       <span class="tb-sep"></span>
       <span class="m-search">
@@ -311,10 +313,10 @@
         <input id="mSearch" type="search" placeholder="Search SKU, Item ID, seller…" aria-label="Search the market table" />
       </span>
       <span id="mFilters" class="m-filters">
-        <button class="m-chip active" data-f="all">All</button>
-        <button class="m-chip" data-f="lost">Buy box lost</button>
-        <button class="m-chip" data-f="amz">Amazon cheaper</button>
-        <button class="m-chip" data-f="noamz">No Amazon link</button>
+        <button class="m-chip active" data-f="all">All<span class="n"></span></button>
+        <button class="m-chip" data-f="lost">Buy box lost<span class="n"></span></button>
+        <button class="m-chip" data-f="amz">Amazon cheaper<span class="n"></span></button>
+        <button class="m-chip" data-f="noamz">No Amazon link<span class="n"></span></button>
       </span>
       <button id="mExportBtn" class="m-right" title="Export this table to .xlsx or .csv">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
@@ -361,8 +363,8 @@
       </div>
       <div class="confirm-actions">
         <button id="mSumClose">Close</button>
-        <button id="mSumCsv">Export CSV</button>
-        <button id="mSumXlsx" class="primary">Export Excel</button>
+        <button id="mSumCsv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export CSV</button>
+        <button id="mSumXlsx" class="primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export Excel</button>
       </div>
     </div>
   </div>

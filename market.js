@@ -31,7 +31,7 @@ function setTab(t) {
   appTab = t === "market" ? "market" : "sheet";
   localStorage.setItem("appTab", appTab);
   document.body.classList.toggle("market-mode", inMarket());
-  document.querySelectorAll(".app-tabs .seg-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === appTab));
+  document.querySelectorAll(".app-tabs .app-tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === appTab));
   if (inMarket()) {
     window.api.hideListing();
     renderMarket();
@@ -41,7 +41,7 @@ function setTab(t) {
     render();
   }
 }
-document.querySelectorAll(".app-tabs .seg-btn").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+document.querySelectorAll(".app-tabs .app-tab").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
 
 // ---- state -------------------------------------------------------------------
 let mSelected = -1;      // index into items
@@ -148,7 +148,13 @@ function renderMarket() {
     });
     tb.appendChild(tr);
   }
-  document.querySelectorAll("#mFilters .m-chip").forEach((b) => b.classList.toggle("active", b.dataset.f === mFilter));
+  const all = items.map((_, i) => i).filter((i) => idOf(items[i]));
+  const counts = { all: all.length, lost: 0, amz: 0, noamz: 0 };
+  for (const i of all) { const f = rowFacts(i); if (f.lost) counts.lost++; if (f.cheaper) counts.amz++; if (!f.linked) counts.noamz++; }
+  document.querySelectorAll("#mFilters .m-chip").forEach((b) => {
+    b.classList.toggle("active", b.dataset.f === mFilter);
+    b.querySelector(".n").textContent = counts[b.dataset.f] ? ` · ${counts[b.dataset.f]}` : "";
+  });
   $("mLastScan").textContent = mScan.running ? "" : mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}` : "No scan yet";
   renderScanBar();
   renderPanel();
@@ -195,7 +201,7 @@ function renderPanel() {
            <button class="m-icon" data-unlink="${k}" title="Unlink this listing" aria-label="Unlink this listing"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
          </span>`;
     return `<div class="m-amz${a.robot ? " robot" : ""}">
-      <div class="m-amz-top"><span class="mono">${esc(a.asin || "typed")}</span><span class="t">${esc(a.title || (a.manual ? "Typed price" : ""))}</span>${a.manual ? `<span class="m-pill typed">typed</span>` : ""}</div>
+      <div class="m-amz-top"><span class="mono">${esc(a.asin || "typed")}</span><span class="t">${esc(a.title || (a.manual ? "Typed price" : ""))}</span><span class="m-pill ${a.manual ? "typed" : "auto"}">${a.manual ? "typed" : "auto"}</span></div>
       <div class="m-amz-bot">${body}</div>
       ${a.robot && a.asin ? `<div class="m-amz-robot"><button class="mini" data-show="${k}">Show the Amazon page here</button><span class="m-muted">Pass the check once; later reads go through.</span></div>` : ""}
     </div>`;
@@ -393,10 +399,17 @@ let mSched = { on: false, time: "09:00" };
 try { mSched = { ...mSched, ...(JSON.parse(localStorage.getItem("marketSchedule") || "{}") || {}) }; } catch { /* default */ }
 $("mSchedOn").checked = !!mSched.on;
 $("mSchedTime").value = /^\d{2}:\d{2}$/.test(mSched.time) ? mSched.time : "09:00";
+function renderSched() {
+  const st = $("mSchedState");
+  st.textContent = mSched.on ? "on" : "off";
+  st.classList.toggle("on", !!mSched.on);
+}
 function saveSched() {
   mSched = { on: $("mSchedOn").checked, time: $("mSchedTime").value || "09:00" };
   localStorage.setItem("marketSchedule", JSON.stringify(mSched));
+  renderSched();
 }
+renderSched();
 $("mSchedOn").addEventListener("change", saveSched);
 $("mSchedTime").addEventListener("change", saveSched);
 function scheduleTick(atLaunch = false) {
