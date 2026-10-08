@@ -190,12 +190,14 @@ function renderPanel() {
     const editing = mEditing && mEditing.i === i && mEditing.k === k;
     if (editing) {
       return `<div class="m-amz editing">
-        <div class="m-muted"><span class="mono">${esc(a.asin || "new")}</span> · Editing</div>
-        <label class="m-field"><span>Amazon URL or ASIN</span><input id="mLinkEdit" type="text" value="${esc(a.asin || "")}" placeholder="Paste Amazon URL or ASIN" /></label>
-        <div class="m-edit-row">
-          <label class="m-field m-field-price"><span>Price</span><input id="mPriceInput" type="text" inputmode="decimal" value="${a.manual && a.price ? money(a.price) : ""}" placeholder="${a.price ? money(a.price) : "0.00"}" /></label>
-          <span class="m-muted m-edit-hint">Leave blank to read it from Amazon</span>
-          <button class="primary mini" data-save="${k}">Save</button><button class="mini" data-cancel="${k}">Cancel</button>
+        <div class="m-edit-grid">
+          <label for="mLinkEdit">Link</label>
+          <input id="mLinkEdit" type="text" value="${esc(a.asin || "")}" placeholder="Amazon URL or ASIN" />
+          <label for="mPriceInput">Price</label>
+          <div class="m-edit-price">
+            <input id="mPriceInput" type="text" inputmode="decimal" value="${a.manual && a.price ? money(a.price) : ""}" placeholder="from Amazon" title="Leave blank to read the price from Amazon" />
+            <span class="m-edit-actions"><button class="primary mini" data-save="${k}">Save</button><button class="mini" data-cancel="${k}">Cancel</button></span>
+          </div>
         </div>
       </div>`;
     }
@@ -208,9 +210,8 @@ function renderPanel() {
       <div class="m-amz-main">
         <div class="m-amz-text">
           <div class="t">${a.asin ? `<a href="#amz" data-open="${k}" title="Open on Amazon">${esc(a.title || a.asin)}</a>` : esc(a.title || "Typed price")}</div>
-          <div class="m-muted sub">${sub}</div>
+          <div class="m-muted sub">${sub}${a.sold ? ` <span class="m-pill sold">${esc(a.sold)} sold</span>` : ""}</div>
         </div>
-        ${a.sold ? `<span class="m-pill sold">${esc(a.sold)} sold</span>` : ""}
         <b class="m-price${lowest ? " low" : ""}">${fmt(a.price)}</b>
         <span class="m-icons">
           <button class="m-icon" data-edit="${k}" title="Edit the link or type a price" aria-label="Edit the link or type a price"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>

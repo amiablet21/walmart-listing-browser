@@ -580,18 +580,19 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-amz-text .mono, .m-amz .mono { font-family: "Geist Mono", Consolas, monospace; }
 .m-amz .m-price { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .m-amz .m-price.low { color: #C2562F; }
-.m-pill.sold { background: #F1E6F0; color: #7A3F76; border: 1px solid #E4CFE2; }
+.m-pill.sold { background: #F1E6F0; color: #7A3F76; border: 1px solid #E4CFE2; padding: 1px 7px; font-size: 11px; margin-left: 6px; vertical-align: 1px; }
 .m-icons { display: inline-flex; gap: 2px; }
 #mPanel button.m-icon { border: 0; background: transparent; color: #6E6B5C; border-radius: 6px; width: 28px; height: 28px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 #mPanel button.m-icon:hover { background: #E9E4D7; color: #1C1B16; }
-.m-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #6E6B5C; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-.m-field input, .m-add input { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 8px 10px; background: #fff; color: #1C1B16; min-height: 34px; box-sizing: border-box; text-transform: none; letter-spacing: 0; font-weight: 400; }
-.m-field input:focus, .m-add input:focus { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 1px; border-color: #4C5B9E; }
-.m-field-price { width: 120px; flex: none; }
-.m-field-price input { width: 120px; font-variant-numeric: tabular-nums; }
-.m-edit-row { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
-.m-edit-hint { flex: 1; min-width: 120px; padding-bottom: 9px; font-size: 11px; color: #918D7C; }
-button.mini { padding: 5px 10px; font-size: 12px; }
+.m-edit-grid { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+.m-edit-grid label { font-size: 12px; color: #6E6B5C; text-align: right; }
+.m-edit-grid input, .m-add input { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 10px; background: #fff; color: #1C1B16; min-height: 32px; box-sizing: border-box; min-width: 0; }
+.m-edit-grid input:focus, .m-add input:focus { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 1px; border-color: #4C5B9E; }
+.m-edit-grid input::placeholder { color: #918D7C; }
+.m-edit-price { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.m-edit-price input { flex: 1 1 120px; font-variant-numeric: tabular-nums; }
+.m-edit-actions { display: inline-flex; gap: 6px; flex: none; }
+button.mini { padding: 6px 11px; font-size: 12.5px; min-height: 32px; }
 .m-amz-robot { display: flex; align-items: center; gap: 10px; }
 .m-add { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #FAF9F5; }
 .m-add input { flex: 1 1 160px; min-width: 0; }
