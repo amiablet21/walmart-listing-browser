@@ -768,7 +768,11 @@ const AMZ_SCRIPT = `(() => {
   const oEl = document.querySelector('#olpLinkWidget_feature_div, #olp-upd-new, #dynamic-aod-ingress-box, #moreBuyingChoices_feature_div, #olp_feature_div');
   const om = /New\\s*\\((\\d+)\\)|\\((\\d+)\\)\\s*from|(\\d+)\\s+(?:new\\s+)?(?:offers?|sellers?)/i.exec(oEl?.textContent || "");
   if (om) offers = Number(om[1] || om[2] || om[3]);
-  return { price: ok(price) ? price : null, title, prime, seller, offers, unavailable };
+  let sold = null;
+  const sEl2 = document.querySelector('#social-proofing-faceout-title-text, #socialProofingAsinFaceout_feature_div, [id^="social-proofing"]');
+  const sm = /(\\d[\\d,.]*\\s*[Kk]?\\+?)\\s+bought in (?:the )?past month/i.exec(sEl2?.textContent || "") || /(\\d[\\d,.]*\\s*[Kk]?\\+?)\\s+bought in (?:the )?past month/i.exec(text);
+  if (sm) sold = sm[1].replace(/\\s+/g, "").toUpperCase();
+  return { price: ok(price) ? price : null, title, prime, seller, offers, unavailable, sold };
 })()`;
 const amazonUrl = (asin) => `https://www.amazon.com/dp/${encodeURIComponent(asin)}?th=1&psc=1`;
 function ensureAmazon() {

@@ -175,7 +175,7 @@ function renderScanBar() {
   $("mProgBar").style.width = `${Math.round((mScan.done / Math.max(1, mScan.total)) * 100)}%`;
 }
 
-// ---- rendering: the right panel ----------------------------------------------------
+// ---- rendering: the right panel (design B: identity card + Walmart card + Amazon card) ----
 function renderPanel() {
   const p = $("mPanel");
   const i = mSelected;
@@ -184,60 +184,71 @@ function renderPanel() {
   const it = f.it;
   const list = amzList(it);
   const sellersHtml = f.sellers.length
-    ? f.sellers.map((s) => `<div class="m-seller${s.isBB ? " bb" : ""}"><span class="s${s.mine ? " me" : ""}">${esc(s.seller)}${s.mine ? " (you)" : ""}</span>${s.isBB ? `<span class="m-pill bb">Buy box</span>` : ""}<span class="p">${fmt(s.price)}</span></div>`).join("")
+    ? f.sellers.map((s) => `<div class="m-seller${s.isBB ? " bb" : ""}"><span class="s${s.mine ? " me" : ""}">${esc(s.seller)}</span>${s.isBB ? `<span class="m-pill bb">Buy box</span>` : ""}${s.mine ? `<span class="m-pill you">You</span>` : ""}<span class="p">${fmt(s.price)}</span></div>`).join("")
     : `<div class="m-seller m-muted">${f.bb ? "Only the buy box could be read" : it.buyBox?.failed ? "The page couldn't be read — open it to check" : "Not scanned yet"}</div>`;
   const amzHtml = list.map((a, k) => {
     const editing = mEditing && mEditing.i === i && mEditing.k === k;
-    const meta = a.manual ? `Typed by you${a.at ? " · " + when(a.at) : ""}`
-      : a.robot ? `<span class="m-warn">Robot check — pass it below, then re-check</span>`
-      : a.failed ? `<span class="m-warn">Couldn't read a price${a.at ? " · " + when(a.at) : ""}</span>`
-      : [a.prime ? "Prime" : null, a.seller ? "Sold by " + esc(a.seller) : null, Number.isInteger(a.offers) ? a.offers + " offers" : null, a.at ? when(a.at) : null].filter(Boolean).join(" · ") || "Not read yet";
-    const body = editing
-      ? `<label class="m-edit"><span>Price</span><input id="mPriceInput" type="text" inputmode="decimal" value="${a.price ? money(a.price) : ""}" /></label>
-         <button class="primary mini" data-save="${k}">Save</button><button class="mini" data-cancel="${k}">Cancel</button>`
-      : `<b class="m-price">${fmt(a.price)}</b><span class="m-muted">${meta}</span>
-         <span class="m-icons">
-           <button class="m-icon" data-edit="${k}" title="Type this price by hand" aria-label="Type this price by hand"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-           ${a.asin ? `<button class="m-icon" data-open="${k}" title="Open on Amazon" aria-label="Open on Amazon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>` : ""}
-           <button class="m-icon" data-unlink="${k}" title="Unlink this listing" aria-label="Unlink this listing"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-         </span>`;
+    if (editing) {
+      return `<div class="m-amz editing">
+        <div class="m-muted"><span class="mono">${esc(a.asin || "new")}</span> · Editing</div>
+        <label class="m-field"><span>Amazon URL or ASIN</span><input id="mLinkEdit" type="text" value="${esc(a.asin || "")}" placeholder="Paste Amazon URL or ASIN" /></label>
+        <div class="m-edit-row">
+          <label class="m-field m-field-price"><span>Price</span><input id="mPriceInput" type="text" inputmode="decimal" value="${a.manual && a.price ? money(a.price) : ""}" placeholder="${a.price ? money(a.price) : "0.00"}" /></label>
+          <span class="m-muted m-edit-hint">Leave blank to read it from Amazon</span>
+          <button class="primary mini" data-save="${k}">Save</button><button class="mini" data-cancel="${k}">Cancel</button>
+        </div>
+      </div>`;
+    }
+    const sub = a.manual ? `<span class="mono">${esc(a.asin || "typed")}</span> · typed by you${a.at ? " · " + when(a.at) : ""}`
+      : a.robot ? `<span class="mono">${esc(a.asin)}</span> · <span class="m-warn">robot check — pass it below, then re-check</span>`
+      : a.failed ? `<span class="mono">${esc(a.asin)}</span> · <span class="m-warn">couldn't read a price${a.at ? " · " + when(a.at) : ""}</span>`
+      : `<span class="mono">${esc(a.asin)}</span>`;
+    const lowest = f.low != null && a.price > 0 && Math.abs(a.price - f.low) < 0.005;
     return `<div class="m-amz${a.robot ? " robot" : ""}">
-      <div class="m-amz-top"><span class="mono">${esc(a.asin || "typed")}</span><span class="t">${esc(a.title || (a.manual ? "Typed price" : ""))}</span><span class="m-pill ${a.manual ? "typed" : "auto"}">${a.manual ? "typed" : "auto"}</span></div>
-      <div class="m-amz-bot">${body}</div>
+      <div class="m-amz-main">
+        <div class="m-amz-text">
+          <div class="t">${a.asin ? `<a href="#amz" data-open="${k}" title="Open on Amazon">${esc(a.title || a.asin)}</a>` : esc(a.title || "Typed price")}</div>
+          <div class="m-muted sub">${sub}</div>
+        </div>
+        ${a.sold ? `<span class="m-pill sold">${esc(a.sold)} sold</span>` : ""}
+        <b class="m-price${lowest ? " low" : ""}">${fmt(a.price)}</b>
+        <span class="m-icons">
+          <button class="m-icon" data-edit="${k}" title="Edit the link or type a price" aria-label="Edit the link or type a price"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+          <button class="m-icon" data-unlink="${k}" title="Unlink this listing" aria-label="Unlink this listing"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+        </span>
+      </div>
       ${a.robot && a.asin ? `<div class="m-amz-robot"><button class="mini" data-show="${k}">Show the Amazon page here</button><span class="m-muted">Pass the check once; later reads go through.</span></div>` : ""}
     </div>`;
   }).join("");
   p.innerHTML = `
-    <div class="m-panel-head">
-      <div class="m-panel-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${f.bb?.at ? " · read " + when(f.bb.at) : ""}</div></div>
-      <button id="mRecheck" ${mScan.running ? "disabled" : ""} title="Read this listing's Walmart page and its Amazon listings again now">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg> Re-check
-      </button>
-    </div>
-    <div class="m-stats">
-      <div><span>Our price</span><b>${fmt(f.during)}</b></div>
-      <div><span>Walmart low</span><b class="wm">${fmt(f.wmLow)}</b></div>
-      <div><span>Amazon low</span><b class="amz">${fmt(f.low)}</b></div>
-    </div>
-    <section>
-      <div class="m-sec-head"><span class="dot wm"></span><h3>Walmart sellers</h3><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : ""}</span><a href="#" id="mOpenWm">Open listing</a></div>
-      <div class="m-list">${sellersHtml}</div>
-      <div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>
-    </section>
-    <section>
-      <div class="m-sec-head"><span class="dot amz"></span><h3>Amazon listings</h3><span class="m-muted">${list.length ? `${list.length} linked` : "none linked yet"}</span></div>
-      <div class="m-list">
-        ${amzHtml}
-        <div class="m-add">
-          <label for="mLinkInput">Add listing</label>
-          <input id="mLinkInput" type="text" placeholder="Paste Amazon URL or ASIN" />
-          <button id="mLinkBtn">Link</button>
-        </div>
+    <div class="m-card m-id">
+      <div class="m-id-head">
+        <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${f.bb?.at ? " · read " + when(f.bb.at) : ""}</div></div>
+        <button class="m-icon" id="mOpenWm" title="Open Walmart listing" aria-label="Open Walmart listing"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>
+        <button class="m-icon" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Re-check this listing now" aria-label="Re-check this listing now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
       </div>
-    </section>`;
+      <div class="m-stats">
+        <div><span>Our price</span><b>${fmt(f.during)}</b></div>
+        <div><span>Walmart</span><b class="wm">${fmt(f.wmLow)}</b></div>
+        <div><span>Amazon</span><b class="amz">${fmt(f.low)}</b></div>
+      </div>
+    </div>
+    <div class="m-card">
+      <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : ""}</span></div>
+      ${sellersHtml}
+    </div>
+    <div class="m-card">
+      <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}</span></div>
+      ${amzHtml}
+      <div class="m-add">
+        <input id="mLinkInput" type="text" placeholder="Paste Amazon URL or ASIN" aria-label="Add Amazon listing" />
+        <button id="mLinkBtn">Link</button>
+      </div>
+    </div>
+    <div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>`;
   // wiring
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
-  p.querySelector("#mOpenWm")?.addEventListener("click", (e) => { e.preventDefault(); window.api.openExternal(it.itemId); });
+  p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   p.querySelector("#mStoreEdit")?.addEventListener("click", (e) => {
     e.preventDefault();
     const name = prompt("Your store name exactly as it appears on Walmart:", myStore);
@@ -247,19 +258,15 @@ function renderPanel() {
   const doLink = () => { if (linkAmazon(i, linkIn.value)) linkIn.value = ""; };
   p.querySelector("#mLinkBtn")?.addEventListener("click", doLink);
   linkIn?.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") doLink(); });
-  p.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => { mEditing = { i, k: Number(b.dataset.edit) }; renderPanel(); $("mPriceInput")?.select(); }));
-  p.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", () => {
-    const k = Number(b.dataset.cancel);
-    if (it.amz[k] && it.amz[k].manual && !it.amz[k].asin && !(it.amz[k].price > 0)) it.amz.splice(k, 1); // abandoned "type a price"
-    mEditing = null; saveQuiet(); renderMarket();
-  }));
-  p.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", () => savePrice(i, Number(b.dataset.save))));
-  p.querySelector("#mPriceInput")?.addEventListener("keydown", (e) => {
+  p.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => { mEditing = { i, k: Number(b.dataset.edit) }; renderPanel(); $("mPriceInput")?.focus(); }));
+  p.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", () => { mEditing = null; renderPanel(); }));
+  p.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", () => saveEdit(i, Number(b.dataset.save))));
+  p.querySelectorAll("#mPriceInput, #mLinkEdit").forEach((inp) => inp.addEventListener("keydown", (e) => {
     e.stopPropagation();
-    if (e.key === "Enter") savePrice(i, mEditing.k);
+    if (e.key === "Enter") saveEdit(i, mEditing.k);
     if (e.key === "Escape") { mEditing = null; renderPanel(); }
-  });
-  p.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => window.api.openAmazon(it.amz[Number(b.dataset.open)].asin)));
+  }));
+  p.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); window.api.openAmazon(it.amz[Number(b.dataset.open)].asin); }));
   p.querySelectorAll("[data-unlink]").forEach((b) => b.addEventListener("click", () => {
     const k = Number(b.dataset.unlink);
     const a = it.amz[k];
@@ -271,20 +278,35 @@ function renderPanel() {
 
 function saveQuiet() { window.api.saveItems(items); }
 
-function savePrice(i, k) {
+// The pencil's Save: a new link replaces the ASIN (and its read data); a typed
+// price is kept as yours; an empty price means "read it from Amazon again".
+function saveEdit(i, k) {
   const it = items[i];
   const a = it?.amz?.[k];
   if (!a) return;
-  const v = Number(String($("mPriceInput")?.value ?? "").replace(/[^0-9.]/g, ""));
-  if (!(v > 0)) { alert("Enter a price, like 149.99."); $("mPriceInput")?.focus(); return; }
-  a.price = Math.round(v * 100) / 100;
-  a.manual = true;
-  a.failed = false;
-  a.robot = false;
-  a.at = Date.now();
+  const linkText = String($("mLinkEdit")?.value ?? "").trim();
+  const priceText = String($("mPriceInput")?.value ?? "").trim();
+  let asin = a.asin;
+  if (linkText) {
+    const parsed = parseAsin(linkText);
+    if (!parsed) { alert("That doesn't look like an Amazon listing. Paste the product page's URL or its 10-character ASIN (starts with B0…)."); $("mLinkEdit")?.focus(); return; }
+    if (it.amz.some((o, j) => j !== k && o.asin === parsed)) { alert(`${parsed} is already linked to this SKU.`); return; }
+    asin = parsed;
+  }
+  const changedAsin = asin !== a.asin;
+  if (changedAsin) { a.asin = asin; a.title = ""; a.price = null; a.sold = null; a.prime = false; a.seller = null; a.offers = null; a.failed = false; a.robot = false; a.at = null; }
+  if (priceText) {
+    const v = Number(priceText.replace(/[^0-9.]/g, ""));
+    if (!(v > 0)) { alert("Enter a price, like 149.99, or leave it blank to read it from Amazon."); $("mPriceInput")?.focus(); return; }
+    a.price = Math.round(v * 100) / 100; a.manual = true; a.failed = false; a.robot = false; a.at = Date.now();
+  } else if (a.manual) {
+    a.manual = false; a.price = null; a.at = null; // back to reading it from Amazon
+  }
+  if (!a.asin && !a.manual) { it.amz.splice(k, 1); } // nothing to read and nothing typed
   mEditing = null;
   saveQuiet();
   renderMarket();
+  if (a.asin && !a.manual && !mScan.running) readAmazonInto(a).then(() => { saveQuiet(); renderMarket(); });
 }
 
 // "https://www.amazon.com/Samsung-…/dp/B0CT4KQ9NM?…", "amazon.com/gp/product/B0…", or a bare ASIN
@@ -324,6 +346,7 @@ async function readAmazonInto(entry) {
   entry.seller = r.seller || null;
   entry.offers = Number.isInteger(r.offers) ? r.offers : null;
   entry.unavailable = !!r.unavailable;
+  entry.sold = r.sold || null;
   entry.at = Date.now();
 }
 
@@ -359,7 +382,7 @@ async function runMarketScan(onlyRows = null) {
       renderMarket();
       if (amzSeen.has(a.asin)) { Object.assign(a, amzSeen.get(a.asin)); continue; }
       await readAmazonInto(a);
-      amzSeen.set(a.asin, { price: a.price, title: a.title, prime: a.prime, seller: a.seller, offers: a.offers, at: a.at, failed: a.failed, robot: a.robot, unavailable: a.unavailable });
+      amzSeen.set(a.asin, { price: a.price, title: a.title, prime: a.prime, seller: a.seller, offers: a.offers, at: a.at, failed: a.failed, robot: a.robot, unavailable: a.unavailable, sold: a.sold });
       saveQuiet();
       if (n < entries.length - 1) await sleep(rnd(AMZ_PAUSE_MS[0], AMZ_PAUSE_MS[1]));
     }
