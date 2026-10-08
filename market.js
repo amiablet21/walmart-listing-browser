@@ -134,7 +134,7 @@ function renderMarket() {
     else wm = `<span class="m-muted">Not scanned yet</span>`;
     let amz;
     if (reading && mScan.step === "amazon") amz = `<span class="m-reading"><span class="m-spin"></span>Reading Amazon page ${mScan.stepN}…</span>`;
-    else if (!f.linked) amz = `<span class="m-muted">No listing linked</span><a href="#" class="m-link" data-link="${i}">Link…</a>`;
+    else if (!f.linked) amz = `<button type="button" class="m-link-chip" data-link="${i}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Link listing</button>`;
     else if (f.low != null) amz = `<b>${fmt(f.low)}</b>` + (f.linked > 1 ? `<span class="m-muted">lowest of ${f.linked} linked</span>` : "") + (amzList(f.it).some((a) => a.robot) ? `<span class="m-pill warn" title="Amazon asked for a robot check — open the row to pass it">needs a look</span>` : "");
     else amz = `<span class="m-muted">${amzList(f.it).some((a) => a.robot) ? "Robot check" : f.linked ? "Not read yet" : ""}</span>`;
     tr.innerHTML =
@@ -147,7 +147,7 @@ function renderMarket() {
       mSelected = i;
       mEditing = null;
       renderMarket();
-      if (e.target.closest(".m-link")) { e.preventDefault(); $("mLinkInput")?.focus(); }
+      if (e.target.closest(".m-link-chip")) { e.preventDefault(); $("mLinkInput")?.focus(); }
     });
     tb.appendChild(tr);
   }
