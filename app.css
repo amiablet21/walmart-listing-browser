@@ -14,27 +14,34 @@ body { height: 100vh; overflow: hidden; }
   flex-direction: column;
   overflow: hidden;
 }
-#side .brand { padding: 16px 16px 12px; }
+/* The header is identical on both tabs (same markup, same spacing) so the
+   tabs never move when switching. */
+.app-head { display: flex; align-items: center; gap: 10px; padding: 0 18px !important; min-height: 56px; font-weight: 400; }
+.app-head .brand-mark { width: 30px; height: 30px; min-width: 30px; border-radius: 9px; background: var(--accent); }
+.app-head .m-title { font-weight: 700; font-size: 14px; white-space: nowrap; }
+/* version tag — click to check for updates (opens the popover) */
+.app-head button.version {
+  font-family: "Geist Mono", Consolas, monospace; font-size: 11px; font-weight: 500; line-height: 1.4;
+  color: #6E6B5C; background: none; border: 1px solid #E9E4D7; border-radius: 6px; padding: 1px 6px; margin: 0; white-space: nowrap; cursor: pointer;
+}
+.app-head button.version:hover { color: var(--ink); background: var(--card-2); }
+.app-head button.version.has-update { color: var(--accent); border-color: var(--accent); }
+.app-head .app-tabs { margin-left: 8px; }
+.app-head .app-tab { margin: 0; padding: 8px 12px; font-size: 13px; }
 #side .brand .badge { margin-left: auto; }
 #side .brand .badge:empty { display: none; }
-#side .brand button { padding: 4px 10px; font-size: 12px; margin-left: 8px; flex: none; }
-/* version tag — click to check for updates */
-#side .brand .version {
-  padding: 1px 6px; margin-left: 2px; font-size: 10.5px; font-weight: 500;
-  color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 999px;
-}
-#side .brand .version:hover { color: var(--ink); background: var(--card-2); }
-#side .brand .version.has-update { color: var(--accent); border-color: var(--accent); }
+#side .brand { border-bottom: 1px solid var(--line); margin-bottom: 10px; }
 
-/* update banner */
-.update-bar {
-  display: flex; align-items: center; gap: 8px; margin: 0 12px 10px; padding: 7px 8px 7px 12px;
-  font-size: 12.5px; color: var(--ink); background: var(--accent-tint); border: 1px solid var(--accent);
-  border-radius: 8px;
+/* update popover (floats under the version tag; nothing shifts) */
+.update-pop {
+  position: fixed; z-index: 70; width: 320px; padding: 12px 14px; background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, .16); font-size: 13px;
 }
-.update-bar span { flex: 1; min-width: 0; }
-.update-bar button { padding: 4px 10px; font-size: 12px; flex: none; }
-.update-bar button:empty { display: none; }
+.update-pop.hidden { display: none; }
+.update-msg { line-height: 1.45; }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.update-actions button { padding: 6px 12px; font-size: 12.5px; }
+.update-actions button:empty { display: none; }
 .brand-mark { background: var(--accent); }
 
 /* draggable divider between the sheet and the Walmart pane */
@@ -78,7 +85,6 @@ body.pane-closed .toolbar #paneOpenBtn { display: inline-flex; }
 /* toolbar */
 .toolbar { display: flex; gap: 2px; align-items: center; padding: 0 10px 8px; }
 /* the brand row sits directly above the menubar — trim its air */
-#side .brand { padding-bottom: 10px; }
 
 /* autosave indicator — flashes after each change */
 .save-state {
@@ -436,19 +442,13 @@ body.market-mode #side, body.market-mode #splitBar, body.market-mode #detail { d
 body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; height: 100vh; background: #FAF9F5; color: #1C1B16; font-size: 13px; }
 
 /* flat section tabs (both headers) */
-.app-tabs { display: flex; flex-direction: row; gap: 4px; margin-left: 8px; }
+.app-tabs { display: flex; flex-direction: row; gap: 4px; }
 .app-tab { border: 0; background: transparent; color: #6E6B5C; font-weight: 600; font-size: 13px; padding: 8px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
 .app-tab:hover { background: #F4F1E9; color: #1C1B16; }
 .app-tab.active { background: #E6E8F3; color: #1C1B16; }
-#side .brand .app-tab { margin-left: 0; padding: 6px 10px; font-size: 12.5px; }
 
 /* title bar */
 .m-head { background: #FFFFFF; border-bottom: 1px solid #E9E4D7; }
-.m-head .brand { padding: 0 18px; min-height: 56px; gap: 18px; font-weight: 400; }
-.m-head .brand .brand-mark { width: 30px; height: 30px; min-width: 30px; border-radius: 9px; background: #4C5B9E; margin-right: -8px; }
-.m-title { font-weight: 700; font-size: 14px; white-space: nowrap; }
-.m-head .version { font-family: "Geist Mono", Consolas, monospace; font-size: 11px; color: #6E6B5C; border: 1px solid #E9E4D7; border-radius: 6px; padding: 1px 6px; white-space: nowrap; margin-left: -8px; }
-.m-head .app-tabs { margin-left: 8px; }
 .m-last { margin-left: auto; font-size: 12px; color: #6E6B5C; white-space: nowrap; }
 
 /* toolbar */

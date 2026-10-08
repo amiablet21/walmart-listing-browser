@@ -519,5 +519,4 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 // ---- start ---------------------------------------------------------------------------------------
-window.api.appVersion().then((v) => { $("mVersion").textContent = "v" + v; });
 setTab(appTab);

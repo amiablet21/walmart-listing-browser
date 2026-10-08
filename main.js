@@ -834,11 +834,17 @@ function paneZoomBy(dir) {
 // ---- updates ---------------------------------------------------------------
 // New versions are published as GitHub Releases by the release workflow.
 // Windows: electron-updater fetches latest.yml from the release, downloads the
-// installer in the background and swaps the app on restart. macOS: the build
-// is unsigned, so the OS won't let it replace itself — we check the GitHub API
-// for a newer tag and hand the user the .dmg link instead.
+// installer in the background and swaps the app on restart.
+// macOS: the build is unsigned, so Squirrel/electron-updater can't be used and
+// a .dmg downloaded in the browser gets Gatekeeper's "unidentified developer"
+// stop every time. Instead the app downloads the release's .zip itself (files
+// an app fetches directly carry no quarantine flag), unpacks it with ditto,
+// and on "Restart to update" a small shell script swaps the bundle in place
+// once the app has quit, then reopens it. If any of that isn't possible
+// (running from the .dmg, download blocked), the .dmg link is offered.
 const RELEASES_API = "https://api.github.com/repos/amiablet21/walmart-listing-browser/releases/latest";
 const RELEASES_PAGE = "https://github.com/amiablet21/walmart-listing-browser/releases/latest";
+const { execFile, spawn } = require("child_process");
 let updateState = { state: "idle", current: app.getVersion() };
 function pushUpdate(patch) {
   updateState = { ...updateState, ...patch, current: app.getVersion() };
@@ -866,8 +872,23 @@ async function checkGithubRelease() {
   if (!res.ok) throw new Error(`GitHub responded ${res.status}`);
   const rel = await res.json();
   const version = String(rel.tag_name || "").replace(/^v/, "");
-  const asset = (rel.assets || []).find((a) => /\.dmg$/i.test(a.name));
-  return { version, url: asset?.browser_download_url || rel.html_url || RELEASES_PAGE };
+  const assets = rel.assets || [];
+  const dmg = assets.find((a) => /\.dmg$/i.test(a.name));
+  const zip = assets.find((a) => /-mac\.zip$|-universal\.zip$|\.zip$/i.test(a.name) && !/win/i.test(a.name));
+  return { version, url: dmg?.browser_download_url || rel.html_url || RELEASES_PAGE, zipUrl: zip?.browser_download_url || null };
+}
+
+// The running .app bundle (…/Walmart Listing Browser.app), or null outside one.
+function macAppBundle() {
+  const m = /^(.*?\.app)\/Contents\//.exec(process.execPath);
+  return m ? m[1] : null;
+}
+// Can this install swap itself? Not from the mounted .dmg (read-only) and not
+// without a bundle at all (dev run).
+function macCanSelfUpdate() {
+  const bundle = macAppBundle();
+  if (!bundle || bundle.startsWith("/Volumes/")) return false;
+  try { fs.accessSync(path.dirname(bundle), fs.constants.W_OK); return true; } catch { return false; }
 }
 
 async function checkForUpdates(manual = false) {
@@ -881,27 +902,103 @@ async function checkForUpdates(manual = false) {
       return pushUpdate(version && isNewer(version, app.getVersion())
         ? { state: "available", version, manual } : { state: "none", manual });
     }
-    const { version, url } = await checkGithubRelease();
+    const { version, url, zipUrl } = await checkGithubRelease();
+    const canSelfUpdate = process.platform === "darwin" && !!zipUrl && macCanSelfUpdate();
     return pushUpdate(isNewer(version, app.getVersion())
-      ? { state: "available", version, url, manual } : { state: "none", manual });
+      ? { state: "available", version, url, zipUrl, canSelfUpdate, manual } : { state: "none", manual });
   } catch (e) {
     return pushUpdate({ state: "error", message: e?.message || String(e), manual });
   }
 }
+
+// Stream a URL to a file, following redirects, reporting percent.
+async function downloadFile(url, dest, onPercent) {
+  const res = await fetch(url, { headers: { "User-Agent": "walmart-listing-browser" }, redirect: "follow" });
+  if (!res.ok || !res.body) throw new Error(`download failed (${res.status})`);
+  const total = Number(res.headers.get("content-length")) || 0;
+  let got = 0, lastPct = -1;
+  const out = fs.createWriteStream(dest);
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out.write(Buffer.from(value));
+    got += value.length;
+    if (total) { const pct = Math.floor((got / total) * 100); if (pct !== lastPct) { lastPct = pct; onPercent(pct); } }
+  }
+  await new Promise((resolve, reject) => { out.on("error", reject); out.end(resolve); });
+}
+const run = (cmd, args) => new Promise((resolve, reject) =>
+  execFile(cmd, args, { maxBuffer: 1 << 24 }, (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve(stdout))));
+
+let macUpdate = null; // { version, newApp } once unpacked
+async function downloadMacUpdate() {
+  const { version, zipUrl } = updateState;
+  const dir = path.join(app.getPath("temp"), "walmart-listing-browser-update", version);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const zipPath = path.join(dir, "update.zip");
+  pushUpdate({ state: "downloading", percent: 0, version });
+  await downloadFile(zipUrl, zipPath, (percent) => pushUpdate({ state: "downloading", percent, version }));
+  await run("/usr/bin/ditto", ["-x", "-k", zipPath, dir]); // keeps the bundle structure and permissions
+  const appName = fs.readdirSync(dir).find((n) => n.endsWith(".app"));
+  if (!appName) throw new Error("the downloaded build has no .app inside");
+  const newApp = path.join(dir, appName);
+  try { await run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newApp]); } catch { /* none set */ }
+  if (!fs.existsSync(path.join(newApp, "Contents", "MacOS"))) throw new Error("the downloaded build looks incomplete");
+  macUpdate = { version, newApp };
+  pushUpdate({ state: "ready", version });
+}
 async function downloadUpdate() {
+  if (process.platform === "darwin" && updateState.state === "available" && updateState.canSelfUpdate) {
+    try { await downloadMacUpdate(); }
+    catch (e) { pushUpdate({ state: "error", message: `${e?.message || e}. Use the .dmg instead.`, fromDownload: true }); }
+    return updateState;
+  }
   if (process.platform !== "win32") {
     shell.openExternal(updateState.url || RELEASES_PAGE);
     return updateState;
   }
   pushUpdate({ state: "downloading", percent: 0 });
-  try { await autoUpdater.downloadUpdate(); } catch (e) { pushUpdate({ state: "error", message: e?.message || String(e) }); }
+  try { await autoUpdater.downloadUpdate(); } catch (e) { pushUpdate({ state: "error", message: e?.message || String(e), fromDownload: true }); }
   return updateState;
+}
+// Swap the bundle after this process exits: a detached shell script waits for
+// our PID to go away, replaces the old app with the new one and reopens it.
+function installMacUpdate() {
+  const dest = macAppBundle();
+  if (!macUpdate || !dest) return false;
+  const script = path.join(path.dirname(macUpdate.newApp), "swap.sh");
+  const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+  fs.writeFileSync(script, `#!/bin/sh
+PID=${process.pid}
+i=0
+while kill -0 "$PID" 2>/dev/null && [ $i -lt 100 ]; do sleep 0.3; i=$((i+1)); done
+DEST=${q(dest)}
+NEW=${q(macUpdate.newApp)}
+BAK="$DEST.previous"
+rm -rf "$BAK"
+mv "$DEST" "$BAK" 2>/dev/null
+if mv "$NEW" "$DEST" 2>/dev/null || /usr/bin/ditto "$NEW" "$DEST"; then
+  rm -rf "$BAK"
+else
+  mv "$BAK" "$DEST" 2>/dev/null
+fi
+/usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null
+sleep 0.5
+/usr/bin/open "$DEST"
+`, { mode: 0o755 });
+  const child = spawn("/bin/sh", [script], { detached: true, stdio: "ignore" });
+  child.unref();
+  setTimeout(() => app.quit(), 150);
+  return true;
 }
 function installUpdate() {
   if (process.platform === "win32" && updateState.state === "ready") {
     setImmediate(() => autoUpdater.quitAndInstall(false, true));
     return true;
   }
+  if (process.platform === "darwin" && updateState.state === "ready" && installMacUpdate()) return true;
   shell.openExternal(updateState.url || RELEASES_PAGE);
   return false;
 }

@@ -1375,37 +1375,52 @@ function editActive(initial) {
 }
 
 // ---- updates ---------------------------------------------------------------
-// main.js does the checking; we just show a banner. Windows downloads and
-// installs in-app; macOS gets the .dmg link (unsigned builds can't self-swap).
+// main.js does the checking; the version tag in the header opens a small
+// popover with the result (it floats over the page, so nothing shifts).
+// Windows downloads and installs in-app. macOS downloads the .zip build and
+// swaps the app bundle itself on restart; if that isn't possible the .dmg
+// link is offered instead.
 const IS_MAC = navigator.platform.toLowerCase().includes("mac");
-let updateDismissed = false;
-window.api.appVersion().then((v) => { $("versionBtn").textContent = "v" + v; });
+const versionTags = () => [...document.querySelectorAll("button.version")];
+window.api.appVersion().then((v) => versionTags().forEach((b) => { b.textContent = "v" + v; }));
+let popAnchor = null;
+let lastUpdateState = null;
+
+function placeUpdatePop() {
+  const pop = $("updatePop");
+  const anchor = popAnchor && popAnchor.offsetParent ? popAnchor : versionTags().find((b) => b.offsetParent);
+  if (!anchor) return;
+  const r = anchor.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + "px";
+  pop.style.top = r.bottom + 8 + "px";
+}
+function showUpdatePop() { $("updatePop").classList.remove("hidden"); placeUpdatePop(); }
+function hideUpdate() { $("updatePop").classList.add("hidden"); }
 
 function showUpdate(st) {
-  const bar = $("updateBar"), msg = $("updateMsg"), act = $("updateAct"), later = $("updateLater");
-  const show = (text, action = "", dismissable = true) => {
-    msg.textContent = text; act.textContent = action; later.style.display = dismissable ? "" : "none";
-    bar.classList.remove("hidden");
+  lastUpdateState = st;
+  const msg = $("updateMsg"), act = $("updateAct"), later = $("updateLater");
+  const show = (text, action = "", closable = true) => {
+    msg.textContent = text; act.textContent = action; later.style.display = closable ? "" : "none";
+    showUpdatePop();
   };
-  $("versionBtn").classList.toggle("has-update", ["available", "downloading", "ready"].includes(st.state));
+  versionTags().forEach((b) => b.classList.toggle("has-update", ["available", "downloading", "ready"].includes(st.state)));
   switch (st.state) {
     case "checking": if (st.manual) show("Checking for updates…", "", false); return;
     case "available":
-      if (updateDismissed && !st.manual) return;
-      show(`Version ${st.version} is available (you have ${st.current}).`, IS_MAC ? "Download" : "Update now");
+      show(`Version ${st.version} is available (you have ${st.current}).`, st.canSelfUpdate === false ? "Download" : "Update now");
       return;
     case "downloading": show(`Downloading version ${st.version ?? ""}… ${st.percent ?? 0}%`, "", false); return;
     case "ready": show(`Version ${st.version} is ready to install.`, "Restart to update"); return;
     case "none":
-      if (st.manual) { show(st.dev ? "Update checks only run in the installed app." : `You're up to date (v${st.current}).`, ""); setTimeout(hideUpdate, 4000); }
+      if (st.manual) { show(st.dev ? "Update checks only run in the installed app." : `You're up to date (v${st.current}).`, ""); setTimeout(() => { if (lastUpdateState === st) hideUpdate(); }, 4000); }
       return;
     case "error":
-      if (st.manual) show(`Couldn't check for updates: ${st.message}`, "Open releases page");
+      if (st.manual || st.fromDownload) show(`Couldn't update: ${st.message}`, "Open releases page");
       return;
     default: return;
   }
 }
-function hideUpdate() { $("updateBar").classList.add("hidden"); }
 
 $("updateAct").addEventListener("click", async () => {
   const st = await window.api.updateState();
@@ -1413,8 +1428,15 @@ $("updateAct").addEventListener("click", async () => {
   if (st.state === "available") { await window.api.downloadUpdate(); return; }
   await window.api.installUpdate(); // error state → opens the releases page
 });
-$("updateLater").addEventListener("click", () => { updateDismissed = true; hideUpdate(); });
-$("versionBtn").addEventListener("click", () => { updateDismissed = false; window.api.checkForUpdates(true); });
+$("updateLater").addEventListener("click", hideUpdate);
+versionTags().forEach((b) => b.addEventListener("click", (e) => {
+  e.stopPropagation();
+  popAnchor = b;
+  if (!$("updatePop").classList.contains("hidden")) { hideUpdate(); return; }
+  window.api.checkForUpdates(true);
+}));
+window.addEventListener("mousedown", (e) => { if (!$("updatePop").contains(e.target) && !e.target.closest("button.version")) hideUpdate(); });
+window.addEventListener("resize", () => { if (!$("updatePop").classList.contains("hidden")) placeUpdatePop(); });
 window.api.onUpdateState(showUpdate);
 
 // ---- find (Ctrl+F) ---------------------------------------------------------

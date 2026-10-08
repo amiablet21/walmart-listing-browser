@@ -11,7 +11,7 @@
 <body>
   <!-- LEFT: incentive price sheet -->
   <aside id="side">
-    <div class="brand">
+    <div class="brand app-head">
       <div class="brand-mark">
         <svg width="16" height="16" viewBox="0 0 24 24">
           <g transform="rotate(-12 12 12)">
@@ -21,19 +21,13 @@
           </g>
         </svg>
       </div>
+      <span class="m-title">Walmart Listing Browser</span>
+      <button class="version" title="Check for updates">v—</button>
       <nav class="app-tabs" role="tablist" aria-label="Sections">
         <button class="app-tab active" role="tab" data-tab="sheet">Incentive price list</button>
         <button class="app-tab" role="tab" data-tab="market">Market</button>
       </nav>
-      <button id="versionBtn" class="version" title="Check for updates">v—</button>
       <span id="count" class="badge neutral"></span>
-    </div>
-
-    <!-- update banner: hidden until a newer release exists (or a manual check runs) -->
-    <div id="updateBar" class="update-bar hidden">
-      <span id="updateMsg"></span>
-      <button id="updateAct" class="primary"></button>
-      <button id="updateLater" title="Hide for now">Later</button>
     </div>
 
     <!-- compact icon toolbar -->
@@ -276,7 +270,7 @@
        Hidden until its tab is picked (body.market-mode). -->
   <section id="market" aria-label="Market">
     <div class="m-head">
-      <div class="brand">
+      <div class="brand app-head">
         <div class="brand-mark">
           <svg width="16" height="16" viewBox="0 0 24 24">
             <g transform="rotate(-12 12 12)">
@@ -286,7 +280,7 @@
           </svg>
         </div>
         <span class="m-title">Walmart Listing Browser</span>
-        <span id="mVersion" class="version">v—</span>
+        <button class="version" title="Check for updates">v—</button>
         <nav class="app-tabs" role="tablist" aria-label="Sections">
           <button class="app-tab" role="tab" data-tab="sheet">Incentive price list</button>
           <button class="app-tab active" role="tab" data-tab="market">Market</button>
@@ -366,6 +360,15 @@
         <button id="mSumCsv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export CSV</button>
         <button id="mSumXlsx" class="primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export Excel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- update popover: opens under the version tag; the page never moves -->
+  <div id="updatePop" class="update-pop hidden" role="dialog" aria-label="Updates">
+    <div id="updateMsg" class="update-msg"></div>
+    <div class="update-actions">
+      <button id="updateAct" class="primary"></button>
+      <button id="updateLater">Close</button>
     </div>
   </div>
 
