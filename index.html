@@ -21,7 +21,10 @@
           </g>
         </svg>
       </div>
-      Incentive price list
+      <div class="seg app-tabs" role="tablist" aria-label="Sections">
+        <button class="seg-btn active" role="tab" data-tab="sheet">Incentive price list</button>
+        <button class="seg-btn" role="tab" data-tab="market">Market</button>
+      </div>
       <button id="versionBtn" class="version" title="Check for updates">v—</button>
       <span id="count" class="badge neutral"></span>
     </div>
@@ -63,24 +66,6 @@
           <path d="M17 21v-8H7v8" /><path d="M7 3v5h8" />
         </svg>
       </button>
-      <span class="tb-right">
-        <!-- walks every listing through the hidden Walmart view; click again to stop -->
-        <button id="scanBtn" class="tb-ghost scan" title="Read the buy box of every listing, one by one, and suggest prices on all rows">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 1 1-2.64-6.36" /><polyline points="21 3 21 9 15 9" />
-          </svg>
-          <span>Scan buy boxes</span>
-        </button>
-        <button id="scanRestartBtn" class="tb-ghost hidden" title="Forget the stopped scan and start again from the first row">Start over</button>
-        <!-- hides / shows every scan decoration in the sheet -->
-        <button id="sugToggleBtn" class="tb-ghost hidden" title="Hide the scan results from the sheet">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" /><circle cx="12" cy="12" r="3" />
-          </svg>
-          <span>Hide suggestions</span>
-        </button>
-        <button id="applyAllBtn" class="primary apply-all hidden" title="Write every pending During / Before suggestion into the sheet (one undo step)">Apply suggestions</button>
-      </span>
       <!-- only shown while the listing pane is closed -->
       <button id="paneOpenBtn" class="tb-ghost pane-open" title="Show the Walmart listing pane" aria-label="Show listing pane">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -286,9 +271,101 @@
     </div>
   </div>
 
-  <!-- buy-box hover card (filled by renderer.js) -->
-  <div id="bbCard" class="bbcard hidden"></div>
+  <!-- ================= MARKET TAB ================= -->
+  <!-- Walmart buy box + Amazon buy box per SKU; all scanning happens here.
+       Hidden until its tab is picked (body.market-mode). -->
+  <section id="market" aria-label="Market">
+    <div class="m-head">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <g transform="rotate(-12 12 12)">
+              <polygon points="5,12 10,7.8 19,7.8 19,16.2 10,16.2" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+              <circle cx="9.8" cy="12" r="1.1" fill="var(--accent, #4C5B9E)"/>
+            </g>
+          </svg>
+        </div>
+        <div class="seg app-tabs" role="tablist" aria-label="Sections">
+          <button class="seg-btn" role="tab" data-tab="sheet">Incentive price list</button>
+          <button class="seg-btn active" role="tab" data-tab="market">Market</button>
+        </div>
+        <span id="mLastScan" class="m-last"></span>
+      </div>
+    </div>
+
+    <div class="m-toolbar">
+      <button id="mScanBtn" class="primary" title="Read every listing's Walmart buy box and sellers, then each linked Amazon listing">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        <span>Run market scan</span>
+      </button>
+      <label class="m-sched" title="Run the scan by itself every day at this time, while the app is open">
+        <input id="mSchedOn" type="checkbox" />
+        <span>Every day at</span>
+        <input id="mSchedTime" type="time" value="09:00" />
+      </label>
+      <span class="tb-sep"></span>
+      <span class="m-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="mSearch" type="search" placeholder="Search SKU, Item ID, seller…" aria-label="Search the market table" />
+      </span>
+      <span id="mFilters" class="m-filters">
+        <button class="m-chip active" data-f="all">All</button>
+        <button class="m-chip" data-f="lost">Buy box lost</button>
+        <button class="m-chip" data-f="amz">Amazon cheaper</button>
+        <button class="m-chip" data-f="noamz">No Amazon link</button>
+      </span>
+      <button id="mExportBtn" class="m-right" title="Export this table to .xlsx or .csv">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+        Export market sheet
+      </button>
+    </div>
+    <div id="mProgress" class="m-progress hidden">
+      <div class="m-prog-text"><span id="mProgText"></span><span id="mProgLeft"></span></div>
+      <div class="m-prog-track"><div id="mProgBar" class="m-prog-bar"></div></div>
+    </div>
+
+    <div class="m-body">
+      <div class="m-table-wrap" id="mTableWrap">
+        <div id="mAmzBar" class="m-amz-bar hidden">
+          <span>Amazon page shown here — pass the robot check, then close this to continue.</span>
+          <button id="mAmzHide">Close Amazon page</button>
+        </div>
+        <table id="mTable">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Item ID</th>
+              <th class="num">Our price</th>
+              <th class="sep">Walmart buy box</th>
+              <th class="sep">Amazon buy box</th>
+            </tr>
+          </thead>
+          <tbody id="mTbody"></tbody>
+        </table>
+        <p class="m-hint">Green edge: you hold the buy box and Amazon isn't cheaper. Amber: buy box lost. Red: Amazon undercuts your price. Click a row for every seller and every linked Amazon listing.</p>
+      </div>
+      <aside id="mPanel" class="m-panel"></aside>
+    </div>
+  </section>
+
+  <!-- end-of-scan pop-up: the listings Amazon undercuts, biggest gap first -->
+  <div id="mSummary" class="modal-overlay hidden">
+    <div class="modal confirm-modal m-summary">
+      <h2>Scan finished</h2>
+      <p class="hint" id="mSumText"></p>
+      <div class="m-sum-table">
+        <div class="m-sum-head"><span></span><span>SKU</span><span class="num">Our price</span><span class="num">Amazon buy box</span><span class="num">Match price</span></div>
+        <div id="mSumRows"></div>
+      </div>
+      <div class="confirm-actions">
+        <button id="mSumClose">Close</button>
+        <button id="mSumCsv">Export CSV</button>
+        <button id="mSumXlsx" class="primary">Export Excel</button>
+      </div>
+    </div>
+  </div>
 
   <script src="renderer.js"></script>
+  <script src="market.js"></script>
 </body>
 </html>

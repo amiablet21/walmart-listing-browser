@@ -742,9 +742,7 @@ function render() {
     $("findCount").textContent = findMatches.length ? `${findIdx + 1} of ${findMatches.length}` : "0 results";
   }
 
-  if (hideSug) decorateSpinnerOnly(tb);
-  else { decorateBuyBox(tb); decorateBeforeSuggestion(tb); }
-  renderScanState();
+  decorateBeforeSuggestion(tb);
   renderDetailBar();
 }
 
@@ -763,16 +761,6 @@ function renderDetailBar() {
 // its During Incentive price, the During cell shows it as a ghost value (row
 // still blank) or a small tag after the value. Enter on that cell, or a click
 // on the tag, writes it in — after which it's an ordinary editable value.
-let priceWait = null; // itemId being read right now (spinner on that row)
-let priceWaitTimer = null;
-const priceWaiters = new Map(); // itemId → resolve(result|null), used by the scan
-function startPriceWait(id) {
-  const it = items.find((r) => String(r.itemId ?? "").trim() === id);
-  if (it?.buyBox?.price && Date.now() - (it.buyBox.at || 0) < 60000) { priceWait = null; return; } // fresh enough
-  priceWait = id;
-  clearTimeout(priceWaitTimer);
-  priceWaitTimer = setTimeout(() => { if (priceWait === id) { priceWait = null; markNoPrice(id); render(); } }, 20000);
-}
 function rowsWithItem(id) {
   return items.map((r, i) => (String(r.itemId ?? "").trim() === id ? i : -1)).filter((i) => i >= 0);
 }
@@ -842,304 +830,14 @@ const ago = (t) => {
   const m = Math.round((Date.now() - t) / 60000);
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
 };
-// With suggestions hidden, the row being read still shows its spinner
-function decorateSpinnerOnly(tb) {
-  if (!priceWait) return;
-  const i = items.findIndex((it) => String(it.itemId ?? "").trim() === priceWait);
-  const td = tb.querySelectorAll(".sku-row")[i]?.querySelector('td[data-field="during"]');
-  if (!td || td.classList.contains("editing")) return;
-  const val = document.createElement("span");
-  val.textContent = td.textContent;
-  td.textContent = "";
-  td.appendChild(val);
-  td.classList.add("has-sug");
-  const sp = document.createElement("span");
-  sp.className = "sug-spin";
-  td.appendChild(sp);
-}
-function decorateBuyBox(tb) {
-  const rows = tb.querySelectorAll(".sku-row");
-  // keep the real value where it is; notes float in the cell's spare left space
-  const floatLeft = (td) => {
-    const val = document.createElement("span");
-    val.textContent = td.textContent;
-    td.textContent = "";
-    td.appendChild(val);
-    td.classList.add("has-sug");
-    return val;
-  };
-  items.forEach((it, i) => {
-    const row = rows[i];
-    const td = row?.querySelector('td[data-field="during"]');
-    if (!td || td.classList.contains("editing")) return;
-    const id = String(it.itemId ?? "").trim();
-    if (id && priceWait === id) {
-      floatLeft(td);
-      const sp = document.createElement("span");
-      sp.className = "sug-spin";
-      td.appendChild(sp);
-      td.title = "Reading Walmart's price…";
-      return;
-    }
-    if (it.buyBox?.failed && !it.buyBox.price) {
-      const val = floatLeft(td);
-      const no = document.createElement("span");
-      no.className = "sug-note";
-      no.textContent = "no price";
-      td.appendChild(no);
-      if (val.offsetWidth + no.offsetWidth + 18 > td.clientWidth) no.textContent = "?";
-      td.title = `Couldn't read a price from Walmart (${ago(it.buyBox.at)}) — open the listing to check`;
-      return;
-    }
-    const have = liveFor(it);
-    if (!have) return;
-    const others = Number.isInteger(have.others) ? have.others : null;
-    const tip = [
-      `Walmart buy box is $${money(have.price)}`,
-      have.seller ? `sold by ${have.seller}` : null,
-      others != null ? `${others} other seller${others === 1 ? "" : "s"}` : null,
-      have.at ? `read ${ago(have.at)}` : null,
-    ].filter(Boolean).join(" · ");
-    const p = buyBoxSuggestion(i);
-    if (p == null) {
-      // already matches — with the pane closed say so (there's no page to see)
-      if (paneClosed) {
-        const val = floatLeft(td);
-        const ok = document.createElement("span");
-        ok.className = "sug-note";
-        ok.textContent = "✓ buy box";
-        ok.addEventListener("click", (e) => { e.stopPropagation(); showCard(i, td); });
-        td.appendChild(ok);
-        if (val.offsetWidth + ok.offsetWidth + 18 > td.clientWidth) ok.textContent = "✓";
-        td.title = tip;
-      }
-      return;
-    }
-    const tag = document.createElement("span");
-    tag.className = "sug-tag";
-    tag.title = `${tip} — click for details, Enter to use it`;
-    tag.addEventListener("click", (e) => { e.stopPropagation(); showCard(i, td); });
-    const blank = !(safe(i, "during") > 0);
-    if (blank) {
-      td.textContent = money(p);
-      td.classList.add("sug-ghost");
-      tag.textContent = "Enter ↵";
-      const before = safe(i, "before");
-      const pct = row.querySelector('td[data-field="pct"]');
-      if (pct && before > 0) { pct.textContent = chPct((p - before) / before * 100); pct.classList.add("sug-ghost"); pct.classList.remove("floor-warn"); pct.title = ""; }
-      td.appendChild(tag);
-      if (td.scrollWidth > td.clientWidth) tag.textContent = "↵";
-    } else {
-      const val = floatLeft(td);
-      tag.innerHTML = `<span class="ar">↵</span>${money(p)}`;
-      td.appendChild(tag);
-      const free = td.clientWidth - val.offsetWidth - 20; // right padding + tag offset + gap
-      if (tag.offsetWidth > free) tag.textContent = "↵";
-    }
-    td.title = tag.title;
-  });
-}
-
-// ---- buy-box card ------------------------------------------------------------
-// Clicking a suggestion pill (or a "✓ buy box" note) opens a card: the buy
-// box price and age, the cheapest sellers (your own store marked once you've
-// named it), your During vs the buy box, and a Use button that confirms.
-let cardTimer = null;
-let myStore = localStorage.getItem("myStoreName") || "";
+// Your store's name on Walmart, so its offers can be marked as yours in the
+// Market tab (buy box held / lost). Change it in the Market tab's panel.
+let myStore = localStorage.getItem("myStoreName") || "Digital World Shop";
 const isMyStore = (name) => !!myStore && !!name && name.trim().toLowerCase() === myStore.trim().toLowerCase();
-function rowIndexOf(el) {
-  const tr = el?.closest(".sku-row");
-  return tr ? [...document.querySelectorAll(".sku-row")].indexOf(tr) : -1;
-}
-function showCard(i, anchor) {
-  const it = items[i];
-  const have = liveFor(it);
-  if (!have) return;
-  const card = $("bbCard");
-  const others = Number.isInteger(have.others) ? have.others : null;
-  let offers = Array.isArray(have.offers) ? have.offers.slice() : [];
-  if (have.seller && !offers.some((o) => Math.abs(o.price - have.price) < 0.005 && o.seller.toLowerCase() === have.seller.toLowerCase())) {
-    offers.unshift({ seller: have.seller, price: have.price });
-  }
-  offers.sort((a, b) => a.price - b.price);
-  const total = Math.max(offers.length, others != null ? others + 1 : 0);
-  const shown = offers.slice(0, 3);
-  const during = safe(i, "during");
-  const diff = during - have.price;
-  const p = buyBoxSuggestion(i);
-  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  let rows = shown.map((o, k) =>
-    `<div class="row${k === 0 ? " bb" : ""}"><span class="n">${k + 1}</span><span class="s">${esc(o.seller)}</span>` +
-    `${isMyStore(o.seller) ? '<span class="you">YOU</span>' : ""}<span class="p">$${money(o.price)}</span></div>`).join("");
-  // Other sellers' prices are looked up only on request (the lookup opens
-  // Walmart's sellers panel, in the hidden worker — never in the pane).
-  const needLookup = others !== 0 && shown.length < 2;
-  if (needLookup) {
-    const note = have.offersTried === "loading" ? "Looking for other sellers…"
-      : have.offersTried === "none" ? `${others > 0 ? `${others} other seller${others === 1 ? "" : "s"} · ` : ""}prices couldn't be read`
-      : others > 0 ? `${others} other seller${others === 1 ? "" : "s"}` : "Other sellers not checked";
-    rows += `<div class="row"><span class="s muted">${note}</span>` +
-      (have.offersTried === "loading" ? "" : `<button id="bbLookup" class="mini">Look for other sellers</button>`) + `</div>`;
-  } else if (others === 0 && shown.length < 2) {
-    rows += `<div class="row"><span class="s muted">No other sellers</span></div>`;
-  }
-  const more = shown.length >= 2 && total > shown.length ? `<div class="more">+${total - shown.length} more seller${total - shown.length === 1 ? "" : "s"}</div>` : "";
-  const yours = !(during > 0) ? "No During price yet"
-    : Math.abs(diff) < 0.005 ? "Your During matches the buy box"
-    : `Your During: ${money(during)} (${diff > 0 ? "+" : "−"}${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"})`;
-  const act = p != null ? `<button class="primary" id="bbUse">Use ${money(p)} ↵</button>` : `<span class="ok">✓ matched</span>`;
-  const mark = myStore ? "" : `<a href="#" id="bbMark" class="muted">Mark your store</a>`;
-  card.innerHTML =
-    `<div class="hd"><span><b>$${money(have.price)}</b> <span class="sub">buy box</span></span><span class="sub">read ${have.at ? ago(have.at) : "—"}</span></div>` +
-    rows + more + `<div class="ft"><span>${yours}</span>${act}</div>` + (mark ? `<div class="mk">${mark}</div>` : "");
-  card.querySelector("#bbUse")?.addEventListener("click", () => { hideCard(); applyBuyBox(i); });
-  card.querySelector("#bbLookup")?.addEventListener("click", () => {
-    const id = String(it.itemId ?? "").trim();
-    have.offersTried = "loading";
-    showCard(i, anchor);
-    window.api.listingOffers(id).then((o) => {
-      have.offersTried = Array.isArray(o) && o.length ? "ok" : "none";
-      if (Array.isArray(o) && o.length) { have.offers = o; window.api.saveItems(items); }
-      if (!$("bbCard").classList.contains("hidden")) showCard(i, anchor);
-    });
-  });
-  card.querySelector("#bbMark")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    const name = prompt("Your store name as it appears on Walmart (so it can be marked YOU in the seller list):", have.seller || "");
-    if (name != null) { myStore = name.trim(); localStorage.setItem("myStoreName", myStore); showCard(i, anchor); }
-  });
-  card.classList.remove("hidden");
-  const r = anchor.getBoundingClientRect();
-  const w = card.offsetWidth, h = card.offsetHeight;
-  let left = Math.min(Math.max(8, r.left - 30), window.innerWidth - w - 8);
-  let top = r.bottom + 6;
-  if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
-  card.style.left = left + "px";
-  card.style.top = top + "px";
-}
-function hideCard() { clearTimeout(cardTimer); $("bbCard").classList.add("hidden"); }
-document.querySelector(".sheet-wrap").addEventListener("scroll", hideCard, { passive: true });
-window.addEventListener("mousedown", (e) => { if (!$("bbCard").contains(e.target)) hideCard(); });
-window.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCard(); });
 
-// ---- scan all listings -------------------------------------------------------
-// One button walks every row with an item ID through the off-screen Walmart
-// view, one listing at a time, remembering each buy box on its row. Pressing
-// the button again stops it. Afterwards "Apply N suggestions" writes every
-// pending During (and blank Before) suggestion in one undoable step.
-let scanning = false, scanQueue = [], scanDone = 0, scanTotal = 0;
-let hideSug = localStorage.getItem("hideSuggestions") === "1"; // hide pills, ghosts and notes
-const SCAN_PAUSE_MS = 350;      // breathing room between listings
-const SCAN_TIMEOUT_MS = 25000;  // give up on a listing after this
-const SCAN_FRESH_MS = 24 * 60 * 60 * 1000; // rows read this recently are skipped (Shift+click to force)
-const isFresh = (it) => !!(it.buyBox?.price && Date.now() - (it.buyBox.at || 0) < SCAN_FRESH_MS);
-let scanSkipped = 0;
+// Scanning lives in the Market tab (market.js). The sheet only keeps each
+// row's last buy-box read (it.buyBox) so the Market tab can show it.
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-function waitForPrice(id, ms) {
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { priceWaiters.delete(id); resolve(null); }, ms);
-    priceWaiters.set(id, (p) => { clearTimeout(t); priceWaiters.delete(id); resolve(p); });
-  });
-}
-function suggestionCount() {
-  let n = 0;
-  items.forEach((_, i) => { if (buyBoxSuggestion(i) != null) n++; if (beforeSuggestion(i) != null) n++; });
-  return n;
-}
-const scanPaused = () => !scanning && scanQueue.length > 0;
-function renderScanState() {
-  const n = suggestionCount();
-  const btn = $("scanBtn");
-  btn.classList.toggle("scanning", scanning);
-  btn.classList.toggle("paused", scanPaused());
-  btn.querySelector("span").textContent = scanning ? `Stop · ${scanDone}/${scanTotal}`
-    : scanPaused() ? `Resume · ${scanDone}/${scanTotal}` : "Scan buy boxes";
-  const skipped = scanSkipped ? ` (${scanSkipped} read in the last 24 h skipped)` : "";
-  btn.title = scanning
-    ? `Reading every listing's buy box one by one${skipped} — click to stop`
-    : scanPaused() ? `Stopped with ${scanQueue.length} listing${scanQueue.length === 1 ? "" : "s"} left — click to continue where it left off`
-    : "Read the buy box of every listing not read in the last 24 h, one by one, and suggest prices on all rows. Shift+click to re-read everything.";
-  $("scanRestartBtn").classList.toggle("hidden", !scanPaused());
-  const anyMarks = items.some((it) => it.buyBox) || n > 0;
-  const tog = $("sugToggleBtn");
-  tog.classList.toggle("hidden", !anyMarks);
-  tog.classList.toggle("off", hideSug);
-  tog.querySelector("span").textContent = hideSug ? "Show" : "Hide";
-  tog.title = hideSug ? "Show the scan results again (pills, ghost prices, notes)" : "Hide the scan results from the sheet (pills, ghost prices, notes) — nothing is lost";
-  const apply = $("applyAllBtn");
-  apply.classList.toggle("hidden", n === 0);
-  apply.textContent = `Apply ${n}`;
-  apply.title = `Write all ${n} pending suggestion${n === 1 ? "" : "s"} (During from the buy box, Before at the 4% floor) — one undo step`;
-}
-async function startScan(fresh = !scanPaused(), force = false) {
-  if (scanning) return;
-  if (fresh) {
-    const withId = items.filter((it) => String(it.itemId ?? "").trim());
-    const todo = force ? withId : withId.filter((it) => !isFresh(it));
-    scanSkipped = withId.length - todo.length;
-    scanQueue = [...new Set(todo.map((it) => String(it.itemId).trim()))];
-    scanTotal = scanQueue.length;
-    scanDone = 0;
-    if (!withId.length) { alert("No rows have an Item ID to look up."); return; }
-    if (!scanTotal) { alert(`All ${withId.length} rows were read in the last 24 hours. Shift+click Scan to re-read them anyway.`); return; }
-  }
-  scanning = true;
-  renderScanState();
-  while (scanning && scanQueue.length) {
-    const id = scanQueue.shift();
-    const i = items.findIndex((it) => String(it.itemId ?? "").trim() === id);
-    if (i < 0) { scanDone++; continue; } // row removed meanwhile
-    priceWait = id;
-    renderScanState();
-    render();
-    document.querySelectorAll(".sku-row")[i]?.scrollIntoView({ block: "nearest" });
-    window.api.prefetchListing(id);
-    const p = await waitForPrice(id, SCAN_TIMEOUT_MS);
-    if (!p && scanning) markNoPrice(id); // a stop mid-read isn't a failure
-    if (priceWait === id) priceWait = null;
-    scanDone++;
-    renderScanState();
-    render();
-    if (scanning && scanQueue.length) await sleep(SCAN_PAUSE_MS);
-  }
-  finishScan();
-}
-function stopScan() {
-  scanning = false;              // the queue is kept, so the scan can resume
-  const w = [...priceWaiters.values()];
-  priceWaiters.clear();
-  w.forEach((resolve) => resolve(null));
-  renderScanState(); // button flips back at once; finishScan() follows when the loop unwinds
-}
-function finishScan() {
-  scanning = false;              // scanQueue still has entries only if it was stopped
-  priceWait = null;
-  renderScanState();
-  render();
-}
-function applyAllSuggestions() {
-  let n = 0;
-  applyMutation(() => {
-    items.forEach((_, i) => {
-      const d = buyBoxSuggestion(i);
-      if (d != null) { setCell(i, "during", String(d)); n++; }
-      const b = beforeSuggestion(i);
-      if (b != null) { setCell(i, "before", String(b)); n++; }
-    });
-  });
-  persist();
-  render();
-  if (n) alert(`Applied ${n} suggestion${n === 1 ? "" : "s"}. Check the rows (amber % Change = under 4%), and Ctrl+Z undoes all of it.`);
-}
-$("sugToggleBtn").addEventListener("click", () => {
-  hideSug = !hideSug;
-  localStorage.setItem("hideSuggestions", hideSug ? "1" : "0");
-  hideCard();
-  render();
-});
-$("scanBtn").addEventListener("click", (e) => (scanning ? stopScan() : startScan(e.shiftKey ? true : !scanPaused(), e.shiftKey)));
-$("scanRestartBtn").addEventListener("click", (e) => { if (!scanning) { scanQueue = []; startScan(true, e.shiftKey); } });
-$("applyAllBtn").addEventListener("click", applyAllSuggestions);
 
 // ---- before-price suggestion -----------------------------------------------
 // Walmart grants the commission break only when During is at least 4% under
@@ -1199,8 +897,6 @@ window.api.onListingPrice((p) => {
   if (!p) return;                      // a navigation started; keep what we know
   const id = String(p.itemId);
   rememberPrice(p);
-  if (priceWait === id) priceWait = null;
-  priceWaiters.get(id)?.(p);
   render();
 });
 window.api.listingPrice().then((p) => { if (p) { rememberPrice(p); render(); } });
@@ -1232,15 +928,7 @@ $("paneCloseBtn").addEventListener("click", () => setPaneClosed(true));
 $("paneOpenBtn").addEventListener("click", () => setPaneClosed(false));
 
 function dockListing() {
-  if (paneClosed) {
-    // pane hidden: still load the listing off-screen so the buy-box price
-    // suggestion keeps working; the During cell spins until it arrives
-    const it = items[selected];
-    const id = String(it?.itemId ?? "").trim();
-    if (id) { startPriceWait(id); window.api.prefetchListing(id); }
-    else { priceWait = null; window.api.hideListing(); }
-    return;
-  }
+  if (paneClosed) { window.api.hideListing(); return; }
   const it = items[selected];
   if (paneMode === "seller") {
     $("slotPlaceholder").style.display = "none";
@@ -2141,10 +1829,7 @@ window.addEventListener("keydown", (e) => {
   if (activeCell) {
     const { i, field } = activeCell;
     if (e.key === "Escape") { activeCell = null; render(); return; }
-    if (e.key === "Enter" && !hideSug && field === "during" && buyBoxSuggestion(i) != null) {
-      e.preventDefault(); applyBuyBox(i); return;      // accept the buy-box suggestion
-    }
-    if (e.key === "Enter" && !hideSug && field === "before" && beforeSuggestion(i) != null) {
+    if (e.key === "Enter" && field === "before" && beforeSuggestion(i) != null) {
       e.preventDefault(); applyBeforeSuggestion(i); return; // accept the floor-price suggestion
     }
     if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); editActive(); return; }

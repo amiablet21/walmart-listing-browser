@@ -188,14 +188,13 @@ async function exportSheet(payload) {
   const rows = Array.isArray(payload?.rows) ? payload.rows : [];
   const widths = Array.isArray(payload?.widths) ? payload.widths : null;
   const name = typeof payload?.name === "string" && payload.name ? payload.name : "incentive-list";
+  const csvFirst = payload?.ext === "csv";
   const stamp = new Date().toISOString().slice(0, 10);
+  const filters = [{ name: "Excel", extensions: ["xlsx"] }, { name: "CSV", extensions: ["csv"] }];
   const res = await dialog.showSaveDialog(win, {
     title: "Export spreadsheet",
-    defaultPath: `${name}-${stamp}.xlsx`,
-    filters: [
-      { name: "Excel", extensions: ["xlsx"] },
-      { name: "CSV", extensions: ["csv"] },
-    ],
+    defaultPath: `${name}-${stamp}.${csvFirst ? "csv" : "xlsx"}`,
+    filters: csvFirst ? filters.reverse() : filters,
   });
   if (res.canceled || !res.filePath) return { canceled: true };
   const file = res.filePath;
@@ -431,7 +430,7 @@ let paneLoading = false; // true only while WE are loading (not walmart's own ba
 // The worker view only ever has to yield numbers, so its images, media and
 // fonts are refused — most of a listing's download. The visible panes are
 // untouched (the filter checks which view is asking).
-let workerContentsId = -1;
+const workerContentsIds = new Set();
 let leanHooked = false;
 function hookLeanLoading() {
   if (leanHooked) return;
@@ -439,7 +438,7 @@ function hookLeanLoading() {
   const ses = session.fromPartition("persist:listing");
   ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) => {
     const t = details.resourceType;
-    cb({ cancel: details.webContentsId === workerContentsId && (t === "image" || t === "media" || t === "font") });
+    cb({ cancel: workerContentsIds.has(details.webContentsId) && (t === "image" || t === "media" || t === "font") });
   });
 }
 
@@ -505,8 +504,8 @@ function makePane(mode) {
     v.webContents.on("did-finish-load", () => scheduleReadPrice(v));  // fallback for late-hydrating prices
   }
   win.contentView.addChildView(v);
-  if (mode === "worker") {
-    workerContentsId = v.webContents.id;
+  if (mode === "worker" || mode === "amazon") {
+    workerContentsIds.add(v.webContents.id);
     v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); // real size: the page lays out and hydrates normally
     v.setVisible(false);
   }
@@ -722,10 +721,105 @@ async function paneOffers(itemId) {
     return offers;
   } catch { return null; }
 }
+// The Market tab's scan: buy box, seller and every other seller's price for
+// one item, read fresh in the hidden worker (a day-old page is reloaded).
+async function marketReadWalmart(itemId) {
+  if (!itemId) return null;
+  const w = ensureWorker();
+  w.__item = null; // force a reload even if this item was the last one read
+  workerLoad(itemId);
+  for (let i = 0; i < 80 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤24 s
+  if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
+  let offers = [];
+  if (w.__lastPrice.others !== 0) {
+    try { offers = (await w.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { offers = []; }
+  }
+  if (w.__item !== itemId) return null;
+  const p = { ...w.__lastPrice, offers, at: Date.now() };
+  sendPrice(w, p);
+  return p;
+}
+
+// ---- Amazon (Market tab) ---------------------------------------------------
+// A second hidden view reads amazon.com product pages for the Amazon listings
+// linked to a SKU: buy box price, Prime, seller, other-offer count. A robot
+// check is reported as { robot: true }; the view can then be shown docked so
+// the user passes it once (amazonShow) — the session is shared, so later
+// reads go through.
+const AMZ_SCRIPT = `(() => {
+  const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
+  const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
+  const text = document.body?.innerText || "";
+  if (/Robot Check/i.test(document.title) || document.querySelector('form[action*="validateCaptcha"]') || /Enter the characters you see below|Type the characters you see/i.test(text)) return { robot: true };
+  const title = (document.getElementById("productTitle")?.textContent || document.title.replace(/\\s*[:|-]\\s*Amazon\\.com.*$/i, "")).replace(/\\s+/g, " ").trim().slice(0, 120);
+  let price = null;
+  const sels = ['#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen', '#corePriceDisplay_desktop_feature_div .a-price .a-offscreen',
+    '#corePrice_feature_div .a-price .a-offscreen', '#apex_desktop .priceToPay .a-offscreen', '#apex_desktop .a-price .a-offscreen',
+    '#price_inside_buybox', '#newBuyBoxPrice', '#priceblock_ourprice', '#priceblock_dealprice', '#sns-base-price',
+    '#buybox .a-price .a-offscreen', '#desktop_buybox .a-price .a-offscreen', '#tp_price_block_total_price_ww .a-offscreen'];
+  for (const sel of sels) { const el = document.querySelector(sel); const p = num(el?.textContent); if (ok(p)) { price = p; break; } }
+  const unavailable = /Currently unavailable/i.test(document.querySelector('#availability')?.textContent || "") || !!document.querySelector('#outOfStock');
+  const prime = !!document.querySelector('#buybox i.a-icon-prime, #desktop_buybox i.a-icon-prime, #apex_desktop i.a-icon-prime, #primeExclusiveBuyBox, #deliveryBlockMessage i.a-icon-prime, [aria-label="Prime"]');
+  let seller = null;
+  const sEl = document.querySelector('#sellerProfileTriggerId') || document.querySelector('#merchantInfoFeature_feature_div .offer-display-feature-text-message') || document.querySelector('#merchant-info a') || document.querySelector('#merchant-info');
+  if (sEl) seller = sEl.textContent.replace(/^\\s*Sold by\\s*/i, "").replace(/\\s+/g, " ").trim().slice(0, 60);
+  if (!seller) { const m = /Sold by\\s+([^\\n]{2,60}?)(?:\\n|$)/i.exec(text); if (m) seller = m[1].trim(); }
+  let offers = null;
+  const oEl = document.querySelector('#olpLinkWidget_feature_div, #olp-upd-new, #dynamic-aod-ingress-box, #moreBuyingChoices_feature_div, #olp_feature_div');
+  const om = /New\\s*\\((\\d+)\\)|\\((\\d+)\\)\\s*from|(\\d+)\\s+(?:new\\s+)?(?:offers?|sellers?)/i.exec(oEl?.textContent || "");
+  if (om) offers = Number(om[1] || om[2] || om[3]);
+  return { price: ok(price) ? price : null, title, prime, seller, offers, unavailable };
+})()`;
+const amazonUrl = (asin) => `https://www.amazon.com/dp/${encodeURIComponent(asin)}?th=1&psc=1`;
+function ensureAmazon() {
+  if (!panes.amazon) panes.amazon = makePane("amazon");
+  return panes.amazon;
+}
+function amazonLoad(v, url) {
+  return new Promise((resolve) => {
+    let done = false;
+    const fin = () => { if (done) return; done = true; clearTimeout(t); v.webContents.removeListener("did-finish-load", fin); v.webContents.removeListener("did-fail-load", fin); resolve(); };
+    const t = setTimeout(fin, 20000);
+    v.webContents.once("did-finish-load", fin);
+    v.webContents.once("did-fail-load", fin);
+    v.webContents.loadURL(url).catch(() => fin());
+  });
+}
+async function amazonRead(asin) {
+  asin = String(asin ?? "").trim();
+  if (!/^[A-Z0-9]{10}$/i.test(asin)) return { asin, error: "not an ASIN" };
+  const v = ensureAmazon();
+  v.__asin = asin;
+  await amazonLoad(v, amazonUrl(asin));
+  let last = null;
+  for (const ms of [400, 1200, 2500, 4500]) {
+    await wait(ms);
+    if (v.__asin !== asin || v.webContents.isDestroyed()) return null;
+    try { last = await v.webContents.executeJavaScript(AMZ_SCRIPT, true); } catch { last = null; }
+    if (last && (last.robot || last.price)) break;
+  }
+  return { asin, ...(last || {}), readAt: Date.now() };
+}
+let amazonShown = false;
+function amazonShow(asin, b) {
+  const v = ensureAmazon();
+  if (asin && v.__asin !== asin) { v.__asin = asin; v.webContents.loadURL(amazonUrl(asin)).catch(() => {}); }
+  else if (!v.webContents.getURL()) v.webContents.loadURL("https://www.amazon.com/").catch(() => {});
+  v.setBounds({ x: Math.round(b.x), y: Math.round(b.y), width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)) });
+  v.setVisible(true);
+  amazonShown = true;
+  return true;
+}
+function amazonHide() {
+  amazonShown = false;
+  panes.amazon?.setVisible(false);
+  return true;
+}
+
 function paneHide() {
   paneWanted = false;
   activePane = null;
-  for (const v of Object.values(panes)) v?.setVisible(false);
+  for (const [k, v] of Object.entries(panes)) { if (k !== "amazon" || !amazonShown) v?.setVisible(false); }
   return true;
 }
 function paneZoomBy(dir) {
@@ -829,6 +923,11 @@ app.whenReady().then(() => {
   ipcMain.handle("listing:hide", () => paneHide());
   ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
   ipcMain.handle("listing:offers", (_e, itemId) => paneOffers(itemId));
+  ipcMain.handle("market:readWalmart", (_e, itemId) => marketReadWalmart(itemId));
+  ipcMain.handle("market:readAmazon", (_e, asin) => amazonRead(asin));
+  ipcMain.handle("market:showAmazon", (_e, { asin, bounds }) => amazonShow(asin, bounds));
+  ipcMain.handle("market:hideAmazon", () => amazonHide());
+  ipcMain.handle("market:openAmazon", (_e, asin) => shell.openExternal(amazonUrl(asin)));
   ipcMain.handle("listing:zoom", (_e, dir) => paneZoomBy(dir));
   ipcMain.handle("listing:openExternal", (_e, itemId) =>
     shell.openExternal(`https://www.walmart.com/ip/${encodeURIComponent(itemId)}`));
