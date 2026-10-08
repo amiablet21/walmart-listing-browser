@@ -91,13 +91,16 @@ function rowFacts(i) {
   const sellers = wmSellers(it);
   const wmLow = sellers.length ? sellers[0].price : (bb ? bb.price : null);
   const edge = cheaper ? "red" : lost ? "amber" : bb && mine ? "green" : "none";
-  return { it, during, bb, mine, lost, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length };
+  const wmMissed = !!(it.buyBox?.failed && !bb);
+  const amzMissed = amzList(it).some((a) => !a.manual && a.asin && (a.failed || a.robot));
+  return { it, during, bb, mine, lost, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed };
 }
 function rowMatches(i) {
   const f = rowFacts(i);
   if (mFilter === "lost" && !f.lost) return false;
   if (mFilter === "amz" && !f.cheaper) return false;
   if (mFilter === "noamz" && f.linked) return false;
+  if (mFilter === "missed" && !f.missed) return false;
   if (mSearch) {
     const q = mSearch.toLowerCase();
     const hay = [f.it.sku, f.it.itemId, f.bb?.seller, ...f.sellers.map((s) => s.seller), ...amzList(f.it).map((a) => a.asin + " " + (a.title || ""))].join(" ").toLowerCase();
@@ -148,6 +151,11 @@ function renderMarket() {
     });
     tb.appendChild(tr);
   }
+  const missedRows = items.map((_, i) => i).filter((i) => idOf(items[i]) && rowFacts(i).missed);
+  $("mMissedBtn").classList.toggle("active", mFilter === "missed");
+  $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
+  $("mMissedBtn").querySelector(".n").textContent = missedRows.length ? ` · ${missedRows.length}` : "";
+  $("mRetryBtn").classList.toggle("hidden", !(mFilter === "missed" && missedRows.length && !mScan.running));
   $("mLastScan").textContent = mScan.running ? "" : mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}` : "No scan yet";
   renderScanBar();
   renderPanel();
@@ -160,7 +168,7 @@ function renderScanBar() {
   const prog = $("mProgress");
   prog.classList.toggle("hidden", !mScan.running);
   if (!mScan.running) return;
-  $("mProgText").innerHTML = `<b>Reading ${mScan.done + 1} of ${mScan.total}</b> · ${esc(mScan.current)}`;
+  $("mProgText").innerHTML = `<b>Reading ${Math.min(mScan.done + 1, mScan.total)} of ${mScan.total}</b> · ${esc(mScan.current)}`;
   const el = Date.now() - mScan.startedAt;
   const left = mScan.done ? Math.round((el / mScan.done) * (mScan.total - mScan.done) / 1000) : null;
   $("mProgLeft").textContent = left != null ? `about ${left >= 90 ? Math.round(left / 60) + " min" : left + " s"} left` : "";
@@ -433,6 +441,11 @@ window.addEventListener("resize", () => { if (amazonPageShown) window.api.showAm
 
 // ---- filters, search, export ---------------------------------------------------------------
 $("mSearch").addEventListener("input", () => { mSearch = $("mSearch").value.trim(); renderMarket(); });
+$("mMissedBtn").addEventListener("click", () => { mFilter = mFilter === "missed" ? "all" : "missed"; renderMarket(); });
+$("mRetryBtn").addEventListener("click", () => {
+  const rows = items.map((_, i) => i).filter((i) => idOf(items[i]) && rowFacts(i).missed);
+  if (rows.length) runMarketScan(rows);
+});
 $("mSearch").addEventListener("keydown", (e) => e.stopPropagation());
 
 function marketRows() {
