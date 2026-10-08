@@ -564,6 +564,9 @@ const SELLERS_SCRIPT = `(() => {
 })()`;
 // The other sellers' names and prices. Walmart's data payload sometimes has
 // them; otherwise open the "Compare all sellers" panel once and read it.
+// Returns { list: [{ seller, price }], why } — `why` says what stopped the
+// read when the list is empty (no sellers link on the page, the panel never
+// opened, or its text had no price/seller pairs) so the Market tab can say so.
 const OFFERS_SCRIPT = `(async () => {
   const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
   const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
@@ -584,24 +587,63 @@ const OFFERS_SCRIPT = `(async () => {
     };
     walk(nd, 0);
   } catch {}
-  if (found.length > 1) return dedupe(found);
+  if (found.length > 1) return { list: dedupe(found), why: null };
+  // Pair each "Sold by …" line with the nearest price line before it (or,
+  // failing that, just after it) — the panel's cards put the price first but
+  // the order has changed before.
+  const sellerRe = /^(?:Sold (?:and|&) shipped by|Sold by|Seller:?)\\s*(.+?)(?:\\s*\\|.*)?$/i;
+  const priceRe = /^(?:Now\\s*)?\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)(?:\\s*(?:each|\\/ea))?$/i;
+  const parse = (text) => {
+    const lines = text.split(/\\n+/).map((l) => l.trim()).filter(Boolean);
+    const out = [];
+    lines.forEach((l, i) => {
+      const m = sellerRe.exec(l); if (!m) return;
+      const seller = m[1].replace(/\\s*\\(.*$/, "").trim(); if (seller.length < 2 || seller.length > 60) return;
+      let price = null;
+      for (let j = i - 1; j >= Math.max(0, i - 14) && price == null; j--) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
+      for (let j = i + 1; j <= Math.min(lines.length - 1, i + 6) && price == null; j++) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
+      if (ok(price)) out.push({ seller, price });
+    });
+    return out;
+  };
+  const panelRoot = () => document.querySelector('[role="dialog"]') || document.querySelector('[data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]') || null;
+  const panelText = () => { const r = panelRoot(); const t = r ? (r.innerText || "") : ""; return /Sold (?:and|&) shipped by|Sold by/i.test(t) ? t : ""; };
+  let why = null;
   try {
-    if (!window.__wlbOffersTried) {
-      window.__wlbOffersTried = true;
-      const btn = [...document.querySelectorAll("button, a")].find((b) => /Compare all \\d+ sellers|More seller options/i.test(b.textContent || ""));
-      if (btn) {
-        btn.click();
-        await new Promise((r) => setTimeout(r, 1800));
-        const root = document.querySelector('[role="dialog"]') || document.body;
-        const text = root.innerText || "";
-        const re = /\\$\\s?(\\d[\\d,]*\\.\\d{2})[\\s\\S]{0,400}?Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/gi;
-        let m; while ((m = re.exec(text))) { const p = num(m[1]); if (ok(p)) found.push({ seller: m[2].trim(), price: p }); }
-        try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
+    // a panel already open (a retry) is read as is
+    let text = panelText();
+    if (!text) {
+      const btn = [...document.querySelectorAll('button, a, [role="button"]')].find((b) => /Compare all \\d+ sellers|More seller options|All sellers|See all sellers|\\d+ (?:more|other) sellers?|\\d+ sellers/i.test((b.textContent || "").trim()) && (b.textContent || "").trim().length < 60);
+      if (!btn) return { list: [], why: "no-link" };
+      btn.click();
+      // the panel fills in from a separate request: wait until its text has
+      // settled, up to ~7 s
+      let last = "";
+      for (let i = 0; i < 14; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        text = panelText();
+        if (text && text === last) break;
+        last = text;
       }
+      if (!text) { why = "no-panel"; text = document.body?.innerText || ""; }
     }
-  } catch {}
-  return dedupe(found);
+    for (const o of parse(text)) found.push(o);
+    try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
+    const close = document.querySelector('[role="dialog"] button[aria-label*="Close" i], [role="dialog"] button[aria-label*="close" i]');
+    try { close?.click(); } catch {}
+  } catch (e) { why = why || "error"; }
+  const list = dedupe(found);
+  if (!list.length && !why) why = "no-match";
+  return { list, why: list.length ? null : why };
 })()`;
+// Runs OFFERS_SCRIPT in a view; always resolves to { list, why }.
+async function readOffers(v) {
+  try {
+    const r = await v.webContents.executeJavaScript(OFFERS_SCRIPT, true);
+    if (Array.isArray(r)) return { list: r, why: null };
+    return { list: Array.isArray(r?.list) ? r.list : [], why: r?.why ?? null };
+  } catch { return { list: [], why: "error" }; }
+}
 // Each listing view tracks its own item, last read and retry timers.
 let lastPrice = null; // most recent read from any view (the renderer asks for it on startup)
 function sendPrice(v, p) {
@@ -625,7 +667,7 @@ function scheduleReadPrice(v, withOffers = false) {
         let sellers = {}, offers = [];
         try { sellers = (await v.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {}; } catch { /* optional */ }
         if (sellers.others > 0 && withOffers) { // only on explicit request
-          try { offers = (await v.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { /* optional */ }
+          offers = (await readOffers(v)).list;
         }
         if (v.__item !== item) return false; // moved on while the panel was loading
         sendPrice(v, { itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, offers });
@@ -715,7 +757,7 @@ async function paneOffers(itemId) {
   for (let i = 0; i < 50 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤15 s
   if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
   try {
-    const offers = (await w.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || [];
+    const offers = (await readOffers(w)).list;
     if (w.__item !== itemId) return null;
     sendPrice(w, { ...w.__lastPrice, offers });
     return offers;
@@ -730,12 +772,15 @@ async function marketReadWalmart(itemId) {
   workerLoad(itemId);
   for (let i = 0; i < 80 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤24 s
   if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
-  let offers = [];
-  if (w.__lastPrice.others !== 0) {
-    try { offers = (await w.webContents.executeJavaScript(OFFERS_SCRIPT, true)) || []; } catch { offers = []; }
-  }
+  // Always try the sellers panel (a single-seller page has no link, so this
+  // costs one script run); when it comes back empty on a page that says it
+  // has more sellers, wait a moment and try once more.
+  let r = await readOffers(w);
   if (w.__item !== itemId) return null;
-  const p = { ...w.__lastPrice, offers, at: Date.now() };
+  if (!r.list.length && r.why !== "no-link") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w); }
+  if (w.__item !== itemId) return null;
+  const others = w.__lastPrice.others;
+  const p = { ...w.__lastPrice, offers: r.list, offersWhy: r.list.length ? null : (r.why === "no-link" && (others == null || others === 0) ? null : r.why || "no-match"), at: Date.now() };
   sendPrice(w, p);
   return p;
 }

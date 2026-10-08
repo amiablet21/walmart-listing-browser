@@ -795,7 +795,8 @@ function rememberPrice(p) {
   for (const i of rowsWithItem(id)) {
     const prev = items[i].buyBox;
     items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null,
-      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : (prev?.offers || []), at: Date.now() };
+      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : (prev?.offers || []),
+      offersWhy: Array.isArray(p.offers) && p.offers.length ? null : (p.offersWhy ?? prev?.offersWhy ?? null), at: Date.now() };
   }
   window.api.saveItems(items); // quiet save — not a user edit, so no undo step / flash
   cacheBuyBoxes();

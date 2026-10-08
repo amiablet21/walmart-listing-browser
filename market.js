@@ -48,6 +48,7 @@ let mSelected = -1;      // index into items
 let mFilter = "all";      // filter chips were removed; the search box is the only filter
 let mSearch = "";
 let mEditing = null;      // { i, k } — Amazon listing whose price is being typed
+let mStoreEditing = false; // the store-name line is a field
 let mScan = { running: false, done: 0, total: 0, current: "", stop: false, startedAt: 0 };
 let mLastScan = Number(localStorage.getItem("marketLastScan")) || 0;
 let mLastScanMs = Number(localStorage.getItem("marketLastScanMs")) || 0;
@@ -156,7 +157,7 @@ function renderMarket() {
   $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
   $("mMissedBtn").querySelector(".n").textContent = missedRows.length ? ` · ${missedRows.length}` : "";
   $("mRetryBtn").classList.toggle("hidden", !(mFilter === "missed" && missedRows.length && !mScan.running));
-  $("mLastScan").textContent = mScan.running ? "" : mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}` : "No scan yet";
+  if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}` : "No scan yet";
   renderScanBar();
   renderPanel();
 }
@@ -165,14 +166,13 @@ function renderScanBar() {
   const btn = $("mScanBtn");
   btn.classList.toggle("scanning", mScan.running);
   btn.querySelector("span").textContent = mScan.running ? "Stop scan" : "Run market scan";
-  const prog = $("mProgress");
-  prog.classList.toggle("hidden", !mScan.running);
+  $("mProgress").classList.toggle("hidden", !mScan.running);
   if (!mScan.running) return;
-  $("mProgText").innerHTML = `<b>Reading ${Math.min(mScan.done + 1, mScan.total)} of ${mScan.total}</b> · ${esc(mScan.current)}`;
   const el = Date.now() - mScan.startedAt;
   const left = mScan.done ? Math.round((el / mScan.done) * (mScan.total - mScan.done) / 1000) : null;
-  $("mProgLeft").textContent = left != null ? `about ${left >= 90 ? Math.round(left / 60) + " min" : left + " s"} left` : "";
-  $("mProgBar").style.width = `${Math.round((mScan.done / Math.max(1, mScan.total)) * 100)}%`;
+  const leftText = left != null ? ` · about ${left >= 90 ? Math.round(left / 60) + " min" : left + " s"} left` : "";
+  $("mLastScan").textContent = `Reading ${Math.min(mScan.done + 1, mScan.total)} of ${mScan.total} · ${mScan.current}${leftText}`;
+  $("mProgBar").style.width = `${Math.max(3, Math.round((mScan.done / Math.max(1, mScan.total)) * 100))}%`;
 }
 
 // ---- rendering: the right panel (design B: identity card + Walmart card + Amazon card) ----
@@ -186,6 +186,15 @@ function renderPanel() {
   const sellersHtml = f.sellers.length
     ? f.sellers.map((s) => `<div class="m-seller${s.isBB ? " bb" : ""}"><span class="s${s.mine ? " me" : ""}">${esc(s.seller)}</span>${s.isBB ? `<span class="m-pill bb">Buy box</span>` : ""}${s.mine ? `<span class="m-pill you">You</span>` : ""}<span class="p">${fmt(s.price)}</span></div>`).join("")
     : `<div class="m-seller m-muted">${f.bb ? "Only the buy box could be read" : it.buyBox?.failed ? "The page couldn't be read — open it to check" : "Not scanned yet"}</div>`;
+  // one seller listed although Walmart says there are more: say why
+  const sellersNote = f.bb && f.sellers.length <= 1 && (f.bb.others > 0 || f.bb.offersWhy)
+    ? `<div class="m-seller m-muted m-note">${f.bb.others > 0 ? `Walmart lists ${f.bb.others} more seller${f.bb.others === 1 ? "" : "s"}, but ` : ""}${{
+        "no-link": "the page showed no sellers link to open",
+        "no-panel": "the sellers panel didn't open in time",
+        "no-match": "the sellers panel couldn't be read",
+        "error": "the sellers panel couldn't be read",
+      }[f.bb.offersWhy] || "the other sellers couldn't be read"}. Re-check, or open the listing to compare.</div>`
+    : "";
   const amzHtml = list.map((a, k) => {
     const editing = mEditing && mEditing.i === i && mEditing.k === k;
     if (editing) {
@@ -236,7 +245,7 @@ function renderPanel() {
     </div>
     <div class="m-card">
       <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : ""}</span></div>
-      ${sellersHtml}
+      ${sellersHtml}${sellersNote}
     </div>
     <div class="m-card">
       <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}</span></div>
@@ -250,7 +259,9 @@ function renderPanel() {
       <div class="m-card-head"><b>Notes</b><span class="m-muted" id="mNoteState"></span></div>
       <textarea id="mNote" rows="3" placeholder="Anything you want to remember about this SKU…" aria-label="Notes for this SKU">${esc(it.note || "")}</textarea>
     </div>
-    <div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>`;
+    ${mStoreEditing
+      ? `<div class="m-store editing"><span class="m-muted">Your store on Walmart:</span><input id="mStoreInput" type="text" value="${esc(myStore)}" placeholder="Exactly as Walmart shows it" aria-label="Your store name on Walmart" /><span class="m-edit-actions"><button id="mStoreSave" class="primary">Save</button><button id="mStoreCancel">Cancel</button></span></div>`
+      : `<div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>`}`;
   // wiring
   const note = p.querySelector("#mNote");
   let noteTimer = null;
@@ -264,11 +275,18 @@ function renderPanel() {
   note?.addEventListener("blur", () => { if (it.note !== undefined) saveQuiet(); });
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
-  p.querySelector("#mStoreEdit")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    const name = prompt("Your store name exactly as it appears on Walmart:", myStore);
-    if (name != null && name.trim()) { myStore = name.trim(); localStorage.setItem("myStoreName", myStore); renderMarket(); }
-  });
+  // window.prompt() does nothing in Electron, so the store name is edited in
+  // place: the link turns the line into a field with Save / Cancel.
+  p.querySelector("#mStoreEdit")?.addEventListener("click", (e) => { e.preventDefault(); mStoreEditing = true; renderPanel(); const f = $("mStoreInput"); f?.focus(); f?.select(); });
+  const storeSave = () => {
+    const name = ($("mStoreInput")?.value || "").trim();
+    if (name) { myStore = name; localStorage.setItem("myStoreName", myStore); }
+    mStoreEditing = false; renderMarket();
+  };
+  const storeCancel = () => { mStoreEditing = false; renderPanel(); };
+  p.querySelector("#mStoreSave")?.addEventListener("click", storeSave);
+  p.querySelector("#mStoreCancel")?.addEventListener("click", storeCancel);
+  p.querySelector("#mStoreInput")?.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") storeSave(); if (e.key === "Escape") storeCancel(); });
   const linkIn = p.querySelector("#mLinkInput");
   const doLink = () => { if (linkAmazon(i, linkIn.value)) linkIn.value = ""; };
   p.querySelector("#mLinkBtn")?.addEventListener("click", doLink);
@@ -383,7 +401,6 @@ async function runMarketScan(onlyRows = null) {
     const sku = items[rowsFor[0]]?.sku || id;
     mScan.current = `Walmart: ${sku}`; mScan.currentId = id; mScan.step = "walmart";
     renderMarket();
-    document.querySelector("#mTbody .m-row.sel")?.scrollIntoView?.({ block: "nearest" });
     const r = await window.api.marketReadWalmart(id).catch(() => null);
     if (mScan.stop) break;
     if (r && r.price) rememberPrice(r); else markNoPrice(id);

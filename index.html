@@ -314,10 +314,8 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
         Export market sheet
       </button>
-    </div>
-    <div id="mProgress" class="m-progress hidden">
-      <div class="m-prog-text"><span id="mProgText"></span><span id="mProgLeft"></span></div>
-      <div class="m-prog-track"><div id="mProgBar" class="m-prog-bar"></div></div>
+      <!-- scan progress: a thin line along the toolbar's bottom edge, so the table never moves -->
+      <div id="mProgress" class="m-progress hidden" role="progressbar" aria-label="Scan progress"><div id="mProgBar" class="m-prog-bar"></div></div>
     </div>
 
     <div class="m-body">
