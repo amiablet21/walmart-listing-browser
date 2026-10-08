@@ -126,7 +126,7 @@ function renderMarket() {
     let wm;
     if (reading && mScan.step === "walmart") wm = `<span class="m-reading"><span class="m-spin"></span>Reading Walmart page…</span>`;
     else if (f.bb) {
-      wm = `<span class="m-pill ${f.mine ? "you" : "lost"}">${f.mine ? "You" : "Lost"}</span><b>${fmt(f.bb.price)}</b><span class="m-muted">${esc(f.mine ? myStore : (f.bb.seller || ""))}</span>`;
+      wm = `<span class="m-pill ${f.mine ? "you" : "lost"}">${f.mine ? "You" : "Lost"}</span><b>${fmt(f.bb.price)}</b>${f.mine ? "" : `<span class="m-muted">${esc(f.bb.seller || "")}</span>`}`;
     } else if (f.it.buyBox?.failed) wm = `<span class="m-muted">Couldn't read the page</span>`;
     else wm = `<span class="m-muted">Not scanned yet</span>`;
     let amz;
@@ -506,4 +506,5 @@ window.addEventListener("keydown", (e) => {
 }, true);
 
 // ---- start ---------------------------------------------------------------------------------------
+window.api.appVersion().then((v) => { $("mVersion").textContent = "v" + v; });
 setTab(appTab);

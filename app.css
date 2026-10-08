@@ -440,6 +440,11 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-head { background: var(--sidebar-bg); border-bottom: 1px solid var(--line); }
 .m-head .brand { padding: 12px 16px; }
 .m-head .brand .app-tabs .seg-btn { margin: 0; }
+.m-title { font-weight: 700; font-size: 14px; white-space: nowrap; }
+.m-head .version {
+  padding: 1px 6px; font-size: 10.5px; font-weight: 500; font-family: "Geist Mono", Consolas, monospace;
+  color: var(--muted); border: 1px solid var(--line); border-radius: 6px; white-space: nowrap;
+}
 .m-last { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
 
 .m-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); }
@@ -473,6 +478,9 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 #mTable th.num, #mTable td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #mTable th.sep, #mTable td.sep { border-left: 1px solid var(--line-soft); }
 #mTable td { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; vertical-align: middle; }
+/* SKU, Item ID and Our price hug their content; the two buy box columns share the rest, like the design */
+#mTable th:nth-child(1), #mTable th:nth-child(2), #mTable th:nth-child(3) { width: 1%; white-space: nowrap; }
+#mTable th:nth-child(4), #mTable th:nth-child(5) { width: 50%; }
 #mTable td.sku { font-family: "Geist Mono", Consolas, monospace; font-weight: 600; font-size: 12px; border-left: 3px solid var(--line); }
 #mTable td.mono { font-family: "Geist Mono", Consolas, monospace; font-size: 12px; color: var(--ink-soft); }
 #mTable tr.m-row { cursor: pointer; }
