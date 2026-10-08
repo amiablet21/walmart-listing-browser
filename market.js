@@ -224,10 +224,8 @@ function renderPanel() {
           <label for="mLinkInput">Add listing</label>
           <input id="mLinkInput" type="text" placeholder="Paste Amazon URL or ASIN" />
           <button id="mLinkBtn">Link</button>
-          <button id="mTypeBtn" title="Add a price you looked up yourself"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Type a price</button>
         </div>
       </div>
-      <p class="m-muted m-note">Link as many listings as you like (new, international, renewed…). Every one is read on each scan; a typed price stays until you change it or re-check.</p>
     </section>`;
   // wiring
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
@@ -241,13 +239,6 @@ function renderPanel() {
   const doLink = () => { if (linkAmazon(i, linkIn.value)) linkIn.value = ""; };
   p.querySelector("#mLinkBtn")?.addEventListener("click", doLink);
   linkIn?.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") doLink(); });
-  p.querySelector("#mTypeBtn")?.addEventListener("click", () => {
-    if (!Array.isArray(it.amz)) it.amz = [];
-    it.amz.push({ asin: "", title: "Typed price", price: null, manual: true, at: null });
-    mEditing = { i, k: it.amz.length - 1 };
-    renderPanel();
-    $("mPriceInput")?.focus();
-  });
   p.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => { mEditing = { i, k: Number(b.dataset.edit) }; renderPanel(); $("mPriceInput")?.select(); }));
   p.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", () => {
     const k = Number(b.dataset.cancel);
