@@ -459,11 +459,20 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-toolbar button.primary:hover, #mPanel button.primary:hover { background: #3D4A85; }
 #mScanBtn.scanning { background: #BB3B2E; border-color: #BB3B2E; }
 #mScanBtn.scanning svg { animation: sugSpin2 1.2s linear infinite; }
-.m-sched { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 6px 10px; background: #fff; min-height: 34px; box-sizing: border-box; color: #45433A; font-size: 13px; cursor: pointer; }
-.m-sched input[type="time"] { width: auto; min-height: 24px; padding: 2px 6px; border: 0; background: transparent; font-weight: 600; font-size: 13px; color: #1C1B16; }
-.m-sched input[type="checkbox"] { width: 15px; height: 15px; accent-color: #4C5B9E; margin: 0; }
-.m-sched-state { color: #918D7C; font-weight: 600; font-size: 12px; }
-.m-sched-state.on { color: #4F7A3E; }
+.m-sched { display: inline-flex; align-items: center; gap: 9px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 0 12px 0 10px; background: #fff; min-height: 34px; box-sizing: border-box; color: #6E6B5C; font-size: 13px; cursor: pointer; user-select: none; }
+.m-sched.on { color: #1C1B16; }
+/* the switch: a visually hidden checkbox drives the pill */
+.m-sched .m-switch { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.m-switch-ui { position: relative; width: 30px; height: 18px; border-radius: 999px; background: #D9D2C1; transition: background .15s; flex: none; }
+.m-switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
+.m-sched.on .m-switch-ui { background: #4C5B9E; }
+.m-sched.on .m-switch-ui::after { transform: translateX(12px); }
+.m-sched .m-switch:focus-visible + .m-switch-ui { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 2px; }
+.m-sched-label { white-space: nowrap; }
+.m-sched input[type="time"] { width: auto; min-height: 24px; padding: 2px 4px; border: 0; background: transparent; font-weight: 600; font-size: 13px; color: #918D7C; font-variant-numeric: tabular-nums; cursor: pointer; }
+.m-sched.on input[type="time"] { color: #1C1B16; }
+.m-sched input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+.m-sched input[type="time"]:focus { outline: none; color: #4C5B9E; }
 .m-toolbar .tb-sep { width: 1px; height: 22px; background: #E9E4D7; }
 .m-search { position: relative; display: inline-flex; align-items: center; color: #6E6B5C; }
 .m-search svg { position: absolute; left: 10px; pointer-events: none; }

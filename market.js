@@ -393,9 +393,7 @@ try { mSched = { ...mSched, ...(JSON.parse(localStorage.getItem("marketSchedule"
 $("mSchedOn").checked = !!mSched.on;
 $("mSchedTime").value = /^\d{2}:\d{2}$/.test(mSched.time) ? mSched.time : "09:00";
 function renderSched() {
-  const st = $("mSchedState");
-  st.textContent = mSched.on ? "on" : "off";
-  st.classList.toggle("on", !!mSched.on);
+  document.querySelector(".m-sched").classList.toggle("on", !!mSched.on);
 }
 function saveSched() {
   mSched = { on: $("mSchedOn").checked, time: $("mSchedTime").value || "09:00" };

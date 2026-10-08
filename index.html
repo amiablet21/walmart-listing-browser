@@ -295,11 +295,10 @@
         <span>Run market scan</span>
       </button>
       <label class="m-sched" title="Run the scan by itself every day at this time, while the app is open">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6B5C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-        <input id="mSchedOn" type="checkbox" />
-        <span>Every day at</span>
-        <input id="mSchedTime" type="time" value="09:00" />
-        <span id="mSchedState" class="m-sched-state">off</span>
+        <input id="mSchedOn" type="checkbox" class="m-switch" />
+        <span class="m-switch-ui" aria-hidden="true"></span>
+        <span class="m-sched-label">Daily scan at</span>
+        <input id="mSchedTime" type="time" value="09:00" aria-label="Daily scan time" />
       </label>
       <span class="tb-sep"></span>
       <span class="m-search">
