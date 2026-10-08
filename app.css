@@ -629,3 +629,17 @@ button.mini { padding: 6px 11px; font-size: 12.5px; min-height: 32px; }
 .m-store.editing input { flex: 1; min-width: 0; font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 6px 10px; background: #fff; color: #1C1B16; min-height: 32px; box-sizing: border-box; }
 .m-store.editing input:focus { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 1px; border-color: #4C5B9E; }
 .m-seller.m-note { font-size: 12px; line-height: 1.45; display: block; }
+
+/* The row-number gutter and the SKU column stay put while the sheet scrolls
+   sideways (the SKU column only while it is the first column — it can be
+   dragged elsewhere). --rn-w is set by renderHead to the gutter's width. */
+#sheet thead th.rn, #sheet td.rn { position: sticky; left: 0; z-index: 2; }
+#sheet.sticky-sku thead th[data-field="sku"], #sheet.sticky-sku td.sku { position: sticky; left: var(--rn-w, 34px); z-index: 2; }
+#sheet thead th.rn, #sheet.sticky-sku thead th[data-field="sku"] { z-index: 3; }
+#sheet.sticky-sku td.sku { border-right-color: #CFCBBF; }
+/* a soft edge on the pinned SKU column once the sheet has scrolled sideways */
+#sheet.sticky-sku.scrolled-x td.sku, #sheet.sticky-sku.scrolled-x thead th[data-field="sku"] { position: sticky; }
+#sheet.sticky-sku.scrolled-x td.sku::after, #sheet.sticky-sku.scrolled-x thead th[data-field="sku"]::after {
+  content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 6px; pointer-events: none;
+  background: linear-gradient(to left, rgba(28, 27, 22, 0.10), rgba(28, 27, 22, 0));
+}

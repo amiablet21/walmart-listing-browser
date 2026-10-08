@@ -518,6 +518,11 @@ function startEdit(tr, i, td) {
 }
 
 // ---- rendering --------------------------------------------------------------
+// a soft edge on the pinned SKU column once the sheet is scrolled sideways
+document.querySelector(".sheet-wrap")?.addEventListener("scroll", (e) => {
+  $("sheet").classList.toggle("scrolled-x", e.currentTarget.scrollLeft > 0);
+}, { passive: true });
+
 function renderHead() {
   const tr = $("headRow");
   tr.innerHTML = "";
@@ -527,6 +532,9 @@ function renderHead() {
   // widen the gutter to fit the biggest row number (96 → 1046 → …)
   rn.style.width = Math.max(34, 14 + String(items.length + 1).length * 8) + "px";
   tr.appendChild(rn);
+  // the gutter and the SKU column (while it is first) are pinned on the left
+  $("sheet").style.setProperty("--rn-w", rn.style.width);
+  $("sheet").classList.toggle("sticky-sku", visibleOrder()[0] === "sku");
   const BASE_TITLE = {
     sku: "SKU", itemId: "Item ID", before: "Before Price", during: "During Incentive",
     change: "$ Change", pct: "% Change", regCom: "Reg Comm %", incCom: "Incent Comm %",
