@@ -45,7 +45,7 @@ document.querySelectorAll(".app-tabs .app-tab").forEach((b) => b.addEventListene
 
 // ---- state -------------------------------------------------------------------
 let mSelected = -1;      // index into items
-let mFilter = "all";      // all | lost | amz | noamz
+let mFilter = "all";      // filter chips were removed; the search box is the only filter
 let mSearch = "";
 let mEditing = null;      // { i, k } — Amazon listing whose price is being typed
 let mScan = { running: false, done: 0, total: 0, current: "", stop: false, startedAt: 0 };
@@ -148,13 +148,6 @@ function renderMarket() {
     });
     tb.appendChild(tr);
   }
-  const all = items.map((_, i) => i).filter((i) => idOf(items[i]));
-  const counts = { all: all.length, lost: 0, amz: 0, noamz: 0 };
-  for (const i of all) { const f = rowFacts(i); if (f.lost) counts.lost++; if (f.cheaper) counts.amz++; if (!f.linked) counts.noamz++; }
-  document.querySelectorAll("#mFilters .m-chip").forEach((b) => {
-    b.classList.toggle("active", b.dataset.f === mFilter);
-    b.querySelector(".n").textContent = counts[b.dataset.f] ? ` · ${counts[b.dataset.f]}` : "";
-  });
   $("mLastScan").textContent = mScan.running ? "" : mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}` : "No scan yet";
   renderScanBar();
   renderPanel();
@@ -450,7 +443,6 @@ $("mAmzHide").addEventListener("click", () => { hideAmazonPage(); if (mSelected 
 window.addEventListener("resize", () => { if (amazonPageShown) window.api.showAmazon(null, amazonBounds()); });
 
 // ---- filters, search, export ---------------------------------------------------------------
-document.querySelectorAll("#mFilters .m-chip").forEach((b) => b.addEventListener("click", () => { mFilter = b.dataset.f; renderMarket(); }));
 $("mSearch").addEventListener("input", () => { mSearch = $("mSearch").value.trim(); renderMarket(); });
 $("mSearch").addEventListener("keydown", (e) => e.stopPropagation());
 
