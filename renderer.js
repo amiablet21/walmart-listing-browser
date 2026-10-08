@@ -1155,8 +1155,13 @@ function handlePaste(text) {
   render();
 }
 
+// The sheet's shortcuts only apply on the sheet tab; on the Market tab copy,
+// paste, undo and find are left to the browser (and the Market tab's own
+// handlers), so highlighted text there copies as it would anywhere else.
+const onSheetTab = () => !document.body.classList.contains("market-mode");
 window.addEventListener("keydown", async (e) => {
   if (!(e.ctrlKey || e.metaKey)) return;
+  if (!onSheetTab()) return;
   if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return; // native in editors
   const k = e.key.toLowerCase();
   if (k === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
@@ -1178,8 +1183,15 @@ window.addEventListener("keydown", async (e) => {
 // The active cell always wins — a stray text highlight across the row must
 // never turn a cell copy into a row copy.
 function sheetCopyText() {
+  if (!onSheetTab()) return null;
+  // text highlighted anywhere outside the sheet (the listing header, the
+  // Market panel) copies as highlighted, whatever cell is active
+  const sel = window.getSelection();
+  const selText = String(sel || "");
+  const inSheet = !!selText && !!sel?.anchorNode && !!document.getElementById("sheet")?.contains(sel.anchorNode);
+  if (selText && !inSheet) return null;
   if (activeCell && items[activeCell.i]) return cellRaw(activeCell.i, activeCell.field);
-  if (String(window.getSelection())) return null;
+  if (selText) return null;
   if (selected >= 0) return visibleOrder().map((f) => cellRaw(selected, f)).join("\t");
   return null;
 }
@@ -1195,7 +1207,7 @@ document.addEventListener("copy", (e) => {
   e.clipboardData.setData("text/plain", text);
 });
 document.addEventListener("paste", (e) => {
-  if (inTextEditor(e.target)) return;
+  if (!onSheetTab() || inTextEditor(e.target)) return;
   const text = e.clipboardData?.getData("text/plain");
   if (!text) return;
   e.preventDefault();
