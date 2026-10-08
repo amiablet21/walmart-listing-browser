@@ -246,8 +246,22 @@ function renderPanel() {
         <button id="mLinkBtn">Link</button>
       </div>
     </div>
+    <div class="m-card m-notes">
+      <div class="m-card-head"><b>Notes</b><span class="m-muted" id="mNoteState"></span></div>
+      <textarea id="mNote" rows="3" placeholder="Anything you want to remember about this SKU…" aria-label="Notes for this SKU">${esc(it.note || "")}</textarea>
+    </div>
     <div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>`;
   // wiring
+  const note = p.querySelector("#mNote");
+  let noteTimer = null;
+  note?.addEventListener("keydown", (e) => e.stopPropagation());
+  note?.addEventListener("input", () => {
+    it.note = note.value;
+    $("mNoteState").textContent = "Saving…";
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => { saveQuiet(); $("mNoteState").textContent = "Saved"; setTimeout(() => { if ($("mNoteState")) $("mNoteState").textContent = ""; }, 1500); }, 400);
+  });
+  note?.addEventListener("blur", () => { if (it.note !== undefined) saveQuiet(); });
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   p.querySelector("#mStoreEdit")?.addEventListener("click", (e) => {

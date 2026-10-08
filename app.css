@@ -596,7 +596,12 @@ button.mini { padding: 6px 11px; font-size: 12.5px; min-height: 32px; }
 .m-amz-robot { display: flex; align-items: center; gap: 10px; }
 .m-add { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #FAF9F5; }
 .m-add input { flex: 1 1 160px; min-width: 0; }
-.m-store { margin-top: auto; font-size: 12px; color: #6E6B5C; }
+.m-notes { margin-top: auto; }
+.m-notes .m-card-head { background: #FAF9F5; }
+.m-notes textarea { display: block; width: 100%; box-sizing: border-box; border: 0; resize: vertical; min-height: 72px; padding: 10px 14px; font: inherit; font-size: 13px; line-height: 1.5; color: #1C1B16; background: #fff; border-radius: 0 0 14px 14px; }
+.m-notes textarea:focus { outline: none; box-shadow: inset 0 0 0 2px rgba(76, 91, 158, .38); }
+.m-notes textarea::placeholder { color: #918D7C; }
+.m-store { font-size: 12px; color: #6E6B5C; }
 .m-store b { color: #1C1B16; }
 .m-store a { margin-left: 4px; }
 
