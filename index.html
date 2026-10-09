@@ -300,6 +300,10 @@
         <span class="m-sched-label">Daily scan at</span>
         <input id="mSchedTime" type="time" value="09:00" aria-label="Daily scan time" />
       </label>
+      <button id="mApiBtn" class="m-api" title="Walmart seller API keys" aria-label="Walmart API settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L19 4m-3 3l3 3"/></svg>
+        <span>API</span>
+      </button>
       <span class="tb-sep"></span>
       <span class="m-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -341,6 +345,46 @@
       <aside id="mPanel" class="m-panel"></aside>
     </div>
   </section>
+
+  <!-- Walmart seller API keys (Market scan) -->
+  <div id="apiModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal api-card">
+      <h2>Walmart seller API</h2>
+      <p class="hint">
+        With your keys saved, <b>Run market scan</b> pulls every SKU's Walmart buy box from
+        Walmart's <b>Pricing Insights</b> API in one go — plus your win rate, the competitor and
+        suggested prices, and the repricer strategy each SKU is on — instead of reading each page.
+        Seller names still come from the page, on request. Keys are in your seller account:
+        <button id="apiKeysLink" class="linkish" type="button">Developer Portal → My Account → API keys</button>.
+      </p>
+      <p id="apiMsg" class="status hidden"></p>
+      <div class="api-form">
+        <label for="apiClientId">Client ID</label>
+        <input id="apiClientId" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="Client ID" />
+        <label for="apiSecret">Client Secret</label>
+        <input id="apiSecret" type="password" class="mono" autocomplete="off" placeholder="Client Secret" />
+        <label for="apiEnv">Environment</label>
+        <select id="apiEnv">
+          <option value="production">Production — your live store</option>
+          <option value="sandbox">Sandbox — Walmart's test environment</option>
+        </select>
+      </div>
+      <div class="api-test-row">
+        <button id="apiTest" type="button">Test connection</button>
+        <span id="apiTestState" class="status"></span>
+      </div>
+      <p class="hint api-foot">
+        The secret is stored encrypted on this computer and only ever sent to Walmart.
+        <button id="apiDocsLink" class="linkish" type="button">API reference</button>
+        <span id="apiLast" class="api-last"></span>
+      </p>
+      <div class="confirm-actions">
+        <button id="apiRemove" class="danger hidden">Remove keys</button>
+        <button id="apiCancel">Cancel</button>
+        <button id="apiSave" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
 
   <!-- end-of-scan pop-up: the listings Amazon undercuts, biggest gap first -->
   <div id="mSummary" class="modal-overlay hidden">

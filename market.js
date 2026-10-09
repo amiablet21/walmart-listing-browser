@@ -55,6 +55,13 @@ let mLastScanMs = Number(localStorage.getItem("marketLastScanMs")) || 0;
 const AMZ_PAUSE_MS = [2000, 3500]; // breathing room between Amazon pages (random in this range)
 const WM_PAUSE_MS = 400;
 
+// Walmart Marketplace API (Pricing Insights). When keys are saved, the scan
+// pulls every SKU's buy box in one batched call instead of reading pages;
+// pages are still read for SKUs the API doesn't know, and on request for
+// seller names (which the API doesn't carry).
+let apiSettings = { clientId: "", env: "production", hasSecret: false, lastScan: null };
+const apiReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
+
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const idOf = (it) => String(it?.itemId ?? "").trim();
 const fmt = (n) => (Number.isFinite(n) && n > 0 ? "$" + money(n) : "—");
@@ -81,12 +88,42 @@ function wmSellers(it) {
   list.sort((a, b) => a.price - b.price);
   return list.map((o) => ({ ...o, isBB: bb.seller ? String(o.seller).toLowerCase() === String(bb.seller).toLowerCase() && Math.abs(o.price - bb.price) < 0.005 : false, mine: isMyStore(o.seller) }));
 }
+// Rows sharing one SKU (the API is keyed by SKU, the page by item ID).
+function rowsWithSku(sku) {
+  const k = String(sku ?? "").trim().toLowerCase();
+  return k ? items.map((_, i) => i).filter((i) => String(items[i].sku ?? "").trim().toLowerCase() === k) : [];
+}
+// Keep an API result on every row with that SKU. Seller names from an older
+// page read are dropped (they'd be stale next to a fresh price); the other
+// sellers' list is kept but dated so the panel can say where it came from.
+function rememberApi(sku, ins, at) {
+  for (const i of rowsWithSku(sku)) {
+    const prev = items[i].buyBox;
+    const offers = Array.isArray(prev?.offers) && prev.offers.length ? prev.offers : [];
+    const offersAt = offers.length ? (prev.offersAt ?? prev.at ?? null) : null;
+    items[i].buyBox = ins.buyBoxPrice > 0
+      ? { price: ins.buyBoxPrice, seller: null, others: prev?.others ?? null, offers, offersAt, offersWhy: null, at, api: ins, apiAt: at, source: "api" }
+      : { noBuyBox: true, offers, offersAt, at, api: ins, apiAt: at, source: "api" };
+  }
+}
+function markNotInCatalog(sku, at) {
+  for (const i of rowsWithSku(sku)) {
+    if (!(items[i].buyBox?.price > 0)) items[i].buyBox = { failed: true, notInCatalog: true, at };
+    else items[i].buyBox.notInCatalog = true;
+  }
+}
+const apiOf = (it) => it?.buyBox?.api || null;
+
 function rowFacts(i) {
   const it = items[i];
   const during = safe(i, "during");
   const bb = it.buyBox?.price > 0 ? it.buyBox : null;
-  const mine = !!(bb && bb.seller && isMyStore(bb.seller));
-  const lost = !!(bb && bb.seller && !mine);
+  const api = bb ? apiOf(it) : null;
+  // who holds the buy box: the page names the seller; the API only tells us
+  // our own listed price, so "you" means our price is at (or under) the buy box
+  const mine = !!(bb && (bb.seller ? isMyStore(bb.seller) : api && api.currentPrice != null && api.currentPrice <= bb.price + 0.005));
+  const known = !!(bb && (bb.seller || (api && api.currentPrice != null)));
+  const lost = known && !mine;
   const low = amzLow(it);
   const cheaper = low != null && during > 0 && low < during - 0.005;
   const sellers = wmSellers(it);
@@ -94,7 +131,7 @@ function rowFacts(i) {
   const edge = cheaper ? "red" : lost ? "amber" : bb && mine ? "green" : "none";
   const wmMissed = !!(it.buyBox?.failed && !bb);
   const amzMissed = amzList(it).some((a) => !a.manual && a.asin && (a.failed || a.robot));
-  return { it, during, bb, mine, lost, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed };
+  return { it, during, bb, api, mine, lost, known, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed };
 }
 function rowMatches(i) {
   const f = rowFacts(i);
@@ -130,8 +167,13 @@ function renderMarket() {
     let wm;
     if (reading && mScan.step === "walmart") wm = `<span class="m-reading"><span class="m-spin"></span>Reading Walmart page…</span>`;
     else if (f.bb) {
-      wm = `<span class="m-pill ${f.mine ? "you" : "lost"}">${f.mine ? "You" : "Lost"}</span><b>${fmt(f.bb.price)}</b>${f.mine ? "" : `<span class="m-muted">${esc(f.bb.seller || "")}</span>`}`;
-    } else if (f.it.buyBox?.failed) wm = `<span class="m-muted">Couldn't read the page</span>`;
+      const pill = f.known ? `<span class="m-pill ${f.mine ? "you" : "lost"}">${f.mine ? "You" : "Lost"}</span>` : "";
+      const note = !f.mine && f.bb.seller ? esc(f.bb.seller)
+        : f.api?.winRate != null ? `win rate ${Math.round(f.api.winRate * 10) / 10}%` : "";
+      wm = `${pill}<b>${fmt(f.bb.price)}</b>${note ? `<span class="m-muted">${note}</span>` : ""}`;
+    } else if (f.it.buyBox?.notInCatalog) wm = `<span class="m-muted">Not in your Walmart catalog under this SKU</span>`;
+    else if (f.it.buyBox?.noBuyBox) wm = `<span class="m-muted">No buy box reported</span>`;
+    else if (f.it.buyBox?.failed) wm = `<span class="m-muted">Couldn't read the page</span>`;
     else wm = `<span class="m-muted">Not scanned yet</span>`;
     let amz;
     if (reading && mScan.step === "amazon") amz = `<span class="m-reading"><span class="m-spin"></span>Reading Amazon page ${mScan.stepN}…</span>`;
@@ -157,7 +199,8 @@ function renderMarket() {
   $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
   $("mMissedBtn").querySelector(".n").textContent = missedRows.length ? ` · ${missedRows.length}` : "";
   $("mRetryBtn").classList.toggle("hidden", !(mFilter === "missed" && missedRows.length && !mScan.running));
-  if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}` : "No scan yet";
+  if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}${mLastScanApi ? " · via Walmart API" : ""}` : "No scan yet";
+  renderApiBtn();
   renderScanBar();
   renderPanel();
 }
@@ -171,7 +214,9 @@ function renderScanBar() {
   const el = Date.now() - mScan.startedAt;
   const left = mScan.done ? Math.round((el / mScan.done) * (mScan.total - mScan.done) / 1000) : null;
   const leftText = left != null ? ` · about ${left >= 90 ? Math.round(left / 60) + " min" : left + " s"} left` : "";
-  $("mLastScan").textContent = `Reading ${Math.min(mScan.done + 1, mScan.total)} of ${mScan.total} · ${mScan.current}${leftText}`;
+  $("mLastScan").textContent = mScan.step === "api"
+    ? mScan.current
+    : `Reading ${Math.min(mScan.done + 1, mScan.total)} of ${mScan.total} · ${mScan.current}${leftText}`;
   $("mProgBar").style.width = `${Math.max(3, Math.round((mScan.done / Math.max(1, mScan.total)) * 100))}%`;
 }
 
@@ -183,9 +228,22 @@ function renderPanel() {
   const f = rowFacts(i);
   const it = f.it;
   const list = amzList(it);
+  const viaApi = it.buyBox?.source === "api";
   const sellersHtml = f.sellers.length
     ? f.sellers.map((s) => `<div class="m-seller${s.isBB ? " bb" : ""}"><span class="s${s.mine ? " me" : ""}">${esc(s.seller)}</span>${s.isBB ? `<span class="m-pill bb">Buy box</span>` : ""}${s.mine ? `<span class="m-pill you">You</span>` : ""}<span class="p">${fmt(s.price)}</span></div>`).join("")
-    : `<div class="m-seller m-muted">${f.bb ? "Only the buy box could be read" : it.buyBox?.failed ? "The page couldn't be read — open it to check" : "Not scanned yet"}</div>`;
+      + (viaApi && it.buyBox.offersAt ? `<div class="m-seller m-muted m-note">Seller names come from the page read ${when(it.buyBox.offersAt)}; the buy box price above is from Walmart's API.</div>` : "")
+    : viaApi
+      ? `<div class="m-seller m-muted m-note">Walmart's API gives the buy box price, not seller names. <button class="mini" id="mReadPage" ${mScan.running ? "disabled" : ""}>Read the page for sellers</button></div>`
+      : `<div class="m-seller m-muted">${f.bb ? "Only the buy box could be read" : it.buyBox?.notInCatalog ? "Walmart's API has no listing under this SKU — check the SKU, or read the page" : it.buyBox?.failed ? "The page couldn't be read — open it to check" : "Not scanned yet"}</div>`;
+  // Walmart's own numbers for this SKU (Pricing Insights), when scanned via the API
+  const api = apiOf(it);
+  const DRIVER = { BUYBOX_PRICE: "from the buy box", COMPETITOR_PRICE: "from a competitor", WALMART_SUGGESTED_PRICE: "Walmart's pick", REFERENCE_PRICE: "from reference price", COMPARISON_PRICE: "from comparison price" };
+  const apiStats = api ? `<div class="m-stats api">
+        <div><span>Win rate</span><b>${api.winRate == null ? "—" : `${Math.round(api.winRate * 10) / 10}%`}</b></div>
+        <div><span>Competitor</span><b>${fmt(api.competitorPrice)}</b></div>
+        <div title="${api.suggestedDriver ? esc(DRIVER[api.suggestedDriver] || api.suggestedDriver) : ""}"><span>Suggested</span><b>${fmt(api.suggestedPrice)}</b>${api.suggestedDriver ? `<i>${esc(DRIVER[api.suggestedDriver] || "")}</i>` : ""}</div>
+        <div title="${api.repricerStrategy ? esc(`${api.repricerStrategy}${api.repricerStatus ? " · " + api.repricerStatus : ""}`) : "No repricer strategy assigned in Seller Center"}"><span>Repricer</span><b class="txt">${api.repricerStrategy ? esc(api.repricerStrategy) : "—"}</b>${api.repricerMin != null || api.repricerMax != null ? `<i>${fmt(api.repricerMin)} – ${fmt(api.repricerMax)}</i>` : ""}</div>
+      </div>` : "";
   // one seller listed although Walmart says there are more: say why
   const sellersNote = f.bb && f.sellers.length <= 1 && (f.bb.others > 0 || f.bb.offersWhy)
     ? `<div class="m-seller m-muted m-note">${f.bb.others > 0 ? `Walmart lists ${f.bb.others} more seller${f.bb.others === 1 ? "" : "s"}, but ` : ""}${{
@@ -233,7 +291,7 @@ function renderPanel() {
   p.innerHTML = `
     <div class="m-card m-id">
       <div class="m-id-head">
-        <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${f.bb?.at ? " · read " + when(f.bb.at) : ""}</div></div>
+        <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · ${viaApi ? "Walmart API" : "page"} read ${when(it.buyBox.at)}` : ""}</div></div>
         <button class="m-icon" id="mOpenWm" title="Open Walmart listing" aria-label="Open Walmart listing"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>
         <button class="m-icon" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Re-check this listing now" aria-label="Re-check this listing now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
       </div>
@@ -242,9 +300,10 @@ function renderPanel() {
         <div><span>Walmart</span><b class="wm">${fmt(f.wmLow)}</b></div>
         <div><span>Amazon</span><b class="amz">${fmt(f.low)}</b></div>
       </div>
+      ${apiStats}
     </div>
     <div class="m-card">
-      <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : ""}</span></div>
+      <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : viaApi ? "via API" : ""}</span></div>
       ${sellersHtml}${sellersNote}
     </div>
     <div class="m-card">
@@ -274,6 +333,7 @@ function renderPanel() {
   });
   note?.addEventListener("blur", () => { if (it.note !== undefined) saveQuiet(); });
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
+  p.querySelector("#mReadPage")?.addEventListener("click", () => readPageFor(i));
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   // window.prompt() does nothing in Electron, so the store name is edited in
   // place: the link turns the line into a field with Save / Cancel.
@@ -384,7 +444,27 @@ async function readAmazonInto(entry) {
 }
 
 // ---- the scan ----------------------------------------------------------------------
+// With API keys saved: one batched Pricing Insights call covers every SKU's
+// Walmart buy box up front, then only the Amazon listings are read page by
+// page. SKUs the API doesn't know (not in the catalog under that SKU) fall
+// back to a page read, as does everything when no keys are saved.
 const rnd = (a, b) => a + Math.random() * (b - a);
+let mLastScanApi = localStorage.getItem("marketLastScanApi") === "1";
+window.api.onApiProgress?.(({ done, total }) => {
+  if (mScan.running && mScan.step === "api") { mScan.current = `Walmart API: ${done} of ${total} SKUs`; renderScanBar(); }
+});
+// One page read for a single row (seller names), outside a full scan.
+async function readPageFor(i) {
+  if (mScan.running) return;
+  const id = idOf(items[i]);
+  if (!id) return;
+  mScan = { running: true, done: 0, total: 1, current: `Walmart: ${items[i].sku || id}`, currentId: id, step: "walmart", stepN: "", stop: false, startedAt: Date.now(), pageOnly: true };
+  renderMarket();
+  const r = await window.api.marketReadWalmart(id).catch(() => null);
+  if (r && r.price) rememberPrice(r); else markNoPrice(id);
+  mScan.running = false; mScan.currentId = "";
+  renderMarket();
+}
 async function runMarketScan(onlyRows = null) {
   if (mScan.running) return;
   const rows = (onlyRows || items.map((_, i) => i)).filter((i) => idOf(items[i]));
@@ -394,16 +474,49 @@ async function runMarketScan(onlyRows = null) {
   mScan = { running: true, done: 0, total: ids.length, current: "", currentId: "", step: "", stepN: "", stop: false, startedAt: Date.now() };
   const full = !onlyRows;
   renderMarket();
+  // 1) Walmart API — every SKU in one go
+  const apiCovered = new Set(); // item IDs whose buy box the API supplied
+  let usedApi = false;
+  if (apiReady()) {
+    const skus = [...new Set(rows.map((i) => String(items[i].sku ?? "").trim()).filter(Boolean))];
+    if (skus.length) {
+      mScan.step = "api"; mScan.current = `Walmart API: 0 of ${skus.length} SKUs`;
+      renderMarket();
+      const res = await window.api.marketInsights(skus).catch(() => null);
+      if (!mScan.stop) {
+        if (res?.ok) {
+          usedApi = true;
+          for (const [sku, ins] of Object.entries(res.bySku)) {
+            rememberApi(sku, ins, res.at);
+            for (const i of rowsWithSku(sku)) apiCovered.add(idOf(items[i]));
+          }
+          for (const sku of res.missing || []) markNotInCatalog(sku, res.at);
+          apiSettings.lastScan = res.at;
+          saveQuiet();
+          cacheBuyBoxes();
+        } else {
+          mScan.apiError = res?.error || "The Walmart API didn't answer.";
+        }
+      }
+      mScan.step = ""; mScan.current = "";
+      renderMarket();
+    }
+  }
   const amzSeen = new Map(); // asin → read result, so a SKU listed twice reads each ASIN once per scan
   for (const id of ids) {
     if (mScan.stop) break;
     const rowsFor = items.map((_, i) => i).filter((i) => idOf(items[i]) === id);
     const sku = items[rowsFor[0]]?.sku || id;
-    mScan.current = `Walmart: ${sku}`; mScan.currentId = id; mScan.step = "walmart";
-    renderMarket();
-    const r = await window.api.marketReadWalmart(id).catch(() => null);
-    if (mScan.stop) break;
-    if (r && r.price) rememberPrice(r); else markNoPrice(id);
+    mScan.currentId = id;
+    mScan.current = apiCovered.has(id) ? `${sku} — buy box from the API` : "";
+    if (!apiCovered.has(id)) {
+      // 2) page read — no keys, the API didn't know this SKU, or the call failed
+      mScan.current = `Walmart: ${sku}`; mScan.step = "walmart";
+      renderMarket();
+      const r = await window.api.marketReadWalmart(id).catch(() => null);
+      if (mScan.stop) break;
+      if (r && r.price) rememberPrice(r); else markNoPrice(id);
+    }
     // every Amazon listing linked to any row with this item ID
     const entries = [];
     for (const i of rowsFor) for (const a of amzList(items[i])) if (!a.manual && a.asin) entries.push(a);
@@ -429,13 +542,90 @@ async function runMarketScan(onlyRows = null) {
   if (full && !stopped) {
     mLastScan = Date.now();
     mLastScanMs = mLastScan - mScan.startedAt;
+    mLastScanApi = usedApi;
     localStorage.setItem("marketLastScan", String(mLastScan));
     localStorage.setItem("marketLastScanMs", String(mLastScanMs));
     localStorage.setItem("marketLastScanDay", new Date().toDateString());
+    localStorage.setItem("marketLastScanApi", usedApi ? "1" : "0");
   }
+  const apiError = mScan.apiError;
   renderMarket();
-  if (full && !stopped) showSummary();
+  if (apiError) openApiModal(`The Walmart API scan failed, so the pages were read instead. ${apiError}`, true);
+  else if (full && !stopped) showSummary();
 }
+
+// ---- Walmart API keys (settings dialog) ---------------------------------------------------
+function renderApiBtn() {
+  const b = $("mApiBtn");
+  if (!b) return;
+  b.classList.toggle("attention", !apiReady());
+  b.title = apiReady()
+    ? `Walmart API connected (${apiSettings.env === "sandbox" ? "sandbox" : "production"}) — the scan pulls every buy box from Walmart's Pricing Insights`
+    : "Connect your Walmart seller API keys — the scan then pulls every buy box in seconds instead of reading each page";
+  const scan = $("mScanBtn");
+  if (scan) scan.title = apiReady()
+    ? "Pull every SKU's Walmart buy box from the API, then read each linked Amazon listing"
+    : "Read every listing's Walmart buy box and sellers, then each linked Amazon listing";
+}
+async function refreshApiSettings() {
+  try { apiSettings = await window.api.getApiSettings(); } catch { /* keep defaults */ }
+  renderApiBtn();
+}
+function openApiModal(message, isError) {
+  const msg = $("apiMsg");
+  msg.textContent = message || "";
+  msg.className = "status" + (isError ? " error" : "") + (message ? "" : " hidden");
+  $("apiClientId").value = apiSettings.clientId || "";
+  $("apiSecret").value = "";
+  $("apiSecret").placeholder = apiSettings.hasSecret ? "•••••••• (saved — leave blank to keep)" : "Client Secret";
+  $("apiEnv").value = apiSettings.env || "production";
+  $("apiTestState").textContent = "";
+  $("apiTestState").className = "status";
+  $("apiRemove").classList.toggle("hidden", !(apiSettings.clientId || apiSettings.hasSecret));
+  $("apiLast").textContent = apiSettings.lastScan ? `Last API scan ${when(apiSettings.lastScan)}` : "";
+  window.api.hideListing();
+  hideAmazonPage();
+  $("apiModal").classList.remove("hidden");
+  setTimeout(() => $(apiSettings.clientId ? "apiSecret" : "apiClientId").focus(), 30);
+}
+function closeApiModal() { $("apiModal").classList.add("hidden"); }
+const apiFormValues = () => ({ clientId: $("apiClientId").value.trim(), clientSecret: $("apiSecret").value.trim(), env: $("apiEnv").value });
+$("mApiBtn").addEventListener("click", () => openApiModal(""));
+$("apiCancel").addEventListener("click", closeApiModal);
+$("apiModal").addEventListener("click", (e) => { if (e.target.id === "apiModal") closeApiModal(); });
+$("apiModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeApiModal(); });
+$("apiKeysLink").addEventListener("click", () => window.api.openApiKeys());
+$("apiDocsLink").addEventListener("click", () => window.api.openApiDocs());
+$("apiTest").addEventListener("click", async () => {
+  const v = apiFormValues();
+  if (!v.clientId || (!v.clientSecret && !apiSettings.hasSecret)) {
+    $("apiTestState").textContent = "Enter the Client ID and Client Secret first.";
+    $("apiTestState").className = "status error";
+    return;
+  }
+  $("apiTestState").textContent = "Connecting to Walmart…";
+  $("apiTestState").className = "status";
+  $("apiTest").disabled = true;
+  const res = await window.api.testApi(v);
+  $("apiTest").disabled = false;
+  $("apiTestState").textContent = res?.ok ? "Connected ✓ — Walmart accepted these keys." : (res?.error || "Connection failed.");
+  $("apiTestState").className = "status " + (res?.ok ? "ok" : "error");
+});
+$("apiSave").addEventListener("click", async () => {
+  const v = apiFormValues();
+  if (!v.clientId) { $("apiClientId").focus(); return; }
+  if (!v.clientSecret && !apiSettings.hasSecret) { $("apiSecret").focus(); return; }
+  apiSettings = await window.api.saveApiSettings(v);
+  closeApiModal();
+  renderMarket();
+});
+$("apiRemove").addEventListener("click", async () => {
+  apiSettings = await window.api.saveApiSettings({ clear: true });
+  closeApiModal();
+  renderMarket();
+});
+[$("apiClientId"), $("apiSecret")].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") $("apiSave").click(); }));
+refreshApiSettings();
 $("mScanBtn").addEventListener("click", () => { if (mScan.running) { mScan.stop = true; $("mScanBtn").querySelector("span").textContent = "Stopping…"; } else runMarketScan(); });
 
 // ---- daily schedule -------------------------------------------------------------------
@@ -507,15 +697,18 @@ function marketRows() {
   return items.map((_, i) => i).filter((i) => idOf(items[i])).map((i) => {
     const f = rowFacts(i);
     const gap = f.low != null && f.during > 0 ? Math.round((f.low - f.during) * 100) / 100 : "";
-    return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "", f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || "") : "",
-      f.wmLow ?? "", f.sellers.length || "", f.low ?? "", amzList(f.it).map((a) => a.asin || "typed").join(" "), gap, f.bb?.at ? new Date(f.bb.at).toLocaleString() : ""];
+    const a = apiOf(f.it) || {};
+    return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "", f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || (f.lost ? "another seller" : "")) : "",
+      f.wmLow ?? "", f.sellers.length || "", f.low ?? "", amzList(f.it).map((a) => a.asin || "typed").join(" "), gap, f.bb?.at ? new Date(f.bb.at).toLocaleString() : "",
+      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? "", a.repricerStrategy ?? "", a.repricerMin ?? "", a.repricerMax ?? ""];
   });
 }
 $("mExportBtn").addEventListener("click", async () => {
   const rows = marketRows();
   if (!rows.length) { alert("Nothing to export yet."); return; }
-  const head = ["SKU", "Item ID", "Our Price", "Walmart Buy Box", "Buy Box Seller", "Walmart Lowest", "Walmart Sellers", "Amazon Buy Box", "Amazon Listings", "Gap vs Amazon", "Checked"];
-  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20] });
+  const head = ["SKU", "Item ID", "Our Price", "Walmart Buy Box", "Buy Box Seller", "Walmart Lowest", "Walmart Sellers", "Amazon Buy Box", "Amazon Listings", "Gap vs Amazon", "Checked",
+    "Win Rate %", "Competitor Price", "Suggested Price", "Repricer Strategy", "Repricer Min", "Repricer Max"];
+  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14, 24, 12, 12] });
   finishExport(res, rows.length);
 });
 
