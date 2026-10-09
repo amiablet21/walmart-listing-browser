@@ -95,21 +95,12 @@ let customCols = [];
 try { customCols = JSON.parse(localStorage.getItem("customCols") || "[]") || []; } catch { customCols = []; }
 const saveCols = () => localStorage.setItem("customCols", JSON.stringify(customCols));
 
-const BASE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom", "cost", "shipping", "profit",
-                     ...["bbPrice", "bbGap", "bbWin", "bbComp", "bbSugg", "bbRepricer"]];
-
-// Buy Box columns — read-only, filled by the Buy Box scan (Walmart's Pricing
-// Insights API) and stored per row under item.bb. They sit outside the
-// formula letter model so adding them never shifts custom-column letters.
-const BB_FIELDS = new Set(["bbPrice", "bbGap", "bbWin", "bbComp", "bbSugg", "bbRepricer"]);
-// shown only after the first scan unless the user unhides them earlier
-const BB_SECONDARY = ["bbWin", "bbComp", "bbSugg", "bbRepricer"];
+const BASE_FIELDS = ["sku", "itemId", "before", "during", "change", "pct", "regCom", "incCom", "cost", "shipping", "profit"];
 
 // Default column display order — reads like a P&L, left to right: identity,
 // the prices customers see, the fees and costs that eat into them, and the
 // profit they produce. (Canonical letter order is BASE_FIELDS, unchanged.)
-const DEFAULT_DISPLAY = ["sku", "itemId", "before", "during", "pct", "regCom", "incCom", "cost", "shipping", "profit",
-                         "bbPrice", "bbGap", "bbWin", "bbComp", "bbSugg", "bbRepricer"];
+const DEFAULT_DISPLAY = ["sku", "itemId", "before", "during", "pct", "regCom", "incCom", "cost", "shipping", "profit"];
 
 // fields that exist in the data model (letters, formulas, exports) but are
 // never shown in the sheet — "$ Change" was dropped from the UI as clutter
@@ -136,8 +127,7 @@ function getRaw(i, field) {
 // ---- column widths (drag the edge of a header to resize) -------------------
 let colWidths = {};
 try { colWidths = JSON.parse(localStorage.getItem("colWidths") || "{}") || {}; } catch { colWidths = {}; }
-const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95,
-                    bbPrice: 95, bbGap: 100, bbWin: 85, bbComp: 100, bbSugg: 100, bbRepricer: 190 };
+const DEFAULT_W = { sku: 190, itemId: 115, before: 95, during: 115, change: 85, pct: 85, regCom: 90, incCom: 90, cost: 85, shipping: 85, profit: 95 };
 const colW = (f) => colWidths[f] || DEFAULT_W[f] || 110;
 
 function addResizeHandle(th, field) {
@@ -175,13 +165,6 @@ function addResizeHandle(th, field) {
 let hiddenCols = new Set();
 try { hiddenCols = new Set(JSON.parse(localStorage.getItem("hiddenCols") || "[]")); } catch { hiddenCols = new Set(); }
 const saveHidden = () => localStorage.setItem("hiddenCols", JSON.stringify([...hiddenCols]));
-// the detail Buy Box columns start hidden; the first scan (or the header
-// menu) reveals them. Applied once so a later manual unhide sticks.
-if (localStorage.getItem("bbColsV") !== "1") {
-  BB_SECONDARY.forEach((f) => hiddenCols.add(f));
-  saveHidden();
-  localStorage.setItem("bbColsV", "1");
-}
 
 // Column DISPLAY order — columns can be dragged and inserted anywhere, but
 // this is presentation only: field letters (C=Before, …) and the exported
@@ -211,7 +194,6 @@ function moveColumn(src, target, before) {
 const BASE_LETTER = { sku: "A", itemId: "B", before: "C", during: "D", change: "E", pct: "F", regCom: "G", incCom: "H", cost: "I", shipping: "J", profit: "K" };
 function fieldToLetter(f) {
   if (BASE_LETTER[f]) return BASE_LETTER[f];
-  if (BB_FIELDS.has(f)) return "";   // Buy Box columns aren't formula-addressable
   const idx = customCols.findIndex((c) => "c_" + c.key === f);
   return idx >= 0 ? String.fromCharCode(76 + idx) : "?";
 }
@@ -315,47 +297,6 @@ const money = (n) => (Number.isFinite(n) ? n.toFixed(2) : "#ERR");
 const chDollar = (n) => (!Number.isFinite(n) ? "#ERR" : n < 0 ? `($${Math.abs(n).toFixed(2)})` : `$${n.toFixed(2)}`);
 const chPct = (n) => (!Number.isFinite(n) ? "#ERR" : n < 0 ? `(${Math.abs(n).toFixed(1)}%)` : `${n.toFixed(1)}%`);
 const comPct = (n) => (Number.isFinite(n) ? `${Math.round(n * 100) / 100}%` : "#ERR");
-
-// ---- Buy Box data (from the scan) ------------------------------------------
-// item.bb = { buyBoxPrice, buyBoxTotal, winRate, competitorPrice, suggestedPrice,
-//             suggestedDriver, currentPrice, repricerStrategy, repricerMin,
-//             repricerMax, repricerStatus, at } — or { missing: true, at } when
-// Walmart doesn't know the SKU (not in this seller's catalog).
-const bbOf = (i) => (items[i]?.bb && !items[i].bb.missing ? items[i].bb : null);
-function bbValue(i, f) {
-  const b = bbOf(i);
-  if (!b) return null;
-  switch (f) {
-    case "bbPrice": return b.buyBoxPrice;
-    case "bbGap": return b.buyBoxPrice == null ? null : safe(i, "during") - b.buyBoxPrice;
-    case "bbWin": return b.winRate;
-    case "bbComp": return b.competitorPrice;
-    case "bbSugg": return b.suggestedPrice;
-    default: return null;
-  }
-}
-const moneyOr = (v) => (v == null ? "—" : money(v));
-function bbText(i, f) {
-  const raw = items[i]?.bb;
-  if (!raw) return "";
-  if (raw.missing) return f === "bbRepricer" ? "Not in catalog" : "—";
-  if (f === "bbRepricer") {
-    if (!raw.repricerStrategy) return "Not assigned";
-    const range = raw.repricerMin != null || raw.repricerMax != null
-      ? ` · ${moneyOr(raw.repricerMin)}–${moneyOr(raw.repricerMax)}` : "";
-    return raw.repricerStrategy + range;
-  }
-  const v = bbValue(i, f);
-  if (v == null || !Number.isFinite(v)) return "—";
-  if (f === "bbGap") return chDollar(v);
-  if (f === "bbWin") return `${Math.round(v * 10) / 10}%`;
-  return money(v);
-}
-const DRIVER_LABEL = {
-  BUYBOX_PRICE: "based on the Buy Box price", COMPETITOR_PRICE: "based on a competitor's price",
-  WALMART_SUGGESTED_PRICE: "Walmart's suggestion", REFERENCE_PRICE: "based on the reference price",
-  COMPARISON_PRICE: "based on the comparison price",
-};
 
 // ---- formula engine --------------------------------------------------------
 // Price cells accept "=" formulas with A1-style refs matching the sheet's
@@ -512,7 +453,6 @@ const safe = (i, f) => { try { return fieldValue(i, f); } catch { return NaN; } 
 function startEdit(tr, i, td) {
   if (td.querySelector("input")) return;
   const field = td.dataset.field;
-  if (!isEditableField(field)) return; // Buy Box columns are read-only
   const isPrice = field === "before" || field === "during";
   const raw0 = getRaw(i, field);
   const isFormula = typeof raw0 === "string" && raw0.trim().startsWith("=");
@@ -580,16 +520,6 @@ function renderHead() {
     sku: "SKU", itemId: "Item ID", before: "Before Price", during: "During Incentive",
     change: "$ Change", pct: "% Change", regCom: "Reg Comm %", incCom: "Incent Comm %",
     cost: "Cost", shipping: "Shipping", profit: "Profit",
-    bbPrice: "Buy Box", bbGap: "vs Buy Box", bbWin: "Win Rate", bbComp: "Competitor",
-    bbSugg: "Suggested", bbRepricer: "Repricer",
-  };
-  const BB_TIP = {
-    bbPrice: "Buy Box price on walmart.com right now (from the Buy Box scan). Drag to move.",
-    bbGap: "During Incentive − Buy Box price. Red = you're priced above the Buy Box. Drag to move.",
-    bbWin: "Buy Box win rate reported by Walmart. Drag to move.",
-    bbComp: "Competitor price Walmart compares you against. Drag to move.",
-    bbSugg: "Walmart's suggested price for this SKU. Drag to move.",
-    bbRepricer: "Repricer strategy and Min–Max window currently assigned in Seller Center. Drag to move.",
   };
   for (const f of visibleOrder()) {
     const th = document.createElement("th");
@@ -608,8 +538,7 @@ function renderHead() {
       th.addEventListener("dblclick", () => renameColumn(k));
     } else {
       th.textContent = BASE_TITLE[f];
-      if (BB_FIELDS.has(f)) th.classList.add("bb-h");
-      th.title = BB_TIP[f] ? BB_TIP[f] : f === "profit"
+      th.title = f === "profit"
         ? "During Incentive × (1 − Incent Comm %) − Cost − Shipping. Type a target profit and the During Incentive price adjusts to hit it. Drag to move."
         : "Drag to move";
     }
@@ -706,17 +635,6 @@ function render() {
         const v = safe(i, f);
         td.className = "num" + (Number.isFinite(v) ? "" : " err");
         td.textContent = comPct(v);
-      } else if (BB_FIELDS.has(f)) {
-        const text = bbText(i, f);
-        td.className = "bb" + (f === "bbRepricer" ? " bb-text" : " num");
-        if (text === "" || text === "—") td.classList.add("empty");
-        if (f === "bbGap") {
-          const v = bbValue(i, f);
-          if (v != null && Number.isFinite(v)) td.classList.add(v > 0.005 ? "above" : "under");
-        }
-        if (f === "bbRepricer" && it.bb?.missing) td.classList.add("empty");
-        if (f === "bbSugg" && bbOf(i)?.suggestedDriver) td.title = DRIVER_LABEL[bbOf(i).suggestedDriver] || bbOf(i).suggestedDriver;
-        td.textContent = text;
       } else {
         td.className = "custom";
         const raw = it.custom?.[f.slice(2)];
@@ -816,18 +734,6 @@ function renderDetailBar() {
   const it = items[selected];
   $("curSku").textContent = it ? (it.sku || "(no SKU)") : "";
   $("curItem").textContent = it ? (it.itemId ? `item ${it.itemId}` : "no item ID yet") : "";
-  // Buy Box chip next to the item id: where this SKU stands vs the Buy Box
-  const chip = $("curBb");
-  const b = selected >= 0 ? bbOf(selected) : null;
-  if (b && b.buyBoxPrice != null) {
-    const gap = safe(selected, "during") - b.buyBoxPrice;
-    const above = gap > 0.005;
-    chip.className = "bb-chip " + (above ? "above" : "under");
-    chip.textContent = `Buy Box $${money(b.buyBoxPrice)} · ${above ? `you're $${money(gap)} above` : gap < -0.005 ? `you're $${money(-gap)} under` : "you match it"}`;
-  } else {
-    chip.className = "bb-chip hidden";
-    chip.textContent = "";
-  }
   $("prevBtn").disabled = !(selected > 0);
   $("nextBtn").disabled = !(selected >= 0 && selected < items.length - 1);
 }
@@ -977,7 +883,6 @@ function cellRaw(i, field) {
   if (field === "before" || field === "during" || field === "cost" || field === "shipping") return money(safe(i, field));
   if (field === "change" || field === "profit") return chDollar(safe(i, field));
   if (field === "pct") return chPct(safe(i, "pct"));
-  if (BB_FIELDS.has(field)) return bbText(i, field);
   return String(raw ?? "");
 }
 
@@ -1184,16 +1089,8 @@ const columnEntries = (f) => {
       { label: "Delete column", danger: true, run: () => deleteColumn(k) },
     );
   }
-  const hiddenBb = [...BB_FIELDS].filter((x) => hiddenCols.has(x));
-  if (hiddenBb.length || hiddenCols.size) entries.push("-");
-  if (hiddenBb.length) {
-    entries.push({
-      label: `Show Buy Box columns (${hiddenBb.length})`,
-      run: () => { hiddenBb.forEach((x) => hiddenCols.delete(x)); saveHidden(); render(); },
-    });
-  }
   if (hiddenCols.size) {
-    entries.push({
+    entries.push("-", {
       label: `Unhide all columns (${hiddenCols.size})`,
       run: () => { hiddenCols.clear(); saveHidden(); render(); },
     });
@@ -1271,15 +1168,6 @@ function updateFxBar() {
   }
   const { i, field } = activeCell;
   const r = i + 2;
-  if (BB_FIELDS.has(field)) {
-    // read-only Buy Box data — show what the scan returned and when
-    const b = items[i].bb;
-    fxRef.textContent = "BB" + r;
-    fxInput.disabled = true;
-    fxInput.value = !b ? "Run a Buy Box scan to fill this column"
-      : `${bbText(i, field)}  (scanned ${new Date(b.at).toLocaleString()})`;
-    return;
-  }
   fxRef.textContent = fieldToLetter(field) + r;
   fxInput.disabled = false;
   const raw = getRaw(i, field);
@@ -1329,7 +1217,6 @@ $("fxInput").addEventListener("keydown", (e) => {
 // what a cell "contains" for search: its displayed text plus any formula
 function cellSearchText(i, f) {
   if (f === "sku" || f === "itemId") return String(items[i][f] ?? "");
-  if (BB_FIELDS.has(f)) return bbText(i, f);
   const raw = getRaw(i, f);
   const formula = typeof raw === "string" && raw.trim().startsWith("=") ? raw : "";
   if (f.startsWith("c_")) {
@@ -1481,9 +1368,7 @@ async function exportRegular() {
   const head = ["SKU", "Item ID", "Before Price", "During Incentive", "$ Change", "% Change",
                 "Regular Commission", "During Incentive Commission",
                 "Cost", "Shipping", "Profit",
-                ...customCols.map((c) => c.name),
-                "Buy Box Price", "vs Buy Box", "Buy Box Win Rate %", "Competitor Price", "Suggested Price",
-                "Repricer Strategy", "Repricer Min", "Repricer Max"];
+                ...customCols.map((c) => c.name)];
   const rows = items.map((it, i) => {
     const r = i + 2;
     const priceCell = (field) => {
@@ -1513,14 +1398,9 @@ async function exportRegular() {
     });
     // profit exports as a live formula so the sheet stays self-computing
     const profit = { f: `D${r}*(1-H${r}/100)-I${r}-J${r}`, v: round2(safe(i, "profit")) };
-    const b = bbOf(i);
-    const bbCells = [
-      b?.buyBoxPrice ?? "", round2(bbValue(i, "bbGap")) ?? "", b?.winRate ?? "", b?.competitorPrice ?? "",
-      b?.suggestedPrice ?? "", b?.repricerStrategy ?? "", b?.repricerMin ?? "", b?.repricerMax ?? "",
-    ].map((v) => (v == null ? "" : v));
     return [it.sku, it.itemId, priceCell("before"), priceCell("during"), change, pct,
             priceCell("regCom"), priceCell("incCom"),
-            priceCell("cost"), priceCell("shipping"), profit, ...extras, ...bbCells];
+            priceCell("cost"), priceCell("shipping"), profit, ...extras];
   });
   const res = await window.api.exportSheet({ head, rows, name: "incentive-list" });
   finishExport(res, rows.length);
@@ -1576,238 +1456,6 @@ $("exportModal").addEventListener("click", (e) => {
 });
 $("exportRegular").addEventListener("click", () => { closeExportModal(); exportRegular(); });
 $("exportRepricer").addEventListener("click", () => { closeExportModal(); exportRepricer(); });
-
-// ---- Buy Box scan (Walmart Marketplace API) --------------------------------
-// Pulls Pricing Insights for every SKU in the sheet — Buy Box price, win rate,
-// competitor and suggested prices, and the repricer assignment — and stores
-// the result on each row (item.bb) so the Buy Box columns and the results
-// panel can show it. Credentials are kept by the main process.
-let apiSettings = { clientId: "", env: "production", hasSecret: false, lastScan: null };
-let scanning = false;
-let lastScanResult = null; // { at, host, missing } for the results panel header
-
-const apiReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
-async function refreshApiSettings() {
-  try { apiSettings = await window.api.getApiSettings(); } catch { /* keep defaults */ }
-  renderScanButton();
-}
-function renderScanButton() {
-  const btn = $("scanBtn");
-  btn.classList.toggle("spinning", scanning);
-  btn.disabled = scanning;
-  btn.title = scanning ? "Scanning the Buy Box…"
-    : apiReady() ? "Buy Box scan — pull live Buy Box prices for every SKU from Walmart's API"
-    : "Buy Box scan — connect your Walmart seller API keys first";
-  $("apiBtn").classList.toggle("attention", !apiReady());
-}
-function setScanState(text, kind) {
-  const el = $("scanState");
-  el.textContent = text || "";
-  el.className = "scan-state" + (kind ? " " + kind : "") + (text ? "" : " hidden");
-}
-window.api.onScanProgress(({ done, total }) => {
-  if (scanning) setScanState(`Scanning Buy Box… ${done} / ${total} SKUs`, "busy");
-});
-
-async function runBuyBoxScan() {
-  if (scanning) return;
-  if (!apiReady()) { openApiModal("Connect your Walmart seller API keys to scan the Buy Box."); return; }
-  const skus = [...new Set(items.map((it) => String(it.sku ?? "").trim()).filter(Boolean))];
-  if (!skus.length) { alert("No SKUs to scan — the Buy Box is looked up by SKU."); return; }
-  scanning = true;
-  renderScanButton();
-  setScanState(`Scanning Buy Box… 0 / ${skus.length} SKUs`, "busy");
-  const res = await window.api.scanBuyBox(skus);
-  scanning = false;
-  renderScanButton();
-  if (!res || res.error) {
-    setScanState("Buy Box scan failed", "bad");
-    setTimeout(() => setScanState(""), 4000);
-    openApiModal(res?.error || "The scan failed.", true);
-    return;
-  }
-  // write results onto the rows — not an undoable edit, just fresh data. The
-  // undo/redo snapshots get the same data so stepping back through earlier
-  // edits never wipes a scan.
-  const stamp = (list) => {
-    for (const it of list) {
-      const sku = String(it.sku ?? "").trim();
-      if (!sku) continue;
-      const b = res.bySku[sku];
-      it.bb = b ? b : { missing: true, at: res.at };
-    }
-  };
-  stamp(items);
-  undoStack.forEach(stamp);
-  redoStack.forEach(stamp);
-  // the first successful scan reveals the detail columns
-  if (localStorage.getItem("bbRevealed") !== "1") {
-    BB_SECONDARY.forEach((f) => hiddenCols.delete(f));
-    saveHidden();
-    localStorage.setItem("bbRevealed", "1");
-  }
-  apiSettings.lastScan = res.at;
-  lastScanResult = { at: res.at, host: res.host, missing: res.missing, count: skus.length };
-  persist();
-  render();
-  setScanState(`Buy Box updated for ${skus.length - res.missing.length} of ${skus.length} SKUs`, "ok");
-  setTimeout(() => setScanState(""), 5000);
-  openBbResults();
-}
-$("scanBtn").addEventListener("click", runBuyBoxScan);
-
-// --- results panel ---
-const timeAgo = (t) => {
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  if (s < 60) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)} min ago`;
-  if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  return new Date(t).toLocaleString();
-};
-function openBbResults() {
-  const rows = [];
-  let above = 0, under = 0, noData = 0, missing = 0, newest = 0;
-  items.forEach((it, i) => {
-    const sku = String(it.sku ?? "").trim();
-    if (!sku) return;
-    const raw = it.bb;
-    if (!raw) { noData++; return; }
-    if (raw.missing) { missing++; rows.push({ i, sku, missing: true }); return; }
-    newest = Math.max(newest, raw.at || 0);
-    const gap = bbValue(i, "bbGap");
-    if (gap == null) noData++;
-    else if (gap > 0.005) above++;
-    else under++;
-    rows.push({ i, sku, b: raw, gap, during: safe(i, "during") });
-  });
-  if (!rows.length) {
-    openApiModal(apiReady() ? "Run a Buy Box scan first — there's nothing to show yet." : "Connect your Walmart seller API keys to scan the Buy Box.");
-    return;
-  }
-  // worst first: priced above the Buy Box by the most, then the rest, then unknowns
-  rows.sort((a, b) => {
-    const ga = a.gap == null ? -Infinity : a.gap, gb = b.gap == null ? -Infinity : b.gap;
-    if (a.missing !== b.missing) return a.missing ? 1 : -1;
-    return gb - ga;
-  });
-  const when = lastScanResult?.at || newest || apiSettings.lastScan;
-  $("bbWhen").textContent = `${rows.length} SKU${rows.length === 1 ? "" : "s"} · scanned ${when ? timeAgo(when) : "—"}` +
-    (apiSettings.env === "sandbox" ? " · sandbox" : "");
-  const kpi = (id, v, cls) => { const el = $(id); el.textContent = v; el.className = "kpi-value" + (cls ? " " + cls : ""); };
-  kpi("kpiUnder", under, under ? "pos" : "");
-  kpi("kpiAbove", above, above ? "neg" : "");
-  kpi("kpiNoData", noData, noData ? "warn" : "");
-  kpi("kpiMissing", missing, missing ? "warn" : "");
-  const tb = $("bbRows");
-  tb.innerHTML = "";
-  for (const r of rows) {
-    const tr = document.createElement("tr");
-    tr.className = r.missing ? "missing" : r.gap == null ? "" : r.gap > 0.005 ? "above" : "under";
-    const cell = (text, cls) => { const td = document.createElement("td"); td.textContent = text; if (cls) td.className = cls; tr.appendChild(td); };
-    cell(r.sku, "sku");
-    if (r.missing) {
-      const td = document.createElement("td");
-      td.colSpan = 8;
-      td.className = "muted";
-      td.textContent = "Walmart has no listing under this SKU in your catalog";
-      tr.appendChild(td);
-    } else {
-      const b = r.b;
-      cell(moneyOr(b.currentPrice), "num");
-      cell(money(r.during), "num");
-      cell(moneyOr(b.buyBoxPrice), "num");
-      cell(r.gap == null ? "—" : chDollar(r.gap), "num gap");
-      cell(b.winRate == null ? "—" : `${Math.round(b.winRate * 10) / 10}%`, "num");
-      cell(moneyOr(b.competitorPrice), "num");
-      cell(moneyOr(b.suggestedPrice), "num");
-      cell(bbText(r.i, "bbRepricer"), b.repricerStrategy ? "" : "muted");
-    }
-    tr.title = "Click to jump to this row";
-    tr.addEventListener("click", () => { closeBbResults(); activeCell = null; select(r.i); });
-    tb.appendChild(tr);
-  }
-  window.api.hideListing();
-  $("bbModal").classList.remove("hidden");
-}
-function closeBbResults() {
-  $("bbModal").classList.add("hidden");
-  dockListing();
-}
-$("bbClose").addEventListener("click", closeBbResults);
-$("bbRescan").addEventListener("click", () => { closeBbResults(); runBuyBoxScan(); });
-$("bbShowCols").addEventListener("click", () => {
-  BB_FIELDS.forEach((f) => hiddenCols.delete(f));
-  saveHidden();
-  render();
-  closeBbResults();
-});
-$("bbModal").addEventListener("click", (e) => { if (e.target.id === "bbModal") closeBbResults(); });
-
-// --- API settings modal ---
-function openApiModal(message, isError) {
-  const msg = $("apiMsg");
-  msg.textContent = message || "";
-  msg.className = "status" + (isError ? " error" : "") + (message ? "" : " hidden");
-  $("apiClientId").value = apiSettings.clientId || "";
-  $("apiSecret").value = "";
-  $("apiSecret").placeholder = apiSettings.hasSecret ? "•••••••• (saved — leave blank to keep)" : "Client Secret";
-  $("apiEnv").value = apiSettings.env || "production";
-  $("apiTestState").textContent = "";
-  $("apiTestState").className = "status";
-  $("apiRemove").classList.toggle("hidden", !(apiSettings.clientId || apiSettings.hasSecret));
-  $("apiLast").textContent = apiSettings.lastScan ? `Last scan ${timeAgo(apiSettings.lastScan)}` : "";
-  window.api.hideListing();
-  $("apiModal").classList.remove("hidden");
-  setTimeout(() => $(apiSettings.clientId ? "apiSecret" : "apiClientId").focus(), 30);
-}
-function closeApiModal() {
-  $("apiModal").classList.add("hidden");
-  dockListing();
-}
-const apiFormValues = () => ({
-  clientId: $("apiClientId").value.trim(),
-  clientSecret: $("apiSecret").value.trim(),
-  env: $("apiEnv").value,
-});
-$("apiBtn").addEventListener("click", () => openApiModal(""));
-$("apiCancel").addEventListener("click", closeApiModal);
-$("apiModal").addEventListener("click", (e) => { if (e.target.id === "apiModal") closeApiModal(); });
-$("apiKeysLink").addEventListener("click", () => window.api.openApiKeys());
-$("apiDocsLink").addEventListener("click", () => window.api.openApiDocs());
-$("apiTest").addEventListener("click", async () => {
-  const v = apiFormValues();
-  if (!v.clientId || (!v.clientSecret && !apiSettings.hasSecret)) {
-    $("apiTestState").textContent = "Enter the Client ID and Client Secret first.";
-    $("apiTestState").className = "status error";
-    return;
-  }
-  $("apiTestState").textContent = "Connecting to Walmart…";
-  $("apiTestState").className = "status";
-  $("apiTest").disabled = true;
-  const res = await window.api.testApi(v);
-  $("apiTest").disabled = false;
-  $("apiTestState").textContent = res?.ok ? "Connected ✓ — Walmart accepted these keys." : (res?.error || "Connection failed.");
-  $("apiTestState").className = "status " + (res?.ok ? "ok" : "error");
-});
-$("apiSave").addEventListener("click", async () => {
-  const v = apiFormValues();
-  if (!v.clientId) { $("apiClientId").focus(); return; }
-  if (!v.clientSecret && !apiSettings.hasSecret) { $("apiSecret").focus(); return; }
-  apiSettings = await window.api.saveApiSettings(v);
-  renderScanButton();
-  closeApiModal();
-});
-$("apiRemove").addEventListener("click", async () => {
-  apiSettings = await window.api.saveApiSettings({ clear: true });
-  renderScanButton();
-  closeApiModal();
-});
-[$("apiClientId"), $("apiSecret")].forEach((el) => el.addEventListener("keydown", (e) => {
-  e.stopPropagation();
-  if (e.key === "Enter") $("apiSave").click();
-  if (e.key === "Escape") closeApiModal();
-}));
-refreshApiSettings();
 
 // ---- import ----------------------------------------------------------------
 // The Import button opens an instructions dialog first; "Choose file…" runs

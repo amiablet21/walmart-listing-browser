@@ -15,12 +15,4 @@ contextBridge.exposeInMainWorld("api", {
   importSheet: () => ipcRenderer.invoke("sheet:import"),
   exportSheet: (rows) => ipcRenderer.invoke("sheet:export", rows),
   exportRepricer: (payload) => ipcRenderer.invoke("sheet:exportRepricer", payload),
-  // Walmart Marketplace API (Buy Box scan)
-  getApiSettings: () => ipcRenderer.invoke("api:getSettings"),
-  saveApiSettings: (patch) => ipcRenderer.invoke("api:saveSettings", patch),
-  testApi: (override) => ipcRenderer.invoke("api:test", override),
-  scanBuyBox: (skus) => ipcRenderer.invoke("api:scanBuyBox", skus),
-  onScanProgress: (cb) => ipcRenderer.on("api:progress", (_e, p) => cb(p)),
-  openApiDocs: () => ipcRenderer.invoke("api:openDocs"),
-  openApiKeys: () => ipcRenderer.invoke("api:openKeys"),
 });

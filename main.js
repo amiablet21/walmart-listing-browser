@@ -1,11 +1,10 @@
 // Walmart Listing Browser — Electron main process.
 // Keeps a local list of { sku, itemId } rows and loads the live walmart.com
 // listing for the selected row into a docked browser pane on the right.
-const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard, safeStorage } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
-const { WalmartClient } = require("./walmartApi");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
 let dataFile = null;
@@ -270,89 +269,6 @@ async function exportRepricer(payload) {
   }
 }
 
-// ---- Walmart Marketplace API (Buy Box scan) --------------------------------
-// Credentials live in userData/api.json. The Client Secret is encrypted with
-// the OS keychain (Electron safeStorage) when available; it never leaves the
-// main process — the renderer only learns whether one is stored.
-let apiFile = null;
-function loadApiSettings() {
-  try { return JSON.parse(fs.readFileSync(apiFile, "utf8")) || {}; } catch { return {}; }
-}
-function encryptSecret(secret) {
-  const s = String(secret ?? "");
-  if (!s) return "";
-  if (safeStorage.isEncryptionAvailable()) return "enc:" + safeStorage.encryptString(s).toString("base64");
-  return "raw:" + Buffer.from(s, "utf8").toString("base64");
-}
-function decryptSecret(stored) {
-  const s = String(stored ?? "");
-  if (!s) return "";
-  try {
-    if (s.startsWith("enc:")) return safeStorage.decryptString(Buffer.from(s.slice(4), "base64"));
-    if (s.startsWith("raw:")) return Buffer.from(s.slice(4), "base64").toString("utf8");
-  } catch { /* keychain changed → treat as missing */ }
-  return "";
-}
-// What the renderer may see: never the secret itself.
-function publicApiSettings() {
-  const cfg = loadApiSettings();
-  return {
-    clientId: cfg.clientId || "",
-    env: cfg.env === "sandbox" ? "sandbox" : "production",
-    hasSecret: !!decryptSecret(cfg.secret),
-    lastScan: cfg.lastScan || null,
-  };
-}
-function saveApiSettings(patch) {
-  const cur = loadApiSettings();
-  const next = { ...cur };
-  if (typeof patch?.clientId === "string") next.clientId = patch.clientId.trim();
-  if (patch?.env) next.env = patch.env === "sandbox" ? "sandbox" : "production";
-  // an empty secret in the form means "keep the one already stored"
-  if (typeof patch?.clientSecret === "string" && patch.clientSecret.trim()) {
-    next.secret = encryptSecret(patch.clientSecret.trim());
-  }
-  if (patch?.clear) { next.clientId = ""; next.secret = ""; }
-  if (patch?.lastScan !== undefined) next.lastScan = patch.lastScan;
-  try { fs.writeFileSync(apiFile, JSON.stringify(next, null, 2)); } catch (e) { console.error("Failed to save API settings:", e); }
-  return publicApiSettings();
-}
-function makeClient(override) {
-  const cfg = loadApiSettings();
-  return new WalmartClient({
-    clientId: override?.clientId?.trim() || cfg.clientId,
-    clientSecret: override?.clientSecret?.trim() || decryptSecret(cfg.secret),
-    env: override?.env || cfg.env,
-  });
-}
-async function testApi(override) {
-  try {
-    const r = await makeClient(override).testConnection();
-    return { ok: true, host: r.host };
-  } catch (e) {
-    return { error: e.message || String(e) };
-  }
-}
-let scanning = false;
-async function scanBuyBox(skus) {
-  if (scanning) return { error: "A scan is already running." };
-  scanning = true;
-  try {
-    const client = makeClient();
-    const list = Array.isArray(skus) ? skus : [];
-    const { bySku, missing } = await client.pricingInsights(list, (done, total) => {
-      try { win?.webContents.send("api:progress", { done, total }); } catch { /* window gone */ }
-    });
-    const at = Date.now();
-    saveApiSettings({ lastScan: at });
-    return { ok: true, bySku, missing, at, host: client.host };
-  } catch (e) {
-    return { error: e.message || String(e), status: e.status || 0 };
-  } finally {
-    scanning = false;
-  }
-}
-
 // ---- right-click menu (copy/paste in fields, copy links) ------------------
 function attachContextMenu(contents) {
   contents.on("context-menu", (_e, params) => {
@@ -540,7 +456,6 @@ app.setAppUserModelId("com.imrantursun.walmart-listing-browser");
 app.whenReady().then(() => {
   dataFile = path.join(app.getPath("userData"), "items.json");
   uiFile = path.join(app.getPath("userData"), "ui.json");
-  apiFile = path.join(app.getPath("userData"), "api.json");
   const savedZoom = loadUi().paneZoom;
   if (Number.isFinite(savedZoom)) paneZoom = Math.min(1.5, Math.max(0.4, savedZoom));
 
@@ -556,12 +471,6 @@ app.whenReady().then(() => {
   ipcMain.handle("sheet:import", () => importSheet());
   ipcMain.handle("sheet:export", (_e, payload) => exportSheet(payload));
   ipcMain.handle("sheet:exportRepricer", (_e, payload) => exportRepricer(payload));
-  ipcMain.handle("api:getSettings", () => publicApiSettings());
-  ipcMain.handle("api:saveSettings", (_e, patch) => saveApiSettings(patch));
-  ipcMain.handle("api:test", (_e, override) => testApi(override));
-  ipcMain.handle("api:scanBuyBox", (_e, skus) => scanBuyBox(skus));
-  ipcMain.handle("api:openDocs", () => shell.openExternal("https://developer.walmart.com/us-marketplace/reference/pricinginsights"));
-  ipcMain.handle("api:openKeys", () => shell.openExternal("https://developer.walmart.com/account/generate-key"));
 
   createWindow();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
