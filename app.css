@@ -14,10 +14,34 @@ body { height: 100vh; overflow: hidden; }
   flex-direction: column;
   overflow: hidden;
 }
-#side .brand { padding: 16px 16px 12px; }
+/* The header is identical on both tabs (same markup, same spacing) so the
+   tabs never move when switching. */
+.app-head { display: flex; align-items: center; gap: 10px; padding: 0 18px !important; min-height: 56px; font-weight: 400; }
+.app-head .brand-mark { width: 30px; height: 30px; min-width: 30px; border-radius: 9px; background: var(--accent); }
+.app-head .m-title { font-weight: 700; font-size: 14px; white-space: nowrap; }
+/* version tag — click to check for updates (opens the popover) */
+.app-head button.version {
+  font-family: "Geist Mono", Consolas, monospace; font-size: 11px; font-weight: 500; line-height: 1.4;
+  color: #6E6B5C; background: none; border: 1px solid #E9E4D7; border-radius: 6px; padding: 1px 6px; margin: 0; white-space: nowrap; cursor: pointer;
+}
+.app-head button.version:hover { color: var(--ink); background: var(--card-2); }
+.app-head button.version.has-update { color: var(--accent); border-color: var(--accent); }
+.app-head .app-tabs { margin-left: 8px; }
+.app-head .app-tab { margin: 0; padding: 8px 12px; font-size: 13px; }
 #side .brand .badge { margin-left: auto; }
 #side .brand .badge:empty { display: none; }
-#side .brand button { padding: 4px 10px; font-size: 12px; margin-left: 8px; flex: none; }
+#side .brand { border-bottom: 1px solid var(--line); margin-bottom: 10px; }
+
+/* update popover (floats under the version tag; nothing shifts) */
+.update-pop {
+  position: fixed; z-index: 70; width: 320px; padding: 12px 14px; background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, .16); font-size: 13px;
+}
+.update-pop.hidden { display: none; }
+.update-msg { line-height: 1.45; }
+.update-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.update-actions button { padding: 6px 12px; font-size: 12.5px; }
+.update-actions button:empty { display: none; }
 .brand-mark { background: var(--accent); }
 
 /* draggable divider between the sheet and the Walmart pane */
@@ -37,26 +61,30 @@ body { height: 100vh; overflow: hidden; }
 }
 body.resizing { cursor: col-resize; user-select: none; }
 
+/* listing pane closed: the sheet takes the whole window */
+body.pane-closed #detail, body.pane-closed #splitBar { display: none; }
+body.pane-closed #side { width: auto !important; flex: 1 1 auto; }
+.toolbar .tb-right { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.toolbar .tb-right button { white-space: nowrap; }
+.toolbar #scanBtn { gap: 6px; font-size: 12px; }
+.toolbar #scanBtn.scanning { color: var(--accent); background: var(--accent-tint); }
+.toolbar #scanBtn.scanning svg { animation: sugSpin2 1.2s linear infinite; }
+@keyframes sugSpin2 { to { transform: rotate(360deg); } }
+.toolbar #scanBtn.paused { color: var(--accent); border: 1px solid var(--accent); }
+.toolbar #scanRestartBtn { font-size: 12px; }
+.toolbar #scanRestartBtn.hidden { display: none; }
+.toolbar #sugToggleBtn { gap: 5px; font-size: 12px; }
+.toolbar #sugToggleBtn.hidden { display: none; }
+.toolbar #sugToggleBtn.off { color: var(--accent); }
+.toolbar #applyAllBtn { padding: 5px 12px; font-size: 12px; }
+.toolbar #applyAllBtn.hidden { display: none; }
+.toolbar #paneOpenBtn { display: none; gap: 6px; font-size: 12px; }
+body.pane-closed .toolbar #paneOpenBtn { display: inline-flex; }
+.detail-bar #paneCloseBtn { font-size: 18px; margin-left: 4px; }
+
 /* toolbar */
 .toolbar { display: flex; gap: 2px; align-items: center; padding: 0 10px 8px; }
 /* the brand row sits directly above the menubar — trim its air */
-#side .brand { padding-bottom: 10px; }
-
-/* formula bar */
-.fx-bar { display: flex; align-items: center; gap: 8px; padding: 0 12px 10px; }
-.fx-ref {
-  flex: none;
-  min-width: 38px;
-  text-align: center;
-  font-size: 11.5px;
-  color: var(--muted);
-  background: var(--card-2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 6px;
-}
-.fx-bar input { flex: 1; font-size: 12.5px; padding: 6px 9px; }
-.fx-bar input:disabled { background: var(--card-2); color: var(--muted); }
 
 /* autosave indicator — flashes after each change */
 .save-state {
@@ -69,11 +97,14 @@ body.resizing { cursor: col-resize; user-select: none; }
 }
 .save-state.show { opacity: 1; }
 
-/* find bar (Ctrl+F) */
-.find-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 8px; }
-.find-bar input { flex: 1; font-size: 12.5px; padding: 5px 8px; }
-.find-count { flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+/* search row — full width under the toolbar; Ctrl+F focuses it */
+.find-bar { display: flex; align-items: center; gap: 6px; padding: 0 12px 10px; }
+.find-bar .find-icon { flex: none; color: var(--muted); margin: 0 -26px 0 9px; position: relative; z-index: 1; pointer-events: none; }
+.find-bar input { flex: 1; min-width: 0; font-size: 12.5px; padding: 6px 9px 6px 30px; }
+.find-count { flex: none; font-size: 11.5px; color: var(--muted); white-space: nowrap; margin-left: 4px; }
 .find-bar button { padding: 3px 9px; font-size: 12px; flex: none; }
+/* until something is typed, only the box itself shows */
+.find-bar.empty .find-count, .find-bar.empty button { display: none; }
 
 /* search match highlights */
 #sheet td.hl { background: #FDF0C2 !important; }
@@ -195,6 +226,11 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* Row deletion lives in the right-click menu. The old hover-× that replaced
    the row number was too easy to hit by accident and deleted with no warning. */
 
+/* cells aren't text-selectable: copy = the active cell (or the selected row),
+   never a dragged highlight across the row. The inline editor is still text. */
+#sheet td { -webkit-user-select: none; user-select: none; }
+#sheet td.editing, #sheet td.editing input { -webkit-user-select: text; user-select: text; }
+
 /* active cell (Sheets-style focus ring) */
 #sheet td.active-cell {
   outline: 2px solid var(--accent);
@@ -290,6 +326,60 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .crumb-text { min-width: 0; margin-left: 4px; }
 .cur-sku { font-weight: 600; font-size: 13.5px; color: var(--ink); }
 .cur-item { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+/* buy-box suggestion: shown as a ghost value in the selected row's During
+   Incentive cell (and a % Change preview) while the row has no price yet;
+   as a small tag after the value when it already has one. Enter accepts. */
+#sheet td.sug-ghost { color: var(--accent); font-style: italic; opacity: 0.85; }
+#sheet td .sug-tag {
+  display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 5px; vertical-align: 1px;
+  background: var(--accent); color: var(--accent-ink); font-size: 11px; font-style: normal; font-weight: 600;
+  line-height: 15px; white-space: nowrap; cursor: pointer; opacity: 1;
+}
+#sheet td .sug-tag .ar { margin-right: 5px; opacity: 0.9; }
+#sheet td .sug-tag:hover { background: var(--accent-hover); }
+/* on a row that already has a price the tag sits in the cell's free left
+   space (numbers are right-aligned) so the value never gets clipped */
+#sheet td.has-sug { position: relative; }
+#sheet td.has-sug .sug-tag, #sheet td.has-sug .sug-note, #sheet td.has-sug .sug-spin {
+  position: absolute; left: 4px; top: 50%; transform: translateY(-50%); margin: 0;
+}
+#sheet td.has-sug .sug-tag { left: 5px; }
+/* quiet notes (pane closed): "✓ buy box", "+3 sellers" */
+#sheet td .sug-note {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; vertical-align: 1px;
+  background: var(--card-2); color: var(--muted); border: 1px solid var(--line);
+  font-size: 9.5px; font-style: normal; font-weight: 600; line-height: 14px; white-space: nowrap;
+}
+/* buy-box hover card */
+.bbcard {
+  position: fixed; z-index: 60; width: 300px; background: var(--card, #fff); border: 1px solid var(--line);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.14); padding: 10px 12px; font-size: 12px; color: var(--ink);
+}
+.bbcard.hidden { display: none; }
+.bbcard .hd { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.bbcard .hd b { font-size: 15px; }
+.bbcard .sub, .bbcard .muted, .bbcard .more { color: var(--muted); font-size: 11px; }
+.bbcard .row { display: flex; align-items: baseline; justify-content: space-between; padding: 3px 0; border-top: 1px solid var(--line); }
+.bbcard .row.bb { color: var(--accent); font-weight: 600; }
+.bbcard .row .n { color: var(--muted); margin-right: 8px; font-variant-numeric: tabular-nums; }
+.bbcard .row .s { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bbcard .row .p { font-variant-numeric: tabular-nums; margin-left: 8px; }
+.bbcard .you { color: var(--green); font-size: 10px; margin-left: 6px; font-weight: 700; }
+.bbcard .more { padding: 3px 0 0; }
+.bbcard button.mini { padding: 2px 8px; font-size: 11px; margin-left: 8px; white-space: nowrap; flex: none; }
+.bbcard .ft { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.bbcard .ft button { padding: 4px 12px; font-size: 11.5px; white-space: nowrap; flex: none; }
+.bbcard .ok { color: var(--green); font-weight: 600; white-space: nowrap; }
+.bbcard .mk { margin-top: 6px; text-align: right; }
+.bbcard .mk a { color: var(--muted); font-size: 11px; }
+/* reduction under Walmart's 4% floor — the commission break won't be granted */
+#sheet td.floor-warn { background: #FDECC8 !important; color: #8A5A00 !important; }
+/* spinner while the hidden pane is still reading the price */
+#sheet td .sug-spin {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%; vertical-align: -1px; box-sizing: border-box;
+  border: 2px solid var(--line); border-top-color: var(--accent); animation: sugSpin 0.8s linear infinite;
+}
+@keyframes sugSpin { from { transform: translateY(-50%) rotate(0deg); } to { transform: translateY(-50%) rotate(360deg); } }
 .detail-actions { margin-left: auto; display: flex; gap: 6px; }
 
 #listingSlot { flex: 1; position: relative; background: var(--card); }
@@ -340,3 +430,216 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .loading-text { font-size: 12.5px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 1.6s; } }
+
+/* Account Manager export form: selects line up with the text/date inputs */
+.popup-form select { display: block; width: 100%; margin-top: 5px; padding: 9px 12px; }
+
+/* ======================= Market tab ======================= */
+/* Values mirror the Market Scan Tab design (Main.dc.html) exactly. The
+   whole window switches between the sheet (+ Walmart pane) and this section. */
+#market { display: none; }
+body.market-mode #side, body.market-mode #splitBar, body.market-mode #detail { display: none !important; }
+body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; height: 100vh; background: #FAF9F5; color: #1C1B16; font-size: 13px; }
+
+/* flat section tabs (both headers) */
+.app-tabs { display: flex; flex-direction: row; gap: 4px; }
+.app-tab { border: 0; background: transparent; color: #6E6B5C; font-weight: 600; font-size: 13px; padding: 8px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.app-tab:hover { background: #F4F1E9; color: #1C1B16; }
+.app-tab.active { background: #E6E8F3; color: #1C1B16; }
+
+/* title bar */
+.m-head { background: #FFFFFF; border-bottom: 1px solid #E9E4D7; }
+.m-last { margin-left: auto; font-size: 12px; color: #6E6B5C; white-space: nowrap; }
+
+/* toolbar */
+.m-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 18px; border-bottom: 1px solid #E9E4D7; background: #FAF9F5; }
+.m-toolbar button, #mPanel button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #D9D2C1; background: #fff; color: #1C1B16; padding: 7px 12px; display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; min-height: 34px; white-space: nowrap; }
+.m-toolbar button:hover, #mPanel button:hover { background: #F4F1E9; }
+.m-toolbar button.primary, #mPanel button.primary { background: #4C5B9E; border-color: #4C5B9E; color: #fff; }
+.m-toolbar button.primary:hover, #mPanel button.primary:hover { background: #3D4A85; }
+#mScanBtn.scanning { background: #BB3B2E; border-color: #BB3B2E; }
+#mScanBtn.scanning svg { animation: sugSpin2 1.2s linear infinite; }
+.m-sched { display: inline-flex; align-items: center; gap: 9px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 0 12px 0 10px; background: #fff; min-height: 34px; box-sizing: border-box; color: #6E6B5C; font-size: 13px; cursor: pointer; user-select: none; }
+.m-sched.on { color: #1C1B16; }
+/* the switch: a visually hidden checkbox drives the pill */
+.m-sched .m-switch { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.m-switch-ui { position: relative; width: 30px; height: 18px; border-radius: 999px; background: #D9D2C1; transition: background .15s; flex: none; }
+.m-switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
+.m-sched.on .m-switch-ui { background: #4C5B9E; }
+.m-sched.on .m-switch-ui::after { transform: translateX(12px); }
+.m-sched .m-switch:focus-visible + .m-switch-ui { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 2px; }
+.m-sched-label { white-space: nowrap; }
+.m-sched input[type="time"] { width: auto; min-height: 24px; padding: 2px 4px; border: 0; background: transparent; font-weight: 600; font-size: 13px; color: #918D7C; font-variant-numeric: tabular-nums; cursor: pointer; }
+.m-sched.on input[type="time"] { color: #1C1B16; }
+.m-sched input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+.m-sched input[type="time"]:focus { outline: none; color: #4C5B9E; }
+.m-toolbar .tb-sep { width: 1px; height: 22px; background: #E9E4D7; }
+.m-search { position: relative; display: inline-flex; align-items: center; color: #6E6B5C; }
+.m-search svg { position: absolute; left: 10px; pointer-events: none; }
+.m-search input { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 8px 10px 8px 32px; background: #fff; color: #1C1B16; min-height: 34px; box-sizing: border-box; width: 280px; }
+.m-search input:focus { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 1px; border-color: #4C5B9E; }
+.m-filters { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.m-toolbar .m-chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; border: 0; min-height: 0; background: #F4F1E9; color: #45433A; }
+.m-toolbar .m-chip:hover { background: #E9E4D7; }
+.m-toolbar .m-chip.active { background: #E6E8F3; color: #3D4A85; }
+.m-toolbar #mMissedBtn.has-missed .n { color: #BB3B2E; }
+.m-toolbar #mRetryBtn.hidden { display: none; }
+.m-right { margin-left: auto; }
+.m-toolbar { position: relative; }
+.m-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: #E9E4D7; overflow: hidden; }
+.m-progress.hidden { display: none; }
+.m-prog-bar { height: 100%; width: 0; background: #4C5B9E; transition: width .3s; }
+.m-last { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* body */
+.m-body { display: flex; flex: 1 1 auto; min-height: 0; }
+.m-table-wrap { flex: 999 1 640px; min-width: 0; overflow: auto; padding: 14px 18px 18px; position: relative; }
+.m-amz-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; padding: 8px 12px; border-radius: 8px; background: #E6E8F3; border: 1px solid #4C5B9E; font-size: 12.5px; color: #1C1B16; }
+.m-amz-bar.hidden { display: none; }
+.m-amz-bar span { flex: 1; }
+.m-amz-bar button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid #D9D2C1; background: #fff; padding: 4px 10px; font-size: 12px; }
+#mTable { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; font-size: 13px; }
+#mTable th { text-align: left; padding: 10px 12px; background: #F4F1E9; color: #6E6B5C; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; font-weight: 600; position: sticky; top: 0; z-index: 1; }
+#mTable th:first-child { border-top-left-radius: 12px; }
+#mTable th:last-child { border-top-right-radius: 12px; }
+#mTable th.num, #mTable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#mTable th.sep { border-left: 1px solid #E9E4D7; }
+#mTable td.sep { border-left: 1px solid #F0EDE6; }
+#mTable td { padding: 10px 12px; border-bottom: 1px solid #F0EDE6; white-space: nowrap; vertical-align: middle; }
+#mTable tr:last-child td { border-bottom: 0; }
+#mTable th:nth-child(1), #mTable th:nth-child(2), #mTable th:nth-child(3) { width: 1%; white-space: nowrap; }
+#mTable th:nth-child(4), #mTable th:nth-child(5) { width: 50%; }
+#mTable td.sku { font-family: "Geist Mono", Consolas, monospace; font-weight: 600; font-size: 12px; border-left: 3px solid #E9E4D7; }
+#mTable td.mono { font-family: "Geist Mono", Consolas, monospace; font-size: 12px; color: #45433A; }
+#mTable td.num b { font-weight: 600; }
+#mTable tr.m-row { cursor: pointer; }
+#mTable tr.m-row:hover td { background: #F4F1E9; }
+#mTable tr.m-row.sel td { background: #E6E8F3; }
+#mTable tr.edge-green td.sku { border-left-color: #4F7A3E; }
+#mTable tr.edge-amber td.sku { border-left-color: #B8841A; }
+#mTable tr.edge-red td.sku { border-left-color: #BB3B2E; }
+#mTable td.sep b { font-weight: 600; font-variant-numeric: tabular-nums; }
+#mTable td.sep .m-pill + b { margin-left: 8px; }
+#mTable td.sep b + .m-muted, #mTable td.sep b + .m-pill { margin-left: 6px; }
+#mTable td.sep .m-muted + .m-pill { margin-left: 8px; }
+#mTable td.m-empty { text-align: center; color: #6E6B5C; padding: 22px; white-space: normal; }
+.m-hint { margin: 10px 2px 0; font-size: 12px; color: #6E6B5C; }
+.m-muted { color: #6E6B5C; font-size: 12px; }
+.m-warn { color: #B8841A; font-size: 12px; }
+#mTable .m-link-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 8px; border-radius: 999px; border: 1px dashed #C9C2B1; background: transparent; color: #6E6B5C; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; min-height: 0; }
+#mTable .m-link-chip:hover { border-style: solid; border-color: #4C5B9E; color: #4C5B9E; background: #fff; }
+.m-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.m-pill.you { background: #E3EFDD; color: #3F6A2F; }
+.m-pill.lost { background: #F8EBD2; color: #8A6212; }
+.m-pill.bb { background: #E6E8F3; color: #3D4A85; }
+.m-pill.auto { background: #FBE8DF; color: #9A4423; }
+.m-pill.typed { background: #F4F1E9; color: #45433A; }
+.m-pill.warn { background: #F8EBD2; color: #8A6212; }
+.m-reading { display: inline-flex; align-items: center; gap: 7px; color: #4C5B9E; font-weight: 600; }
+.m-spin { width: 13px; height: 13px; border-radius: 50%; box-sizing: border-box; border: 2px solid #E9E4D7; border-top-color: #4C5B9E; animation: sugSpin2 .8s linear infinite; }
+
+/* right panel (design B): identity card, Walmart card, Amazon card */
+.m-panel { flex: 1 1 400px; max-width: 520px; min-width: 0; border-left: 1px solid #E9E4D7; background: #FAF9F5; padding: 18px; overflow: auto; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.m-panel a { color: #4C5B9E; text-decoration: none; }
+.m-panel a:hover { color: #3D4A85; text-decoration: underline; }
+.m-panel-empty { color: #6E6B5C; padding: 40px 10px; text-align: center; }
+.m-card { background: #fff; border: 1px solid #E9E4D7; border-radius: 14px; overflow: hidden; }
+.m-id { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.m-id-head { display: flex; align-items: flex-start; gap: 6px; }
+.m-id-title { flex: 1; min-width: 0; }
+.m-id-title .sku { font-family: "Geist Mono", Consolas, monospace; font-weight: 600; font-size: 16px; word-break: break-all; }
+.m-id-title .m-muted { margin-top: 3px; }
+.m-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid #E9E4D7; border-radius: 10px; overflow: hidden; }
+.m-stats > div { padding: 10px 12px; border-right: 1px solid #E9E4D7; display: flex; flex-direction: column; gap: 2px; }
+.m-stats > div:last-child { border-right: 0; }
+.m-stats span { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; }
+.m-stats b { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.m-stats b.wm { color: #3F6CC0; }
+.m-stats b.amz { color: #C2562F; }
+.m-card-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #E9E4D7; }
+.m-card-head.wm { background: #F3F6FC; border-bottom-color: #E3E8F3; }
+.m-card-head.amz { background: #FDF3EE; border-bottom-color: #F3DED3; }
+.m-card-head .mark { width: 22px; height: 22px; border-radius: 6px; color: #fff; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; }
+.m-card-head .mark.wm { background: #3F6CC0; }
+.m-card-head .mark.amz { background: #C2562F; }
+.m-seller { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #F0EDE6; }
+.m-seller:last-child { border-bottom: 0; }
+.m-seller.bb { background: #F6F8FD; }
+.m-seller .s { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.m-seller .s.me { font-weight: 700; }
+.m-seller .p { width: 76px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.m-seller .m-pill { margin: 0; }
+.m-amz { padding: 10px 14px; border-bottom: 1px solid #F0EDE6; display: flex; flex-direction: column; gap: 8px; }
+.m-amz.robot { background: #FBF4E3; }
+.m-amz.editing { background: #FAF9F5; }
+.m-amz-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.m-amz-text { flex: 1; min-width: 0; }
+.m-amz-text .t { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-amz-text .t a { color: inherit; }
+.m-amz-text .sub { margin-top: 2px; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-amz-text .mono, .m-amz .mono { font-family: "Geist Mono", Consolas, monospace; }
+.m-amz .m-price { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.m-amz .m-price.low { color: #C2562F; }
+.m-pill.sold { background: #F1E6F0; color: #7A3F76; border: 1px solid #E4CFE2; padding: 1px 7px; font-size: 11px; margin-left: 6px; vertical-align: 1px; }
+.m-icons { display: inline-flex; gap: 2px; }
+#mPanel button.m-icon { border: 0; background: transparent; color: #6E6B5C; border-radius: 6px; width: 28px; height: 28px; min-height: 0; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+#mPanel button.m-icon:hover { background: #E9E4D7; color: #1C1B16; }
+.m-edit-grid { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+.m-edit-grid label { font-size: 12px; color: #6E6B5C; text-align: right; }
+.m-edit-grid input, .m-add input { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 10px; background: #fff; color: #1C1B16; min-height: 32px; box-sizing: border-box; min-width: 0; }
+.m-edit-grid input:focus, .m-add input:focus { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 1px; border-color: #4C5B9E; }
+.m-edit-grid input::placeholder { color: #918D7C; }
+.m-edit-price { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.m-edit-price input { flex: 1 1 120px; font-variant-numeric: tabular-nums; }
+.m-edit-actions { display: inline-flex; gap: 6px; flex: none; }
+button.mini { padding: 6px 11px; font-size: 12.5px; min-height: 32px; }
+.m-amz-robot { display: flex; align-items: center; gap: 10px; }
+.m-add { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #FAF9F5; }
+.m-add input { flex: 1 1 160px; min-width: 0; }
+.m-notes { margin-top: auto; }
+.m-notes .m-card-head { background: #FAF9F5; }
+.m-notes textarea { display: block; width: 100%; box-sizing: border-box; border: 0; resize: vertical; min-height: 72px; padding: 10px 14px; font: inherit; font-size: 13px; line-height: 1.5; color: #1C1B16; background: #fff; border-radius: 0 0 14px 14px; }
+.m-notes textarea:focus { outline: none; box-shadow: inset 0 0 0 2px rgba(76, 91, 158, .38); }
+.m-notes textarea::placeholder { color: #918D7C; }
+.m-store { font-size: 12px; color: #6E6B5C; }
+.m-store b { color: #1C1B16; }
+.m-store a { margin-left: 4px; }
+
+/* end-of-scan pop-up */
+.modal.m-summary { width: min(720px, 100%); border-radius: 16px; padding: 20px 24px; }
+.m-summary h2 { font-size: 17px; margin-bottom: 4px; }
+.m-summary .hint { color: #45433A; }
+.m-sum-table { border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; margin-top: 12px; max-height: 52vh; overflow-y: auto; }
+.m-sum-head, .m-sum-row { display: grid; grid-template-columns: 28px minmax(0, 1.5fr) repeat(3, minmax(0, 1fr)); gap: 10px; align-items: center; padding: 10px 14px; }
+.m-sum-head { padding: 8px 14px; background: #F4F1E9; color: #6E6B5C; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; font-weight: 600; position: sticky; top: 0; }
+.m-sum-row { border-bottom: 1px solid #F0EDE6; cursor: pointer; font-size: 13px; }
+.m-sum-row:last-child { border-bottom: 0; }
+.m-sum-row:hover { background: #FAF9F5; }
+.m-sum-row input { width: 16px; height: 16px; accent-color: #4C5B9E; margin: 0; }
+.m-sum-row .sku { font-family: "Geist Mono", Consolas, monospace; font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-sum-head .num, .m-sum-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.m-sum-row .amz { color: #C2562F; font-weight: 600; }
+.m-sum-row .match { font-weight: 700; }
+.m-summary .confirm-actions { margin-top: 16px; }
+.m-summary .confirm-actions button { font: inherit; border-radius: 8px; border: 1px solid #D9D2C1; background: #fff; color: #1C1B16; padding: 8px 14px; font-size: 13px; font-weight: 500; min-height: 36px; display: inline-flex; align-items: center; gap: 7px; }
+.m-summary .confirm-actions button:hover { background: #F4F1E9; }
+.m-summary .confirm-actions button.primary { background: #4C5B9E; border-color: #4C5B9E; color: #fff; }
+.m-summary .confirm-actions button.primary:hover { background: #3D4A85; }
+.m-store.editing { display: flex; align-items: center; gap: 8px; }
+.m-store.editing input { flex: 1; min-width: 0; font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 6px 10px; background: #fff; color: #1C1B16; min-height: 32px; box-sizing: border-box; }
+.m-store.editing input:focus { outline: 2px solid rgba(76, 91, 158, .38); outline-offset: 1px; border-color: #4C5B9E; }
+.m-seller.m-note { font-size: 12px; line-height: 1.45; display: block; }
+
+/* The row-number gutter and the SKU column stay put while the sheet scrolls
+   sideways (the SKU column only while it is the first column — it can be
+   dragged elsewhere). --rn-w is set by renderHead to the gutter's width. */
+#sheet thead th.rn, #sheet td.rn { position: sticky; left: 0; z-index: 2; }
+#sheet.sticky-sku thead th[data-field="sku"], #sheet.sticky-sku td.sku { position: sticky; left: var(--rn-w, 34px); z-index: 2; }
+#sheet thead th.rn, #sheet.sticky-sku thead th[data-field="sku"] { z-index: 3; }
+#sheet.sticky-sku td.sku { border-right-color: #CFCBBF; }
+/* a soft edge on the pinned SKU column once the sheet has scrolled sideways */
+#sheet.sticky-sku.scrolled-x td.sku, #sheet.sticky-sku.scrolled-x thead th[data-field="sku"] { position: sticky; }
+#sheet.sticky-sku.scrolled-x td.sku::after, #sheet.sticky-sku.scrolled-x thead th[data-field="sku"]::after {
+  content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 6px; pointer-events: none;
+  background: linear-gradient(to left, rgba(28, 27, 22, 0.10), rgba(28, 27, 22, 0));
+}

@@ -11,7 +11,7 @@
 <body>
   <!-- LEFT: incentive price sheet -->
   <aside id="side">
-    <div class="brand">
+    <div class="brand app-head">
       <div class="brand-mark">
         <svg width="16" height="16" viewBox="0 0 24 24">
           <g transform="rotate(-12 12 12)">
@@ -21,7 +21,12 @@
           </g>
         </svg>
       </div>
-      Incentive price list
+      <span class="m-title">Walmart Listing Browser</span>
+      <button class="version" title="Check for updates">v—</button>
+      <nav class="app-tabs" role="tablist" aria-label="Sections">
+        <button class="app-tab active" role="tab" data-tab="sheet">Incentive price list</button>
+        <button class="app-tab" role="tab" data-tab="market">Market</button>
+      </nav>
       <span id="count" class="badge neutral"></span>
     </div>
 
@@ -55,23 +60,26 @@
           <path d="M17 21v-8H7v8" /><path d="M7 3v5h8" />
         </svg>
       </button>
+      <!-- only shown while the listing pane is closed -->
+      <button id="paneOpenBtn" class="tb-ghost pane-open" title="Show the Walmart listing pane" aria-label="Show listing pane">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M14 4v16" />
+        </svg>
+        <span>Show listing pane</span>
+      </button>
     </div>
 
-    <!-- formula bar: shows the clicked cell's address and raw value/formula -->
-    <div class="fx-bar">
-      <span id="fxRef" class="fx-ref mono">—</span>
-      <input id="fxInput" type="text" class="mono" disabled
-             placeholder="Click a cell to see or edit its value or formula" />
-      <span id="saveState" class="save-state">Saved ✓</span>
-    </div>
-
-    <!-- find bar (Ctrl+F) -->
-    <div id="findBar" class="find-bar hidden">
-      <input id="findInput" type="text" placeholder="Find in sheet" />
+    <!-- search row (Ctrl+F focuses it); autosave indicator on the right -->
+    <div id="findBar" class="find-bar empty">
+      <svg class="find-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" />
+      </svg>
+      <input id="findInput" type="text" placeholder="Search SKU, Item ID, price… (Ctrl+F)" />
       <span id="findCount" class="find-count"></span>
-      <button id="findPrev" title="Previous match (Shift+Enter)">↑</button>
-      <button id="findNext" title="Next match (Enter)">↓</button>
-      <button id="findClose" title="Close (Esc)">×</button>
+      <button id="findPrev" title="Previous match (Shift+Enter)" aria-label="Previous match">↑</button>
+      <button id="findNext" title="Next match (Enter)" aria-label="Next match">↓</button>
+      <button id="findClose" title="Clear search (Esc)" aria-label="Clear search">×</button>
+      <span id="saveState" class="save-state">Saved ✓</span>
     </div>
 
     <div class="sheet-wrap">
@@ -122,6 +130,7 @@
             <line x1="10" y1="14" x2="21" y2="3" />
           </svg>
         </button>
+        <button id="paneCloseBtn" class="ghost" title="Close this pane — the sheet takes the full window" aria-label="Close pane">×</button>
       </div>
     </div>
     <!-- the live walmart.com page is docked over this slot by the main process -->
@@ -145,8 +154,9 @@
             <span class="hint">Comma-separated values (.csv) works too.</span></li>
         <li>Columns must be in this order:<br />
             <code>A&nbsp;SKU</code> <code>B&nbsp;Item&nbsp;ID</code> <code>C&nbsp;Before&nbsp;Price</code> <code>D&nbsp;During&nbsp;Incentive</code><br />
-            <span class="hint">Only SKU and Item ID are required — prices can be blank (they start at 0.00).
-            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.</span></li>
+            <span class="hint">Only SKU is required — Item ID and prices can be blank (prices start at 0.00).
+            A header row is fine — it's skipped. Extra columns ($ Change, % Change, …) are ignored; those recompute here.
+            Not sure about the layout? <a href="#" id="importTemplate">Download a blank template</a>.</span></li>
         <li>Optional commission columns:<br />
             <code>Regular&nbsp;Commission</code> <code>During&nbsp;Incentive&nbsp;Commission</code><br />
             <span class="hint">Found by their header names, so they can sit in any column. Rows without them
@@ -181,12 +191,63 @@
         <b>Regular sheet</b> exports every column with live formulas.<br />
         <b>Repricer</b> exports Walmart's Repricer Bulk Upload file with every SKU
         set to the <b>IMRAN BUY BOX</b> strategy — Maximum Seller Allowed Price is
-        the During Incentive price, and Minimum is $10 below it.
+        the During Incentive price, and Minimum is $10 below it.<br />
+        <b>Account Manager</b> fills the "Item &amp; Partner Level Comm Break" template
+        your Account Manager sends — Item ID, partner ID, commission rates, prices and
+        incentive dates in their exact layout, ready to email.
       </p>
       <div class="confirm-actions">
         <button id="exportCancel">Cancel</button>
         <button id="exportRepricer">Repricer</button>
+        <button id="exportIncentive">Account Manager</button>
         <button id="exportRegular" class="primary">Regular sheet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Manager export: the few template fields the sheet doesn't hold -->
+  <div id="incentiveModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal popup-form">
+      <h2>Export for Account Manager</h2>
+      <p class="hint">
+        One row per Item ID in the Account Manager's template. These apply to every row;
+        leave the dates blank if your Account Manager fills them in.
+      </p>
+      <div class="popup-form-grid">
+        <div>
+          <label for="incPartnerId">Partner ID</label>
+          <input id="incPartnerId" type="text" inputmode="numeric" maxlength="20" />
+        </div>
+        <div>
+          <label for="incCondition">Item condition</label>
+          <select id="incCondition">
+            <option value="1">1 — New</option>
+            <option value="2">2 — New without box</option>
+            <option value="3">3 — New without tags</option>
+            <option value="4">4 — Restored: Premium</option>
+            <option value="5">5 — Restored: Like New</option>
+            <option value="6">6 — Restored: Good</option>
+            <option value="7">7 — Restored: Fair</option>
+            <option value="8">8 — Remanufactured</option>
+            <option value="9">9 — Open Box</option>
+            <option value="10">10 — Pre-Owned: Like New</option>
+            <option value="11">11 — Pre-Owned: Good</option>
+            <option value="12">12 — Pre-Owned: Fair</option>
+            <option value="13">13 — New with defects</option>
+          </select>
+        </div>
+        <div>
+          <label for="incStart">Incentive start date</label>
+          <input id="incStart" type="date" />
+        </div>
+        <div>
+          <label for="incEnd">Incentive end date</label>
+          <input id="incEnd" type="date" />
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button id="incentiveCancel">Cancel</button>
+        <button id="incentiveOk" class="primary">Export</button>
       </div>
     </div>
   </div>
@@ -204,6 +265,110 @@
     </div>
   </div>
 
+  <!-- ================= MARKET TAB ================= -->
+  <!-- Walmart buy box + Amazon buy box per SKU; all scanning happens here.
+       Hidden until its tab is picked (body.market-mode). -->
+  <section id="market" aria-label="Market">
+    <div class="m-head">
+      <div class="brand app-head">
+        <div class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <g transform="rotate(-12 12 12)">
+              <polygon points="5,12 10,7.8 19,7.8 19,16.2 10,16.2" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+              <circle cx="9.8" cy="12" r="1.1" fill="var(--accent, #4C5B9E)"/>
+            </g>
+          </svg>
+        </div>
+        <span class="m-title">Walmart Listing Browser</span>
+        <button class="version" title="Check for updates">v—</button>
+        <nav class="app-tabs" role="tablist" aria-label="Sections">
+          <button class="app-tab" role="tab" data-tab="sheet">Incentive price list</button>
+          <button class="app-tab active" role="tab" data-tab="market">Market</button>
+        </nav>
+        <span id="mLastScan" class="m-last"></span>
+      </div>
+    </div>
+
+    <div class="m-toolbar">
+      <button id="mScanBtn" class="primary" title="Read every listing's Walmart buy box and sellers, then each linked Amazon listing">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        <span>Run market scan</span>
+      </button>
+      <label class="m-sched" title="Run the scan by itself every day at this time, while the app is open">
+        <input id="mSchedOn" type="checkbox" class="m-switch" />
+        <span class="m-switch-ui" aria-hidden="true"></span>
+        <span class="m-sched-label">Daily scan at</span>
+        <input id="mSchedTime" type="time" value="09:00" aria-label="Daily scan time" />
+      </label>
+      <span class="tb-sep"></span>
+      <span class="m-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="mSearch" type="search" placeholder="Search SKU, Item ID, seller…" aria-label="Search the market table" />
+      </span>
+      <button id="mMissedBtn" class="m-chip" title="Show only the rows where a Walmart or Amazon read failed">Missed<span class="n"></span></button>
+      <button id="mRetryBtn" class="hidden" title="Read the missed rows again now">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        Retry missed
+      </button>
+      <button id="mExportBtn" class="m-right" title="Export this table to .xlsx or .csv">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+        Export market sheet
+      </button>
+      <!-- scan progress: a thin line along the toolbar's bottom edge, so the table never moves -->
+      <div id="mProgress" class="m-progress hidden" role="progressbar" aria-label="Scan progress"><div id="mProgBar" class="m-prog-bar"></div></div>
+    </div>
+
+    <div class="m-body">
+      <div class="m-table-wrap" id="mTableWrap">
+        <div id="mAmzBar" class="m-amz-bar hidden">
+          <span>Amazon page shown here — pass the robot check, then close this to continue.</span>
+          <button id="mAmzHide">Close Amazon page</button>
+        </div>
+        <table id="mTable">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Item ID</th>
+              <th class="num">Our price</th>
+              <th class="sep">Walmart buy box</th>
+              <th class="sep">Amazon buy box</th>
+            </tr>
+          </thead>
+          <tbody id="mTbody"></tbody>
+        </table>
+        <p class="m-hint">Green edge: you hold the buy box and Amazon isn't cheaper. Amber: buy box lost. Red: Amazon undercuts your price. Click a row for every seller and every linked Amazon listing.</p>
+      </div>
+      <aside id="mPanel" class="m-panel"></aside>
+    </div>
+  </section>
+
+  <!-- end-of-scan pop-up: the listings Amazon undercuts, biggest gap first -->
+  <div id="mSummary" class="modal-overlay hidden">
+    <div class="modal confirm-modal m-summary">
+      <h2>Scan finished</h2>
+      <p class="hint" id="mSumText"></p>
+      <div class="m-sum-table">
+        <div class="m-sum-head"><span></span><span>SKU</span><span class="num">Our price</span><span class="num">Amazon buy box</span><span class="num">Match price</span></div>
+        <div id="mSumRows"></div>
+      </div>
+      <div class="confirm-actions">
+        <button id="mSumClose">Close</button>
+        <button id="mSumCsv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export CSV</button>
+        <button id="mSumXlsx" class="primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export Excel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- update popover: opens under the version tag; the page never moves -->
+  <div id="updatePop" class="update-pop hidden" role="dialog" aria-label="Updates">
+    <div id="updateMsg" class="update-msg"></div>
+    <div class="update-actions">
+      <button id="updateAct" class="primary"></button>
+      <button id="updateLater">Close</button>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
+  <script src="market.js"></script>
 </body>
 </html>
