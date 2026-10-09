@@ -16,7 +16,8 @@ Keep an incentive price sheet on the left, and click any row to see its **live w
 - **Walmart Listing ⇄ Seller Center toggle** — flip the pane between the customer-facing listing and a free-browsing Seller Center session (sign in once; loads once; row clicks never disturb it).
 - **Row auto-jump** — browse to another listing or variant inside the pane and the sheet selects that row automatically.
 - **Import** — pull rows in from `.xlsx` / `.csv` / `.tsv`, or paste straight from Google Sheets with Ctrl+V; optional per-row commission columns are picked up by header name.
-- **Export** — the regular sheet (live formulas), or the 11-column incentive template the Walmart rep uploads, prefilled with partner details and per-row commission rates.
+- **Export** — the regular sheet (live formulas), or Walmart's Repricer Bulk Upload file (every SKU on the **IMRAN BUY BOX** strategy; Max = During Incentive, Min = $10 below).
+- **Buy Box scan** — one click pulls the live Buy Box price, your win rate, the competitor and suggested prices, and the repricer assignment for every SKU from Walmart's Marketplace API (Pricing Insights), straight into the sheet.
 - **Auto-computed columns** — `$ Change` and `% Change` recompute from Before / During prices.
 - **Local-first** — everything is stored in a local JSON file; no accounts, no server.
 
@@ -48,6 +49,33 @@ The disk image lands in `dist/Walmart Listing Browser-<version>.dmg`. Open it an
 drag the app into **Applications** — from then on it's a normal double-click app.
 It isn't code-signed, so the first launch shows an "unidentified developer"
 warning: right-click the app → **Open** → **Open**, and macOS remembers it.
+
+## Buy Box scan (Walmart Marketplace API)
+
+The **Buy Box** toolbar button reads Walmart's
+[Pricing Insights](https://developer.walmart.com/us-marketplace/reference/pricinginsights)
+endpoint for every SKU in the sheet and fills six read-only columns:
+
+| Column | What it is |
+|---|---|
+| Buy Box | Buy Box price on walmart.com right now |
+| vs Buy Box | During Incentive − Buy Box (red = you're priced above the winner) |
+| Win Rate | Buy Box win rate Walmart reports for the SKU |
+| Competitor | Competitor price Walmart compares you against |
+| Suggested | Walmart's suggested price (hover for what it's based on) |
+| Repricer | Strategy and Min–Max window currently assigned in Seller Center |
+
+A results panel summarises the scan (at/under vs above the Buy Box, SKUs with no
+Buy Box, SKUs Walmart doesn't know) and lists every row, worst gap first; click a
+row to jump to it. The detail bar shows a Buy Box chip for the selected SKU.
+
+**Setup (once):** click the key icon next to Buy Box and paste the Client ID and
+Client Secret from the Walmart Developer Portal (My Account → API keys — a key with
+Price / Insights access). *Test connection* confirms them; the secret is stored
+encrypted with the OS keychain and only sent to Walmart. Pricing Insights returns
+only SKUs in your own catalog, and it gives a single competitor price rather than a
+full list of other sellers — per-seller offers only arrive through Walmart's
+Buy Box Changed webhook, which needs a hosted endpoint.
 
 ## Import format
 

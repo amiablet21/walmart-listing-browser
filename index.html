@@ -49,6 +49,19 @@
         </svg>
       </button>
       <span class="tb-sep"></span>
+      <button id="scanBtn" class="tb-ghost tb-scan" title="Buy Box scan — pull live Buy Box prices for every SKU from Walmart's API" aria-label="Buy Box scan">
+        <svg class="scan-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" />
+          <path d="M12 3v3" /><path d="M12 18v3" /><path d="M3 12h3" /><path d="M18 12h3" />
+        </svg>
+        <span class="tb-label">Buy Box</span>
+      </button>
+      <button id="apiBtn" class="tb-ghost" title="Walmart seller API keys" aria-label="Walmart API settings">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L19 4m-3 3l3 3" />
+        </svg>
+      </button>
+      <span class="tb-sep"></span>
       <button id="saveBtn" class="tb-ghost" title="Save now (everything also auto-saves)" aria-label="Save">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -62,6 +75,7 @@
       <span id="fxRef" class="fx-ref mono">—</span>
       <input id="fxInput" type="text" class="mono" disabled
              placeholder="Click a cell to see or edit its value or formula" />
+      <span id="scanState" class="scan-state hidden"></span>
       <span id="saveState" class="save-state">Saved ✓</span>
     </div>
 
@@ -94,7 +108,10 @@
       <button id="nextBtn" class="ghost" title="Next listing">›</button>
       <div class="crumb-text">
         <div id="curSku" class="cur-sku"></div>
-        <div id="curItem" class="cur-item mono"></div>
+        <div class="cur-line">
+          <span id="curItem" class="cur-item mono"></span>
+          <span id="curBb" class="bb-chip hidden"></span>
+        </div>
       </div>
       <div class="detail-actions">
         <div class="seg" id="modeSeg">
@@ -187,6 +204,79 @@
         <button id="exportCancel">Cancel</button>
         <button id="exportRepricer">Repricer</button>
         <button id="exportRegular" class="primary">Regular sheet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Walmart seller API keys -->
+  <div id="apiModal" class="modal-overlay hidden">
+    <div class="modal confirm-modal api-card">
+      <h2>Walmart seller API</h2>
+      <p class="hint">
+        The Buy Box scan reads Walmart's <b>Pricing Insights</b> API for every SKU in the sheet:
+        the current Buy Box price, your win rate, the competitor and suggested prices, and
+        which repricer strategy each SKU is on. It needs the API keys from your seller account —
+        <button id="apiKeysLink" class="linkish" type="button">Developer Portal → My Account → API keys</button>.
+      </p>
+      <p id="apiMsg" class="status hidden"></p>
+      <div class="api-form">
+        <label for="apiClientId">Client ID</label>
+        <input id="apiClientId" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="Client ID" />
+        <label for="apiSecret">Client Secret</label>
+        <input id="apiSecret" type="password" class="mono" autocomplete="off" placeholder="Client Secret" />
+        <label for="apiEnv">Environment</label>
+        <select id="apiEnv">
+          <option value="production">Production — your live store</option>
+          <option value="sandbox">Sandbox — Walmart's test environment</option>
+        </select>
+      </div>
+      <div class="api-test-row">
+        <button id="apiTest" type="button">Test connection</button>
+        <span id="apiTestState" class="status"></span>
+      </div>
+      <p class="hint api-foot">
+        The secret is stored encrypted on this computer and only ever sent to Walmart.
+        <button id="apiDocsLink" class="linkish" type="button">API reference</button>
+        <span id="apiLast" class="api-last"></span>
+      </p>
+      <div class="confirm-actions">
+        <button id="apiRemove" class="danger hidden">Remove keys</button>
+        <button id="apiCancel">Cancel</button>
+        <button id="apiSave" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Buy Box scan results -->
+  <div id="bbModal" class="modal-overlay hidden">
+    <div class="modal bb-card">
+      <div class="bb-head">
+        <div>
+          <h2>Buy Box scan</h2>
+          <div id="bbWhen" class="hint"></div>
+        </div>
+        <div class="bb-head-actions">
+          <button id="bbShowCols" type="button" title="Show every Buy Box column in the sheet">Show columns in sheet</button>
+          <button id="bbRescan" type="button">Rescan</button>
+          <button id="bbClose" class="primary" type="button">Close</button>
+        </div>
+      </div>
+      <div class="kpi-grid bb-kpis">
+        <div class="kpi-card"><div class="kpi-label">At or under Buy Box</div><div id="kpiUnder" class="kpi-value"></div><div class="kpi-note">During Incentive ≤ Buy Box price</div></div>
+        <div class="kpi-card"><div class="kpi-label">Above Buy Box</div><div id="kpiAbove" class="kpi-value"></div><div class="kpi-note">priced higher than the current winner</div></div>
+        <div class="kpi-card"><div class="kpi-label">No Buy Box price</div><div id="kpiNoData" class="kpi-value"></div><div class="kpi-note">Walmart returned no Buy Box for the SKU</div></div>
+        <div class="kpi-card"><div class="kpi-label">Not in catalog</div><div id="kpiMissing" class="kpi-value"></div><div class="kpi-note">SKU unknown to your seller account</div></div>
+      </div>
+      <div class="bb-table-wrap">
+        <table id="bbTable">
+          <thead>
+            <tr>
+              <th>SKU</th><th class="num">Listed</th><th class="num">During</th><th class="num">Buy Box</th>
+              <th class="num">vs Buy Box</th><th class="num">Win rate</th><th class="num">Competitor</th><th class="num">Suggested</th><th>Repricer</th>
+            </tr>
+          </thead>
+          <tbody id="bbRows"></tbody>
+        </table>
       </div>
     </div>
   </div>
