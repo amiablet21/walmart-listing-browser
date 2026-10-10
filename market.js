@@ -571,16 +571,31 @@ async function refreshApiSettings() {
   try { apiSettings = await window.api.getApiSettings(); } catch { /* keep defaults */ }
   renderApiBtn();
 }
+const ENV_NOTE = { production: "Your live store on walmart.com", sandbox: "Walmart's test environment — nothing real is touched" };
+function setApiEnv(env) {
+  document.querySelectorAll(".api-seg-btn").forEach((b) => {
+    const on = b.dataset.env === env;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-checked", on ? "true" : "false");
+  });
+  $("apiEnvNote").textContent = ENV_NOTE[env] || "";
+}
+const apiEnvValue = () => document.querySelector(".api-seg-btn.active")?.dataset.env || "production";
 function openApiModal(message, isError) {
   const msg = $("apiMsg");
   msg.textContent = message || "";
-  msg.className = "status" + (isError ? " error" : "") + (message ? "" : " hidden");
+  msg.className = "api-msg" + (isError ? " error" : "") + (message ? "" : " hidden");
+  const state = $("apiState");
+  state.textContent = apiReady() ? `Connected · ${apiSettings.env === "sandbox" ? "sandbox" : "production"}` : "Not connected";
+  state.className = "api-state " + (apiReady() ? "on" : "off");
   $("apiClientId").value = apiSettings.clientId || "";
   $("apiSecret").value = "";
-  $("apiSecret").placeholder = apiSettings.hasSecret ? "•••••••• (saved — leave blank to keep)" : "Client Secret";
-  $("apiEnv").value = apiSettings.env || "production";
+  $("apiSecret").type = "password";
+  $("apiReveal").classList.remove("on");
+  $("apiSecret").placeholder = apiSettings.hasSecret ? "Saved — leave blank to keep it" : "Client Secret";
+  setApiEnv(apiSettings.env || "production");
   $("apiTestState").textContent = "";
-  $("apiTestState").className = "status";
+  $("apiTestState").className = "api-test-state";
   $("apiRemove").classList.toggle("hidden", !(apiSettings.clientId || apiSettings.hasSecret));
   $("apiLast").textContent = apiSettings.lastScan ? `Last API scan ${when(apiSettings.lastScan)}` : "";
   window.api.hideListing();
@@ -589,7 +604,16 @@ function openApiModal(message, isError) {
   setTimeout(() => $(apiSettings.clientId ? "apiSecret" : "apiClientId").focus(), 30);
 }
 function closeApiModal() { $("apiModal").classList.add("hidden"); }
-const apiFormValues = () => ({ clientId: $("apiClientId").value.trim(), clientSecret: $("apiSecret").value.trim(), env: $("apiEnv").value });
+const apiFormValues = () => ({ clientId: $("apiClientId").value.trim(), clientSecret: $("apiSecret").value.trim(), env: apiEnvValue() });
+document.querySelectorAll(".api-seg-btn").forEach((b) => b.addEventListener("click", () => setApiEnv(b.dataset.env)));
+$("apiReveal").addEventListener("click", () => {
+  const f = $("apiSecret");
+  const show = f.type === "password";
+  f.type = show ? "text" : "password";
+  $("apiReveal").classList.toggle("on", show);
+  $("apiReveal").title = show ? "Hide the secret" : "Show the secret";
+  f.focus();
+});
 $("mApiBtn").addEventListener("click", () => openApiModal(""));
 $("apiCancel").addEventListener("click", closeApiModal);
 $("apiModal").addEventListener("click", (e) => { if (e.target.id === "apiModal") closeApiModal(); });
@@ -600,16 +624,16 @@ $("apiTest").addEventListener("click", async () => {
   const v = apiFormValues();
   if (!v.clientId || (!v.clientSecret && !apiSettings.hasSecret)) {
     $("apiTestState").textContent = "Enter the Client ID and Client Secret first.";
-    $("apiTestState").className = "status error";
+    $("apiTestState").className = "api-test-state error";
     return;
   }
   $("apiTestState").textContent = "Connecting to Walmart…";
-  $("apiTestState").className = "status";
+  $("apiTestState").className = "api-test-state";
   $("apiTest").disabled = true;
   const res = await window.api.testApi(v);
   $("apiTest").disabled = false;
   $("apiTestState").textContent = res?.ok ? "Connected ✓ — Walmart accepted these keys." : (res?.error || "Connection failed.");
-  $("apiTestState").className = "status " + (res?.ok ? "ok" : "error");
+  $("apiTestState").className = "api-test-state " + (res?.ok ? "ok" : "error");
 });
 $("apiSave").addEventListener("click", async () => {
   const v = apiFormValues();
