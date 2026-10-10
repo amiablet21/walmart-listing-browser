@@ -242,7 +242,6 @@ function renderPanel() {
         <div><span>Win rate</span><b>${api.winRate == null ? "—" : `${Math.round(api.winRate * 10) / 10}%`}</b></div>
         <div><span>Competitor</span><b>${fmt(api.competitorPrice)}</b></div>
         <div title="${api.suggestedDriver ? esc(DRIVER[api.suggestedDriver] || api.suggestedDriver) : ""}"><span>Suggested</span><b>${fmt(api.suggestedPrice)}</b>${api.suggestedDriver ? `<i>${esc(DRIVER[api.suggestedDriver] || "")}</i>` : ""}</div>
-        <div title="${api.repricerStrategy ? esc(`${api.repricerStrategy}${api.repricerStatus ? " · " + api.repricerStatus : ""}`) : "No repricer strategy assigned in Seller Center"}"><span>Repricer</span><b class="txt">${api.repricerStrategy ? esc(api.repricerStrategy) : "—"}</b>${api.repricerMin != null || api.repricerMax != null ? `<i>${fmt(api.repricerMin)} – ${fmt(api.repricerMax)}</i>` : ""}</div>
       </div>` : "";
   // one seller listed although Walmart says there are more: say why
   const sellersNote = f.bb && f.sellers.length <= 1 && (f.bb.others > 0 || f.bb.offersWhy)
@@ -571,22 +570,14 @@ async function refreshApiSettings() {
   try { apiSettings = await window.api.getApiSettings(); } catch { /* keep defaults */ }
   renderApiBtn();
 }
-const ENV_NOTE = { production: "Your live store on walmart.com", sandbox: "Walmart's test environment — nothing real is touched" };
-function setApiEnv(env) {
-  document.querySelectorAll(".api-seg-btn").forEach((b) => {
-    const on = b.dataset.env === env;
-    b.classList.toggle("active", on);
-    b.setAttribute("aria-checked", on ? "true" : "false");
-  });
-  $("apiEnvNote").textContent = ENV_NOTE[env] || "";
-}
-const apiEnvValue = () => document.querySelector(".api-seg-btn.active")?.dataset.env || "production";
+const setApiEnv = (env) => { $("apiSandbox").checked = env === "sandbox"; };
+const apiEnvValue = () => ($("apiSandbox").checked ? "sandbox" : "production");
 function openApiModal(message, isError) {
   const msg = $("apiMsg");
   msg.textContent = message || "";
   msg.className = "api-msg" + (isError ? " error" : "") + (message ? "" : " hidden");
   const state = $("apiState");
-  state.textContent = apiReady() ? `Connected · ${apiSettings.env === "sandbox" ? "sandbox" : "production"}` : "Not connected";
+  state.textContent = apiReady() ? (apiSettings.env === "sandbox" ? "Connected · sandbox" : "Connected") : "Not connected";
   state.className = "api-state " + (apiReady() ? "on" : "off");
   $("apiClientId").value = apiSettings.clientId || "";
   $("apiSecret").value = "";
@@ -597,7 +588,6 @@ function openApiModal(message, isError) {
   $("apiTestState").textContent = "";
   $("apiTestState").className = "api-test-state";
   $("apiRemove").classList.toggle("hidden", !(apiSettings.clientId || apiSettings.hasSecret));
-  $("apiLast").textContent = apiSettings.lastScan ? `Last API scan ${when(apiSettings.lastScan)}` : "";
   window.api.hideListing();
   hideAmazonPage();
   $("apiModal").classList.remove("hidden");
@@ -605,7 +595,7 @@ function openApiModal(message, isError) {
 }
 function closeApiModal() { $("apiModal").classList.add("hidden"); }
 const apiFormValues = () => ({ clientId: $("apiClientId").value.trim(), clientSecret: $("apiSecret").value.trim(), env: apiEnvValue() });
-document.querySelectorAll(".api-seg-btn").forEach((b) => b.addEventListener("click", () => setApiEnv(b.dataset.env)));
+
 $("apiReveal").addEventListener("click", () => {
   const f = $("apiSecret");
   const show = f.type === "password";
@@ -619,7 +609,6 @@ $("apiCancel").addEventListener("click", closeApiModal);
 $("apiModal").addEventListener("click", (e) => { if (e.target.id === "apiModal") closeApiModal(); });
 $("apiModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeApiModal(); });
 $("apiKeysLink").addEventListener("click", () => window.api.openApiKeys());
-$("apiDocsLink").addEventListener("click", () => window.api.openApiDocs());
 $("apiTest").addEventListener("click", async () => {
   const v = apiFormValues();
   if (!v.clientId || (!v.clientSecret && !apiSettings.hasSecret)) {
@@ -724,15 +713,15 @@ function marketRows() {
     const a = apiOf(f.it) || {};
     return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "", f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || (f.lost ? "another seller" : "")) : "",
       f.wmLow ?? "", f.sellers.length || "", f.low ?? "", amzList(f.it).map((a) => a.asin || "typed").join(" "), gap, f.bb?.at ? new Date(f.bb.at).toLocaleString() : "",
-      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? "", a.repricerStrategy ?? "", a.repricerMin ?? "", a.repricerMax ?? ""];
+      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? ""];
   });
 }
 $("mExportBtn").addEventListener("click", async () => {
   const rows = marketRows();
   if (!rows.length) { alert("Nothing to export yet."); return; }
   const head = ["SKU", "Item ID", "Our Price", "Walmart Buy Box", "Buy Box Seller", "Walmart Lowest", "Walmart Sellers", "Amazon Buy Box", "Amazon Listings", "Gap vs Amazon", "Checked",
-    "Win Rate %", "Competitor Price", "Suggested Price", "Repricer Strategy", "Repricer Min", "Repricer Max"];
-  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14, 24, 12, 12] });
+    "Win Rate %", "Competitor Price", "Suggested Price"];
+  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14] });
   finishExport(res, rows.length);
 });
 

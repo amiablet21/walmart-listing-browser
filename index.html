@@ -350,81 +350,31 @@
   <div id="apiModal" class="modal-overlay hidden">
     <div class="modal api-card" role="dialog" aria-labelledby="apiTitle">
       <div class="api-head">
-        <div class="api-mark" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L19 4m-3 3l3 3"/></svg>
-        </div>
-        <div class="api-head-text">
-          <h2 id="apiTitle">Walmart seller API</h2>
-          <div class="api-sub">The market scan pulls every buy box straight from Walmart.</div>
-        </div>
+        <h2 id="apiTitle">Walmart API keys</h2>
         <span id="apiState" class="api-state off">Not connected</span>
       </div>
-
-      <div class="api-body">
-        <div class="api-perks">
-          <div class="api-perk">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>
-            <div><b>One call, every SKU</b><span>Buy box prices in seconds, no page reads</span></div>
-          </div>
-          <div class="api-perk">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
-            <div><b>Walmart's own numbers</b><span>Win rate, competitor and suggested prices</span></div>
-          </div>
-          <div class="api-perk">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
-            <div><b>Repricer at a glance</b><span>Strategy and min–max window per SKU</span></div>
-          </div>
-        </div>
-
-        <p id="apiMsg" class="api-msg hidden"></p>
-
-        <div class="api-form">
-          <div class="api-field">
-            <label for="apiClientId">Client ID</label>
-            <input id="apiClientId" type="text" autocomplete="off" spellcheck="false" placeholder="e.g. 7f1c2a9e-…" />
-          </div>
-          <div class="api-field">
-            <label for="apiSecret">Client Secret</label>
-            <div class="api-secret">
-              <input id="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="Client Secret" />
-              <button type="button" id="apiReveal" class="api-eye" title="Show the secret" aria-label="Show the secret">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button>
-            </div>
-          </div>
-          <div class="api-field wide">
-            <label id="apiEnvLabel">Environment</label>
-            <div class="api-env-row">
-              <div class="api-seg" role="radiogroup" aria-labelledby="apiEnvLabel">
-                <button type="button" class="api-seg-btn active" data-env="production" role="radio" aria-checked="true">Production</button>
-                <button type="button" class="api-seg-btn" data-env="sandbox" role="radio" aria-checked="false">Sandbox</button>
-              </div>
-              <span id="apiEnvNote" class="api-env-note">Your live store on walmart.com</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="api-test-row">
-          <button id="apiTest" type="button">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
-            Test connection
+      <p class="api-sub">The market scan then pulls every buy box straight from Walmart. <button id="apiKeysLink" class="linkish" type="button">Where to get keys</button></p>
+      <p id="apiMsg" class="api-msg hidden"></p>
+      <label class="api-field">
+        <span>Client ID</span>
+        <input id="apiClientId" type="text" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="api-field">
+        <span>Client Secret</span>
+        <span class="api-secret">
+          <input id="apiSecret" type="password" autocomplete="off" spellcheck="false" />
+          <button type="button" id="apiReveal" class="api-eye" title="Show the secret" aria-label="Show the secret">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
-          <span id="apiTestState" class="api-test-state"></span>
-        </div>
-      </div>
-
-      <div class="api-foot">
-        <div class="api-foot-text">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span>Stored encrypted on this computer and sent only to Walmart. Get keys at
-            <button id="apiKeysLink" class="linkish" type="button">Developer Portal → API keys</button>
-            · <button id="apiDocsLink" class="linkish" type="button">API reference</button><span id="apiLast" class="api-last"></span></span>
-        </div>
-        <div class="api-actions">
-          <button id="apiRemove" class="danger hidden">Remove keys</button>
-          <button id="apiCancel">Cancel</button>
-          <button id="apiSave" class="primary">Save</button>
-        </div>
+        </span>
+      </label>
+      <label class="api-sandbox"><input id="apiSandbox" type="checkbox" /> Use Walmart's sandbox (test) environment</label>
+      <div class="api-actions">
+        <button id="apiTest" type="button">Test</button>
+        <span id="apiTestState" class="api-test-state"></span>
+        <button id="apiRemove" class="linkish hidden" type="button">Remove keys</button>
+        <button id="apiCancel">Cancel</button>
+        <button id="apiSave" class="primary">Save</button>
       </div>
     </div>
   </div>

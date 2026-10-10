@@ -648,67 +648,45 @@ button.mini { padding: 6px 11px; font-size: 12.5px; min-height: 32px; }
 .m-toolbar #mApiBtn { position: relative; color: #6E6B5C; }
 .m-toolbar #mApiBtn.attention::after { content: ""; position: absolute; top: 6px; right: 6px; width: 6px; height: 6px; border-radius: 50%; background: #B8841A; }
 /* Walmart's own numbers under the three big stats */
-.m-stats.api { margin-top: -1px; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top-left-radius: 0; border-top-right-radius: 0; }
-.m-stats.api > div:nth-child(2n) { border-right: 0; }
-.m-stats.api > div:nth-child(n+3) { border-top: 1px solid #E9E4D7; }
-.m-id .m-stats:not(.api):has(+ .m-stats.api) { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.m-stats.api { margin-top: -1px; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top-left-radius: 0; border-top-right-radius: 0; }
 .m-stats.api b { font-size: 14px; }
 .m-stats.api b.txt { font-size: 12px; line-height: 1.3; white-space: normal; word-break: break-word; }
 .m-stats.api i { font-style: normal; font-size: 10.5px; color: #6E6B5C; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-seller .mini { padding: 3px 9px; min-height: 0; font-size: 11.5px; margin-left: 6px; }
 .m-seller.m-note { flex-wrap: wrap; line-height: 1.5; }
 
-/* API keys dialog */
-.modal.api-card { width: min(620px, 94vw); padding: 0; overflow: hidden; border-radius: 16px; }
-.api-head { display: flex; align-items: center; gap: 14px; padding: 20px 24px 18px; border-bottom: 1px solid #E9E4D7; background: linear-gradient(180deg, #F7F6F1 0%, #FFFFFF 100%); }
-.api-mark { width: 40px; height: 40px; border-radius: 12px; background: #4C5B9E; color: #fff; display: inline-flex; align-items: center; justify-content: center; flex: none; box-shadow: 0 6px 16px rgba(76, 91, 158, .25); }
-.api-head-text { flex: 1; min-width: 0; }
-.api-head h2 { margin: 0; font-size: 17px; line-height: 1.2; }
-.api-sub { font-size: 12.5px; color: #6E6B5C; margin-top: 3px; }
-.api-state { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+/* API keys dialog — deliberately plain */
+.modal.api-card { width: min(440px, 94vw); padding: 22px 24px; border-radius: 14px; }
+.api-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.api-head h2 { margin: 0; font-size: 16px; }
+.api-state { font-size: 11.5px; font-weight: 600; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .api-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.api-state.on { background: #E3EFDD; color: #3F6A2F; }
-.api-state.off { background: #F4F1E9; color: #6E6B5C; }
-.api-body { padding: 18px 24px 2px; }
-.api-perks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.api-perk { display: flex; gap: 9px; align-items: flex-start; padding: 10px 11px; border: 1px solid #E9E4D7; border-radius: 10px; background: #FAF9F5; min-width: 0; }
-.api-perk svg { flex: none; color: #4C5B9E; margin-top: 1px; }
-.api-perk b { display: block; font-size: 12px; color: #1C1B16; line-height: 1.3; }
-.api-perk span { display: block; font-size: 11px; color: #6E6B5C; margin-top: 2px; line-height: 1.35; }
-.api-msg { margin: 14px 0 0; padding: 9px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; background: #E6E8F3; color: #3D4A85; }
+.api-state.on { color: #3F6A2F; }
+.api-state.off { color: #918D7C; }
+.api-sub { margin: 6px 0 16px; font-size: 12.5px; color: #6E6B5C; line-height: 1.5; }
+.api-sub .linkish { font-size: 12.5px; }
+.api-msg { margin: 0 0 14px; padding: 8px 11px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; background: #E6E8F3; color: #3D4A85; }
 .api-msg.error { background: #FBE8E5; color: #BB3B2E; }
-.api-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
-.api-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.api-field.wide { grid-column: 1 / -1; }
-.api-field label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; }
+.api-field { display: block; margin-bottom: 12px; }
+.api-field > span:first-child { display: block; font-size: 12px; font-weight: 600; color: #45433A; margin-bottom: 5px; }
 .api-field input[type="text"], .api-field input[type="password"] {
   width: 100%; padding: 9px 11px; border: 1px solid #D9D2C1; border-radius: 8px;
-  font-family: "Geist Mono", "JetBrains Mono", Consolas, monospace; font-size: 12.5px;
-  background: #fff; color: #1C1B16; transition: border-color .12s, box-shadow .12s;
+  font-family: "Geist Mono", "JetBrains Mono", Consolas, monospace; font-size: 12.5px; background: #fff; color: #1C1B16;
 }
 .api-field input::placeholder { color: #918D7C; font-family: "Geist", "Inter", system-ui, sans-serif; }
 .api-field input:focus { outline: none; border-color: #4C5B9E; box-shadow: 0 0 0 3px rgba(76, 91, 158, .22); }
-.api-secret { position: relative; }
+.api-secret { position: relative; display: block; }
 .api-secret input { padding-right: 38px; }
 .api-eye { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); border: 0; background: none; color: #918D7C; padding: 5px; border-radius: 6px; cursor: pointer; min-height: 0; display: inline-flex; }
 .api-eye:hover { color: #1C1B16; background: #F4F1E9; }
 .api-eye.on { color: #4C5B9E; }
-.api-env-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.api-seg { display: inline-flex; background: #F4F1E9; border-radius: 9px; padding: 3px; gap: 2px; }
-.api-seg-btn { border: 0; background: transparent; padding: 6px 16px; border-radius: 7px; font: inherit; font-size: 12.5px; font-weight: 600; color: #6E6B5C; cursor: pointer; min-height: 0; }
-.api-seg-btn:hover { color: #1C1B16; background: transparent; }
-.api-seg-btn.active { background: #fff; color: #1C1B16; box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
-.api-env-note { font-size: 12px; color: #6E6B5C; }
-.api-test-row { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
-.api-test-row button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; font-size: 12.5px; flex: none; }
-.api-test-state { font-size: 12.5px; color: #6E6B5C; min-width: 0; }
+.api-sandbox { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: #6E6B5C; cursor: pointer; margin: 2px 0 0; }
+.api-sandbox input { accent-color: #4C5B9E; margin: 0; }
+.api-actions { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
+.api-actions button { padding: 8px 14px; }
+.api-actions .linkish { padding: 0; margin-left: auto; font-size: 12px; color: #BB3B2E; }
+.api-actions .linkish + button { margin-left: 4px; }
+.api-actions #apiRemove.hidden + #apiCancel { margin-left: auto; }
+.api-test-state { font-size: 12px; color: #6E6B5C; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .api-test-state.ok { color: #3F6A2F; font-weight: 600; }
-.api-test-state.error { color: #BB3B2E; font-weight: 600; }
-.api-foot { display: flex; align-items: center; gap: 16px; padding: 16px 24px 18px; margin-top: 18px; border-top: 1px solid #E9E4D7; background: #FAF9F5; }
-.api-foot-text { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; color: #6E6B5C; line-height: 1.5; }
-.api-foot-text svg { flex: none; margin-top: 3px; }
-.api-foot-text .linkish { font-size: 11.5px; }
-.api-last { display: block; margin-top: 2px; color: #918D7C; }
-.api-last:empty { display: none; }
-.api-actions { display: flex; gap: 8px; flex: none; }
-.api-actions button { padding: 8px 16px; }
+.api-test-state.error { color: #BB3B2E; font-weight: 600; white-space: normal; }
