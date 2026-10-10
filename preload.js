@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("api", {
   openAmazon: (asin) => ipcRenderer.invoke("market:openAmazon", asin),
   // Walmart Marketplace API (Market tab scan)
   marketInsights: (skus) => ipcRenderer.invoke("market:insights", skus),
+  importLinnworks: () => ipcRenderer.invoke("market:importLinnworks"),
   onApiProgress: (cb) => ipcRenderer.on("api:progress", (_e, p) => cb(p)),
   getApiSettings: () => ipcRenderer.invoke("api:getSettings"),
   saveApiSettings: (patch) => ipcRenderer.invoke("api:saveSettings", patch),

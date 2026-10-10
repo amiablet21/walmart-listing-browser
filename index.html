@@ -300,6 +300,10 @@
         <span class="m-sched-label">Daily scan at</span>
         <input id="mSchedTime" type="time" value="09:00" aria-label="Daily scan time" />
       </label>
+      <button id="mLwBtn" title="Import the Linnworks SKU export so Walmart SKUs of one product share their Amazon links" aria-label="Linnworks mapping">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="8.5" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/><path d="M12 13v1"/></svg>
+        <span>Linnworks</span>
+      </button>
       <button id="mApiBtn" class="m-api" title="Walmart seller API keys" aria-label="Walmart API settings">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L19 4m-3 3l3 3"/></svg>
         <span>API</span>
@@ -375,6 +379,21 @@
         <button id="apiRemove" class="linkish hidden" type="button">Remove keys</button>
         <button id="apiCancel">Cancel</button>
         <button id="apiSave" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Linnworks mapping: group Walmart SKUs that are one product -->
+  <div id="lwModal" class="modal-overlay hidden">
+    <div class="modal api-card" role="dialog" aria-labelledby="lwTitle">
+      <div class="api-head"><h2 id="lwTitle">Linnworks mapping</h2></div>
+      <p class="api-sub">Export your SKUs from Linnworks (the file with the <b>Mappings</b> sheet) and pick it here. Walmart SKUs that belong to one Linnworks SKU then form a group that shares its Amazon links — link once, it counts for all of them.</p>
+      <p id="lwCurrent" class="lw-current"></p>
+      <p id="lwStatus" class="status"></p>
+      <div class="api-actions">
+        <button id="lwChoose" class="primary">Choose file…</button>
+        <button id="lwClear" class="linkish hidden" type="button">Remove mapping</button>
+        <button id="lwClose">Close</button>
       </div>
     </div>
   </div>

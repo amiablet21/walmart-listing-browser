@@ -72,6 +72,43 @@ const when = (t) => {
   return d.toDateString() === now.toDateString() ? hm : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + hm;
 };
 
+// ---- Linnworks mapping -----------------------------------------------------------
+// Several Walmart SKUs can be one product in Linnworks (one inventory SKU,
+// many channel SKUs). With the mapping imported, those rows form a group:
+// one set of Amazon links shared by every row in it (mirrored onto each row
+// so nothing is lost if a row is deleted), and one parent line in the table.
+let lwMap = {};   // walmart channel SKU (lower-case) → Linnworks inventory SKU
+let lwMeta = null; // { file, at, pairs, inv }
+try { lwMap = JSON.parse(localStorage.getItem("lwMap") || "{}") || {}; } catch { lwMap = {}; }
+try { lwMeta = JSON.parse(localStorage.getItem("lwMeta") || "null"); } catch { lwMeta = null; }
+const lwOf = (it) => lwMap[String(it?.sku ?? "").trim().toLowerCase()] || null;
+const groupKey = (i) => lwOf(items[i]) || String(items[i].sku ?? "").trim() || idOf(items[i]);
+const groupMembers = (i) => { const k = groupKey(i); return items.map((_, j) => j).filter((j) => idOf(items[j]) && groupKey(j) === k); };
+// copy row i's Amazon links onto every other row of its group
+function syncAmz(i) {
+  const src = Array.isArray(items[i]?.amz) ? items[i].amz : [];
+  for (const j of groupMembers(i)) if (j !== i) items[j].amz = src.map((a) => ({ ...a }));
+}
+// after a mapping import: every group shares the union of its rows' links
+function mergeGroupAmz() {
+  const seen = new Set();
+  for (let i = 0; i < items.length; i++) {
+    if (!idOf(items[i])) continue;
+    const k = groupKey(i);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    const members = groupMembers(i);
+    if (members.length < 2) continue;
+    const union = [];
+    for (const j of members) for (const a of amzList(items[j])) {
+      const dup = union.find((u) => (a.asin && u.asin === a.asin) || (!a.asin && !u.asin && a.manual && u.manual && u.price === a.price));
+      if (!dup) union.push({ ...a });
+      else if ((a.at || 0) > (dup.at || 0)) Object.assign(dup, a); // keep the freshest read
+    }
+    for (const j of members) items[j].amz = union.map((a) => ({ ...a }));
+  }
+}
+
 // ---- per-row facts -------------------------------------------------------------
 function amzList(it) { return Array.isArray(it.amz) ? it.amz : []; }
 function amzLow(it) {
@@ -141,7 +178,7 @@ function rowMatches(i) {
   if (mFilter === "missed" && !f.missed) return false;
   if (mSearch) {
     const q = mSearch.toLowerCase();
-    const hay = [f.it.sku, f.it.itemId, f.bb?.seller, ...f.sellers.map((s) => s.seller), ...amzList(f.it).map((a) => a.asin + " " + (a.title || ""))].join(" ").toLowerCase();
+    const hay = [f.it.sku, f.it.itemId, lwOf(f.it), f.bb?.seller, ...f.sellers.map((s) => s.seller), ...amzList(f.it).map((a) => a.asin + " " + (a.title || ""))].join(" ").toLowerCase();
     if (!hay.includes(q)) return false;
   }
   return true;
@@ -159,10 +196,46 @@ function renderMarket() {
     tr.innerHTML = `<td colspan="5" class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
     tb.appendChild(tr);
   }
-  for (const i of rows) {
+  // rows in first-appearance order, grouped under their Linnworks SKU
+  const groups = new Map();
+  for (const i of rows) { const k = groupKey(i); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(i); }
+  const ordered = [];
+  for (const [, members] of groups) {
+    const lw = lwOf(items[members[0]]);
+    const all = groupMembers(members[0]);
+    if (lw && all.length > 1) ordered.push({ parent: true, lw, members, all });
+    for (const i of members) ordered.push({ i, grouped: !!(lw && all.length > 1) });
+  }
+  for (const g of ordered) {
+    if (g.parent) {
+      const facts = g.all.map(rowFacts);
+      const you = facts.filter((x) => x.mine).length, lost = facts.filter((x) => x.lost).length;
+      const host = facts[0];
+      const tr = document.createElement("tr");
+      tr.className = "m-row m-parent edge-" + (facts.some((x) => x.cheaper) ? "red" : facts.some((x) => x.lost) ? "amber" : you ? "green" : "none") + (g.all.includes(mSelected) ? " in-sel" : "");
+      let amz;
+      if (!host.linked) amz = `<button type="button" class="m-link-chip" data-link="${g.members[0]}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Link listing</button>`;
+      else if (host.low != null) amz = `<b>${fmt(host.low)}</b>` + (host.linked > 1 ? `<span class="m-muted">lowest of ${host.linked} linked</span>` : "") + (amzList(host.it).some((a) => a.robot) ? `<span class="m-pill warn">needs a look</span>` : "");
+      else amz = `<span class="m-muted">${amzList(host.it).some((a) => a.robot) ? "Robot check" : "Not read yet"}</span>`;
+      tr.innerHTML =
+        `<td class="sku"><span class="m-pill lw" title="Linnworks inventory SKU">LW</span>${esc(g.lw)}</td>` +
+        `<td class="m-muted">${g.all.length} Walmart SKUs</td>` +
+        `<td class="num"></td>` +
+        `<td class="sep">${you ? `<span class="m-pill you">You</span><b>${you}</b>` : ""}${lost ? `${you ? " " : ""}<span class="m-pill lost">Lost</span><b>${lost}</b>` : ""}${!you && !lost ? `<span class="m-muted">Not scanned yet</span>` : ""}</td>` +
+        `<td class="sep">${amz}</td>`;
+      tr.addEventListener("click", (e) => {
+        if (!g.all.includes(mSelected)) mSelected = g.members[0];
+        mEditing = null;
+        renderMarket();
+        if (e.target.closest(".m-link-chip")) { e.preventDefault(); $("mLinkInput")?.focus(); }
+      });
+      tb.appendChild(tr);
+      continue;
+    }
+    const i = g.i;
     const f = rowFacts(i);
     const tr = document.createElement("tr");
-    tr.className = "m-row edge-" + f.edge + (i === mSelected ? " sel" : "");
+    tr.className = "m-row edge-" + f.edge + (i === mSelected ? " sel" : "") + (g.grouped ? " m-child" : "");
     const reading = mScan.running && mScan.current && mScan.currentId === idOf(f.it);
     let wm;
     if (reading && mScan.step === "walmart") wm = `<span class="m-reading"><span class="m-spin"></span>Reading Walmart page…</span>`;
@@ -180,6 +253,7 @@ function renderMarket() {
     else if (!f.linked) amz = `<button type="button" class="m-link-chip" data-link="${i}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Link listing</button>`;
     else if (f.low != null) amz = `<b>${fmt(f.low)}</b>` + (f.linked > 1 ? `<span class="m-muted">lowest of ${f.linked} linked</span>` : "") + (amzList(f.it).some((a) => a.robot) ? `<span class="m-pill warn" title="Amazon asked for a robot check — open the row to pass it">needs a look</span>` : "");
     else amz = `<span class="m-muted">${amzList(f.it).some((a) => a.robot) ? "Robot check" : f.linked ? "Not read yet" : ""}</span>`;
+    if (g.grouped) amz = `<span class="m-muted m-shared" title="Amazon links are shared across the Linnworks group">${f.linked ? `shared · ${f.cheaper ? "cheaper than this SKU" : "not cheaper"}` : "shared"}</span>`;
     tr.innerHTML =
       `<td class="sku">${esc(f.it.sku)}</td>` +
       `<td class="mono">${esc(f.it.itemId)}</td>` +
@@ -287,6 +361,11 @@ function renderPanel() {
       ${a.robot && a.asin ? `<div class="m-amz-robot"><button class="mini" data-show="${k}">Show the Amazon page here</button><span class="m-muted">Pass the check once; later reads go through.</span></div>` : ""}
     </div>`;
   }).join("");
+  const lw = lwOf(it);
+  const sibs = lw ? groupMembers(i).filter((j) => j !== i) : [];
+  const groupLine = lw
+    ? `<div class="m-group"><span class="m-pill lw">LW</span><b>${esc(lw)}</b>${sibs.length ? `<span class="m-muted">· also ${sibs.map((j) => `<a href="#sib" data-sib="${j}">${esc(items[j].sku || items[j].itemId)}</a>`).join(", ")}</span>` : `<span class="m-muted">· only this Walmart SKU</span>`}</div>`
+    : "";
   p.innerHTML = `
     <div class="m-card m-id">
       <div class="m-id-head">
@@ -294,6 +373,7 @@ function renderPanel() {
         <button class="m-icon" id="mOpenWm" title="Open Walmart listing" aria-label="Open Walmart listing"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>
         <button class="m-icon" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Re-check this listing now" aria-label="Re-check this listing now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
       </div>
+      ${groupLine}
       <div class="m-stats">
         <div><span>Our price</span><b>${fmt(f.during)}</b></div>
         <div><span>Walmart</span><b class="wm">${fmt(f.wmLow)}</b></div>
@@ -306,7 +386,7 @@ function renderPanel() {
       ${sellersHtml}${sellersNote}
     </div>
     <div class="m-card">
-      <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}</span></div>
+      <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}${sibs.length ? ` · shared by ${sibs.length + 1} Walmart SKUs` : ""}</span></div>
       ${amzHtml}
       <div class="m-add">
         <input id="mLinkInput" type="text" placeholder="Paste Amazon URL or ASIN" aria-label="Add Amazon listing" />
@@ -331,6 +411,7 @@ function renderPanel() {
     noteTimer = setTimeout(() => { saveQuiet(); $("mNoteState").textContent = "Saved"; setTimeout(() => { if ($("mNoteState")) $("mNoteState").textContent = ""; }, 1500); }, 400);
   });
   note?.addEventListener("blur", () => { if (it.note !== undefined) saveQuiet(); });
+  p.querySelectorAll("[data-sib]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); mSelected = Number(a.dataset.sib); mEditing = null; renderMarket(); }));
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
   p.querySelector("#mReadPage")?.addEventListener("click", () => readPageFor(i));
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
@@ -363,7 +444,7 @@ function renderPanel() {
     const k = Number(b.dataset.unlink);
     const a = it.amz[k];
     if (!confirm(`Unlink ${a.asin || "this typed price"} from ${it.sku || it.itemId}?`)) return;
-    it.amz.splice(k, 1); mEditing = null; saveQuiet(); renderMarket();
+    it.amz.splice(k, 1); syncAmz(i); mEditing = null; saveQuiet(); renderMarket();
   }));
   p.querySelectorAll("[data-show]").forEach((b) => b.addEventListener("click", () => showAmazonPage(it.amz[Number(b.dataset.show)].asin)));
 }
@@ -395,10 +476,11 @@ function saveEdit(i, k) {
     a.manual = false; a.price = null; a.at = null; // back to reading it from Amazon
   }
   if (!a.asin && !a.manual) { it.amz.splice(k, 1); } // nothing to read and nothing typed
+  syncAmz(i);
   mEditing = null;
   saveQuiet();
   renderMarket();
-  if (a.asin && !a.manual && !mScan.running) readAmazonInto(a).then(() => { saveQuiet(); renderMarket(); });
+  if (a.asin && !a.manual && !mScan.running) readAmazonInto(a).then(() => { syncAmz(i); saveQuiet(); renderMarket(); });
 }
 
 // "https://www.amazon.com/Samsung-…/dp/B0CT4KQ9NM?…", "amazon.com/gp/product/B0…", or a bare ASIN
@@ -415,10 +497,11 @@ function linkAmazon(i, text) {
   if (it.amz.some((a) => a.asin === asin)) { alert(`${asin} is already linked to this SKU.`); return false; }
   const entry = { asin, title: "", price: null, at: null };
   it.amz.push(entry);
+  syncAmz(i);
   saveQuiet();
   renderMarket();
   // read it right away so the price shows without waiting for the next scan
-  if (!mScan.running) readAmazonInto(entry).then(() => { saveQuiet(); renderMarket(); });
+  if (!mScan.running) readAmazonInto(entry).then(() => { syncAmz(i); saveQuiet(); renderMarket(); });
   return true;
 }
 
@@ -527,6 +610,7 @@ async function runMarketScan(onlyRows = null) {
       if (amzSeen.has(a.asin)) { Object.assign(a, amzSeen.get(a.asin)); continue; }
       await readAmazonInto(a);
       amzSeen.set(a.asin, { price: a.price, title: a.title, prime: a.prime, seller: a.seller, offers: a.offers, at: a.at, failed: a.failed, robot: a.robot, unavailable: a.unavailable, sold: a.sold });
+      rowsFor.forEach(syncAmz);
       saveQuiet();
       if (n < entries.length - 1) await sleep(rnd(AMZ_PAUSE_MS[0], AMZ_PAUSE_MS[1]));
     }
@@ -697,6 +781,49 @@ function hideAmazonPage() {
 $("mAmzHide").addEventListener("click", () => { hideAmazonPage(); if (mSelected >= 0) runMarketScan([mSelected]); });
 window.addEventListener("resize", () => { if (amazonPageShown) window.api.showAmazon(null, amazonBounds()); });
 
+// ---- Linnworks mapping import ---------------------------------------------------------------
+function renderLwModal(status, kind) {
+  const el = $("lwStatus");
+  if (status != null) { el.textContent = status; el.className = "status" + (kind ? " " + kind : ""); }
+  const matched = items.filter((it) => idOf(it) && lwOf(it)).length;
+  const groups = new Set(items.filter((it) => idOf(it) && lwOf(it)).map(lwOf)).size;
+  $("lwCurrent").textContent = lwMeta
+    ? `${lwMeta.file} · imported ${when(lwMeta.at)} · ${lwMeta.pairs} Walmart SKUs under ${lwMeta.inv} Linnworks SKUs · ${matched} rows here matched into ${groups} groups`
+    : "No mapping imported yet — every row stands on its own.";
+  $("lwClear").classList.toggle("hidden", !lwMeta);
+}
+function openLwModal() { renderLwModal("", ""); window.api.hideListing(); hideAmazonPage(); $("lwModal").classList.remove("hidden"); }
+function closeLwModal() { $("lwModal").classList.add("hidden"); }
+$("mLwBtn").addEventListener("click", openLwModal);
+$("lwClose").addEventListener("click", closeLwModal);
+$("lwModal").addEventListener("click", (e) => { if (e.target.id === "lwModal") closeLwModal(); });
+$("lwModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeLwModal(); });
+$("lwChoose").addEventListener("click", async () => {
+  renderLwModal("Reading the file…");
+  const res = await window.api.importLinnworks();
+  if (res?.canceled) { renderLwModal("", ""); return; }
+  if (!res || res.error) { renderLwModal(res?.error || "Couldn't read that file.", "error"); return; }
+  const map = {};
+  const inv = new Set();
+  for (const { inv: lw, channel } of res.pairs) { map[String(channel).trim().toLowerCase()] = String(lw).trim(); inv.add(String(lw).trim()); }
+  lwMap = map;
+  lwMeta = { file: res.file, at: Date.now(), pairs: res.pairs.length, inv: inv.size };
+  localStorage.setItem("lwMap", JSON.stringify(lwMap));
+  localStorage.setItem("lwMeta", JSON.stringify(lwMeta));
+  mergeGroupAmz();
+  saveQuiet();
+  renderMarket();
+  const matched = items.filter((it) => idOf(it) && lwOf(it)).length;
+  renderLwModal(`Imported. ${matched} of ${items.filter(idOf).length} rows matched a Linnworks SKU; their Amazon links are now shared within each group.`, "ok");
+});
+$("lwClear").addEventListener("click", () => {
+  if (!confirm("Remove the Linnworks mapping? Rows keep their Amazon links; they just stop being shared.")) return;
+  lwMap = {}; lwMeta = null;
+  localStorage.removeItem("lwMap"); localStorage.removeItem("lwMeta");
+  renderMarket();
+  renderLwModal("Mapping removed.", "");
+});
+
 // ---- filters, search, export ---------------------------------------------------------------
 $("mSearch").addEventListener("input", () => { mSearch = $("mSearch").value.trim(); renderMarket(); });
 $("mMissedBtn").addEventListener("click", () => { mFilter = mFilter === "missed" ? "all" : "missed"; renderMarket(); });
@@ -713,15 +840,15 @@ function marketRows() {
     const a = apiOf(f.it) || {};
     return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "", f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || (f.lost ? "another seller" : "")) : "",
       f.wmLow ?? "", f.sellers.length || "", f.low ?? "", amzList(f.it).map((a) => a.asin || "typed").join(" "), gap, f.bb?.at ? new Date(f.bb.at).toLocaleString() : "",
-      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? ""];
+      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? "", lwOf(f.it) || ""];
   });
 }
 $("mExportBtn").addEventListener("click", async () => {
   const rows = marketRows();
   if (!rows.length) { alert("Nothing to export yet."); return; }
   const head = ["SKU", "Item ID", "Our Price", "Walmart Buy Box", "Buy Box Seller", "Walmart Lowest", "Walmart Sellers", "Amazon Buy Box", "Amazon Listings", "Gap vs Amazon", "Checked",
-    "Win Rate %", "Competitor Price", "Suggested Price"];
-  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14] });
+    "Win Rate %", "Competitor Price", "Suggested Price", "Linnworks SKU"];
+  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14, 26] });
   finishExport(res, rows.length);
 });
 

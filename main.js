@@ -183,6 +183,82 @@ async function saveImportTemplate() {
   }
 }
 
+// ---- Linnworks mapping import (Market tab) ---------------------------------
+// Reads a Linnworks SKU export and returns { inv, channel } pairs for Walmart:
+// the "Mappings" sheet (Inventory SKU / Channel / Channel SKU), or, failing
+// that, a sheet with a "Walmart SKU" column holding " | "-separated channel
+// SKUs. Headers are matched by name, so the sheet order and extra columns
+// don't matter. CSV works the same way (one sheet).
+function linnworksPairsFromRows(rows) {
+  const header = rows.find((r) => r.some((c) => /sku/i.test(String(c ?? ""))));
+  if (!header) return [];
+  const labels = header.map((h) => String(h ?? "").trim().toLowerCase());
+  const find = (...tests) => labels.findIndex((l) => tests.some((t) => t.test(l)));
+  const iChan = find(/^channel sku$/, /channel\s*sku/);
+  const iInv = find(/^inventory sku$/, /inventory\s*sku/, /^sku$/);
+  const iChannel = find(/^channel$/);
+  const out = [];
+  const start = rows.indexOf(header) + 1;
+  if (iChan >= 0 && iInv >= 0) {
+    for (const r of rows.slice(start)) {
+      if (iChannel >= 0 && !/walmart/i.test(String(r[iChannel] ?? ""))) continue;
+      const inv = String(r[iInv] ?? "").trim(), channel = String(r[iChan] ?? "").trim();
+      if (inv && channel) out.push({ inv, channel });
+    }
+    return out;
+  }
+  const iWal = find(/^walmart sku$/, /walmart\s*sku/);
+  if (iWal >= 0 && iInv >= 0) {
+    for (const r of rows.slice(start)) {
+      const inv = String(r[iInv] ?? "").trim();
+      for (const channel of String(r[iWal] ?? "").split("|").map((x) => x.trim()).filter(Boolean)) {
+        if (inv) out.push({ inv, channel });
+      }
+    }
+  }
+  return out;
+}
+async function importLinnworks() {
+  const res = await dialog.showOpenDialog(win, {
+    title: "Import the Linnworks SKU export",
+    filters: [
+      { name: "Spreadsheets", extensions: ["xlsx", "csv", "tsv", "txt"] },
+      { name: "All files", extensions: ["*"] },
+    ],
+    properties: ["openFile"],
+  });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  const file = res.filePaths[0];
+  try {
+    let pairs = [];
+    if (file.toLowerCase().endsWith(".xlsx")) {
+      const ExcelJS = require("exceljs");
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.readFile(file);
+      // prefer a sheet named like "Mappings"; otherwise the first sheet that yields pairs
+      const sheets = [...wb.worksheets].sort((a, b) => /mapping/i.test(b.name) - /mapping/i.test(a.name));
+      for (const ws of sheets) {
+        const rows = [];
+        ws.eachRow((row) => {
+          const vals = [];
+          for (let c = 1; c <= Math.min(ws.columnCount || 30, 40); c++) vals.push(cellText(row.getCell(c)));
+          rows.push(vals);
+        });
+        pairs = linnworksPairsFromRows(rows);
+        if (pairs.length) break;
+      }
+    } else {
+      const text = fs.readFileSync(file, "utf8").replace(/\r/g, "");
+      const rows = text.split("\n").filter((l) => l.trim()).map((line) => line.includes("\t") ? line.split("\t") : splitCsvLine(line));
+      pairs = linnworksPairsFromRows(rows);
+    }
+    if (!pairs.length) return { error: "No Walmart mappings found. The file needs an Inventory SKU column and a Channel SKU column (the Linnworks export's Mappings sheet), or a Walmart SKU column." };
+    return { pairs, file: path.basename(file) };
+  } catch (e) {
+    return { error: e.message || String(e) };
+  }
+}
+
 // ---- spreadsheet export (.xlsx / .csv) -------------------------------------
 async function exportSheet(payload) {
   const head = Array.isArray(payload?.head) ? payload.head : [];
@@ -1157,6 +1233,7 @@ app.whenReady().then(() => {
   ipcMain.handle("market:hideAmazon", () => amazonHide());
   ipcMain.handle("market:openAmazon", (_e, asin) => shell.openExternal(amazonUrl(asin)));
   ipcMain.handle("market:insights", (_e, skus) => marketInsights(skus));
+  ipcMain.handle("market:importLinnworks", () => importLinnworks());
   ipcMain.handle("api:getSettings", () => publicApiSettings());
   ipcMain.handle("api:saveSettings", (_e, patch) => saveApiSettings(patch));
   ipcMain.handle("api:test", (_e, override) => testApi(override));
