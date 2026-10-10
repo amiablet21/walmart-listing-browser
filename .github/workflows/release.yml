@@ -4,13 +4,13 @@ name: Build & release installers
 # attaches both to a public GitHub Release. The release is tagged from the
 # version in package.json, so bump that version to cut a new release.
 #
-# Triggers on pushes to this working branch (tag pushes are blocked for this
-# session's credentials) and can also be run manually from the Actions tab.
-# Once merged to the default branch, switch this to `tags: ["v*"]`.
+# Triggers on every push to main (tag pushes are blocked for the session
+# credentials that merge there), and can also be run manually from the
+# Actions tab. The release is skipped if that version's tag already exists.
 on:
   push:
     branches:
-      - "claude/epic-faraday-phw62m"
+      - main
   workflow_dispatch:
 
 jobs:
