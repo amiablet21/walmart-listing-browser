@@ -640,10 +640,13 @@ const SELLERS_SCRIPT = `(() => {
   return out;
 })()`;
 // The other sellers' names and prices. Walmart's data payload sometimes has
-// them; otherwise open the "Compare all sellers" panel once and read it.
+// them; otherwise open the "Compare all sellers" panel once and read it. On
+// Walmart's all-sellers page (/product/<id>/sellers) the whole page is the
+// list, so it is read as is.
 // Returns { list: [{ seller, price }], why } — `why` says what stopped the
-// read when the list is empty (no sellers link on the page, the panel never
-// opened, or its text had no price/seller pairs) so the Market tab can say so.
+// read when the list is empty (no sellers link on the page, the link leads to
+// another page, the panel never opened, or its text had no price/seller pairs)
+// so the caller can try the all-sellers page and the Market tab can say why.
 const OFFERS_SCRIPT = `(async () => {
   const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
   const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
@@ -669,7 +672,7 @@ const OFFERS_SCRIPT = `(async () => {
   // failing that, just after it) — the panel's cards put the price first but
   // the order has changed before.
   const sellerRe = /^(?:Sold (?:and|&) shipped by|Sold by|Seller:?)\\s*(.+?)(?:\\s*\\|.*)?$/i;
-  const priceRe = /^(?:Now\\s*)?\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)(?:\\s*(?:each|\\/ea))?$/i;
+  const priceRe = /^(?:current price\\s*)?(?:Now\\s*)?\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)(?:\\s*(?:each|\\/ea))?$/i;
   const parse = (text) => {
     const lines = text.split(/\\n+/).map((l) => l.trim()).filter(Boolean);
     const out = [];
@@ -686,12 +689,20 @@ const OFFERS_SCRIPT = `(async () => {
   const panelRoot = () => document.querySelector('[role="dialog"]') || document.querySelector('[data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]') || null;
   const panelText = () => { const r = panelRoot(); const t = r ? (r.innerText || "") : ""; return /Sold (?:and|&) shipped by|Sold by/i.test(t) ? t : ""; };
   let why = null;
+  if (/^\\/product\\/\\d+\\/sellers/.test(location.pathname)) {
+    const list = dedupe(parse(document.body?.innerText || ""));
+    return { list, why: list.length ? null : "no-match" };
+  }
   try {
     // a panel already open (a retry) is read as is
     let text = panelText();
     if (!text) {
-      const btn = [...document.querySelectorAll('button, a, [role="button"]')].find((b) => /Compare all \\d+ sellers|More seller options|All sellers|See all sellers|\\d+ (?:more|other) sellers?|\\d+ sellers/i.test((b.textContent || "").trim()) && (b.textContent || "").trim().length < 60);
+      // the link's text can carry a "from $X" line too, so allow some length
+      const btn = [...document.querySelectorAll('button, a, [role="button"]')].find((b) => /Compare all (?:\\d+ )?sellers|More seller options|(?:See|View) all sellers|All sellers|\\d+ (?:more|other) sellers?|\\d+ sellers/i.test((b.textContent || "").trim()) && (b.textContent || "").trim().length < 120);
       if (!btn) return { list: [], why: "no-link" };
+      // a real link would navigate away mid-read: let the caller load that page
+      const href = btn.tagName === "A" ? btn.getAttribute("href") || "" : "";
+      if (href && !href.startsWith("#") && !/^javascript:/i.test(href)) return { list: [], why: "link-page" };
       btn.click();
       // the panel fills in from a separate request: wait until its text has
       // settled, up to ~7 s
@@ -720,6 +731,32 @@ async function readOffers(v) {
     if (Array.isArray(r)) return { list: r, why: null };
     return { list: Array.isArray(r?.list) ? r.list : [], why: r?.why ?? null };
   } catch { return { list: [], why: "error" }; }
+}
+// Walmart's all-sellers page for an item: every offer on one page, no panel
+// to open. Used when the listing says it has more sellers but its panel
+// couldn't be read. Loads in the hidden worker, which is then left on that
+// page (__onSellers) so the next read of the item reloads the listing.
+const sellersUrl = (itemId) => `https://www.walmart.com/product/${encodeURIComponent(itemId)}/sellers`;
+async function readSellersPage(w, itemId) {
+  w.__onSellers = itemId;
+  await loadAndWait(w, sellersUrl(itemId));
+  let r = { list: [], why: "sellers-page" };
+  for (let i = 0; i < 6 && w.__item === itemId; i++) { // offers can render after the load event
+    const got = await readOffers(w);
+    if (got.list.length) { r = got; break; }
+    await wait(1000);
+  }
+  return r;
+}
+// Given the sellers-panel read `r`: when it came back empty on a listing that
+// says it has more sellers (or whose sellers link goes to another page), read
+// Walmart's all-sellers page instead.
+async function sellersPageFallback(w, itemId, r) {
+  if (r.list.length || w.__item !== itemId) return r;
+  if (r.why !== "link-page" && !(w.__lastPrice?.others > 0)) return r;
+  const page = await readSellersPage(w, itemId);
+  if (page.list.length) return page;
+  return { list: [], why: r.why === "no-link" || r.why === "link-page" ? "sellers-page" : r.why };
 }
 // Each listing view tracks its own item, last read and retry timers.
 let lastPrice = null; // most recent read from any view (the renderer asks for it on startup)
@@ -807,7 +844,8 @@ function ensureWorker() {
 }
 function workerLoad(itemId) {
   const w = ensureWorker();
-  if (w.__item !== itemId) {
+  if (w.__item !== itemId || w.__onSellers) {
+    w.__onSellers = null;
     w.__item = itemId;
     w.__lastPrice = null;
     w.webContents.loadURL(customerUrl(itemId));
@@ -834,7 +872,7 @@ async function paneOffers(itemId) {
   for (let i = 0; i < 50 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤15 s
   if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
   try {
-    const offers = (await readOffers(w)).list;
+    const offers = (await sellersPageFallback(w, itemId, await readOffers(w))).list;
     if (w.__item !== itemId) return null;
     sendPrice(w, { ...w.__lastPrice, offers });
     return offers;
@@ -851,10 +889,13 @@ async function marketReadWalmart(itemId) {
   if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
   // Always try the sellers panel (a single-seller page has no link, so this
   // costs one script run); when it comes back empty on a page that says it
-  // has more sellers, wait a moment and try once more.
+  // has more sellers, wait a moment and try once more, then fall back to
+  // Walmart's all-sellers page.
   let r = await readOffers(w);
   if (w.__item !== itemId) return null;
-  if (!r.list.length && r.why !== "no-link") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w); }
+  if (!r.list.length && r.why !== "no-link" && r.why !== "link-page") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w); }
+  if (w.__item !== itemId) return null;
+  r = await sellersPageFallback(w, itemId, r);
   if (w.__item !== itemId) return null;
   const others = w.__lastPrice.others;
   const p = { ...w.__lastPrice, offers: r.list, offersWhy: r.list.length ? null : (r.why === "no-link" && (others == null || others === 0) ? null : r.why || "no-match"), at: Date.now() };
@@ -917,7 +958,7 @@ function makeClient(override) {
 async function testApi(override) {
   try {
     const r = await makeClient(override).testConnection();
-    return { ok: true, host: r.host };
+    return { ok: true, host: r.host, items: r.items };
   } catch (e) {
     return { error: e.message || String(e) };
   }
@@ -981,7 +1022,8 @@ function ensureAmazon() {
   if (!panes.amazon) panes.amazon = makePane("amazon");
   return panes.amazon;
 }
-function amazonLoad(v, url) {
+// Load a URL in a view and resolve once it finishes (or fails, or 20 s pass).
+function loadAndWait(v, url) {
   return new Promise((resolve) => {
     let done = false;
     const fin = () => { if (done) return; done = true; clearTimeout(t); v.webContents.removeListener("did-finish-load", fin); v.webContents.removeListener("did-fail-load", fin); resolve(); };
@@ -996,7 +1038,7 @@ async function amazonRead(asin) {
   if (!/^[A-Z0-9]{10}$/i.test(asin)) return { asin, error: "not an ASIN" };
   const v = ensureAmazon();
   v.__asin = asin;
-  await amazonLoad(v, amazonUrl(asin));
+  await loadAndWait(v, amazonUrl(asin));
   let last = null;
   for (const ms of [400, 1200, 2500, 4500]) {
     await wait(ms);

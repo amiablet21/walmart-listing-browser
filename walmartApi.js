@@ -126,10 +126,13 @@ class WalmartClient {
     }
   }
 
-  // Confirms the credentials work by minting a token.
+  // Confirms the credentials work by minting a token, then that the key can
+  // call Pricing Insights (a key without that permission still gets a token).
+  // `items` is how many items Walmart has insights for in this account.
   async testConnection() {
     await this.getToken(true);
-    return { ok: true, host: this.host };
+    const body = await this.call("POST", "/v3/price/getPricingInsights", { pageNumber: 0 });
+    return { ok: true, host: this.host, items: num(body?.pageContext?.totalCount) };
   }
 
   // Pricing Insights for the given SKUs → { bySku: { SKU: insight }, missing: [SKU] }.

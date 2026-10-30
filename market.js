@@ -273,7 +273,7 @@ function renderMarket() {
   $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
   $("mMissedBtn").querySelector(".n").textContent = missedRows.length ? ` · ${missedRows.length}` : "";
   $("mRetryBtn").classList.toggle("hidden", !(mFilter === "missed" && missedRows.length && !mScan.running));
-  if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}${mLastScanApi ? " · via Walmart API" : ""}` : "No scan yet";
+  if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}${apiScanText()}` : "No scan yet";
   renderApiBtn();
   renderScanBar();
   renderPanel();
@@ -321,6 +321,7 @@ function renderPanel() {
   const sellersNote = f.bb && f.sellers.length <= 1 && (f.bb.others > 0 || f.bb.offersWhy)
     ? `<div class="m-seller m-muted m-note">${f.bb.others > 0 ? `Walmart lists ${f.bb.others} more seller${f.bb.others === 1 ? "" : "s"}, but ` : ""}${{
         "no-link": "the page showed no sellers link to open",
+        "sellers-page": "neither the listing nor Walmart's all-sellers page could be read",
         "no-panel": "the sellers panel didn't open in time",
         "no-match": "the sellers panel couldn't be read",
         "error": "the sellers panel couldn't be read",
@@ -369,7 +370,7 @@ function renderPanel() {
   p.innerHTML = `
     <div class="m-card m-id">
       <div class="m-id-head">
-        <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · ${viaApi ? "Walmart API" : "page"} read ${when(it.buyBox.at)}` : ""}</div></div>
+        <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · ${viaApi ? "Walmart API" : "page"} read ${when(it.buyBox.at)}` : ""}${!viaApi && apiReady() && it.buyBox?.notInCatalog ? ` · <span class="m-warn" title="Walmart's Pricing Insights API returned nothing for this SKU, so the scan read the listing page instead. The SKU must match your Seller Center SKU exactly, and the item must be published.">not found in Walmart's API</span>` : ""}</div></div>
         <button class="m-icon" id="mOpenWm" title="Open Walmart listing" aria-label="Open Walmart listing"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>
         <button class="m-icon" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Re-check this listing now" aria-label="Re-check this listing now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
       </div>
@@ -531,7 +532,14 @@ async function readAmazonInto(entry) {
 // page. SKUs the API doesn't know (not in the catalog under that SKU) fall
 // back to a page read, as does everything when no keys are saved.
 const rnd = (a, b) => a + Math.random() * (b - a);
-let mLastScanApi = localStorage.getItem("marketLastScanApi") === "1";
+// "" (no API), "1" (older builds: API used) or "matched/asked" SKU counts
+let mLastScanApi = localStorage.getItem("marketLastScanApi") || "";
+function apiScanText() {
+  const [got, asked] = mLastScanApi.split("/").map(Number);
+  if (!mLastScanApi || mLastScanApi === "0") return "";
+  if (!(asked > 0)) return " · via Walmart API";
+  return got === asked ? " · all via Walmart API" : ` · Walmart API knew ${got} of ${asked} SKUs, the rest read from the page`;
+}
 window.api.onApiProgress?.(({ done, total }) => {
   if (mScan.running && mScan.step === "api") { mScan.current = `Walmart API: ${done} of ${total} SKUs`; renderScanBar(); }
 });
@@ -558,7 +566,7 @@ async function runMarketScan(onlyRows = null) {
   renderMarket();
   // 1) Walmart API — every SKU in one go
   const apiCovered = new Set(); // item IDs whose buy box the API supplied
-  let usedApi = false;
+  let usedApi = "";
   if (apiReady()) {
     const skus = [...new Set(rows.map((i) => String(items[i].sku ?? "").trim()).filter(Boolean))];
     if (skus.length) {
@@ -567,7 +575,8 @@ async function runMarketScan(onlyRows = null) {
       const res = await window.api.marketInsights(skus).catch(() => null);
       if (!mScan.stop) {
         if (res?.ok) {
-          usedApi = true;
+          usedApi = `${Object.keys(res.bySku).length}/${skus.length}`;
+          if (!Object.keys(res.bySku).length) mScan.apiNone = skus.length;
           for (const [sku, ins] of Object.entries(res.bySku)) {
             rememberApi(sku, ins, res.at);
             for (const i of rowsWithSku(sku)) apiCovered.add(idOf(items[i]));
@@ -629,11 +638,12 @@ async function runMarketScan(onlyRows = null) {
     localStorage.setItem("marketLastScan", String(mLastScan));
     localStorage.setItem("marketLastScanMs", String(mLastScanMs));
     localStorage.setItem("marketLastScanDay", new Date().toDateString());
-    localStorage.setItem("marketLastScanApi", usedApi ? "1" : "0");
+    localStorage.setItem("marketLastScanApi", usedApi);
   }
-  const apiError = mScan.apiError;
+  const apiError = mScan.apiError, apiNone = mScan.apiNone;
   renderMarket();
   if (apiError) openApiModal(`The Walmart API scan failed, so the pages were read instead. ${apiError}`, true);
+  else if (apiNone) openApiModal(`Walmart's API connected, but returned nothing for any of your ${apiNone} SKU${apiNone === 1 ? "" : "s"}, so every listing was read from its page. Pricing Insights only covers published items in this seller account, looked up by the exact SKU in Seller Center — check the SKUs match, and that these keys belong to the same account.`, true);
   else if (full && !stopped) showSummary();
 }
 
@@ -705,7 +715,9 @@ $("apiTest").addEventListener("click", async () => {
   $("apiTest").disabled = true;
   const res = await window.api.testApi(v);
   $("apiTest").disabled = false;
-  $("apiTestState").textContent = res?.ok ? "Connected ✓ — Walmart accepted these keys." : (res?.error || "Connection failed.");
+  $("apiTestState").textContent = res?.ok
+    ? (res.items != null ? `Connected ✓ — Pricing Insights sees ${res.items} item${res.items === 1 ? "" : "s"} in this account.` : "Connected ✓ — Walmart accepted these keys.")
+    : (res?.error || "Connection failed.");
   $("apiTestState").className = "api-test-state " + (res?.ok ? "ok" : "error");
 });
 $("apiSave").addEventListener("click", async () => {
