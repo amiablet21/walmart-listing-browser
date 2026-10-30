@@ -655,11 +655,16 @@ const OFFERS_SCRIPT = `(async () => {
   try {
     const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
     const seen = new Set();
+    const nameOf = (e) => (e && typeof e === "object" && !Array.isArray(e)
+      ? e.sellerName || e.sellerDisplayName || e.sellerInfo?.sellerDisplayName || e.sellerInfo?.sellerName || e.seller?.displayName || e.seller?.name || null : null);
+    const priceOf = (e) => num(e.priceInfo?.currentPrice?.price ?? e.currentPrice?.price ?? e.offerPrice?.price ?? e.price?.price
+      ?? (typeof e.price === "object" ? null : e.price) ?? e.priceInfo?.currentPrice?.priceString);
     const walk = (o, d) => {
       if (!o || typeof o !== "object" || d > 14 || seen.has(o)) return; seen.add(o);
       if (Array.isArray(o)) {
-        if (o.length > 1 && o.every((e) => e && typeof e === "object" && (e.sellerName || e.sellerDisplayName))) {
-          for (const e of o) { const p = num(e.priceInfo?.currentPrice?.price ?? e.currentPrice?.price ?? e.price?.price ?? e.price); const n = e.sellerName || e.sellerDisplayName; if (n && ok(p)) found.push({ seller: String(n).trim(), price: p }); }
+        // an offers list: two or more entries that each name a seller
+        if (o.length > 1 && o.every(nameOf)) {
+          for (const e of o) { const n = nameOf(e), p = priceOf(e); if (n && ok(p)) found.push({ seller: String(n).trim(), price: p }); }
         }
         for (const e of o) walk(e, d + 1); return;
       }
@@ -671,17 +676,21 @@ const OFFERS_SCRIPT = `(async () => {
   // Pair each "Sold by …" line with the nearest price line before it (or,
   // failing that, just after it) — the panel's cards put the price first but
   // the order has changed before.
-  const sellerRe = /^(?:Sold (?:and|&) shipped by|Sold by|Seller:?)\\s*(.+?)(?:\\s*\\|.*)?$/i;
+  // the seller's name can sit on the same line or, as its own link, the next
+  const sellerRe = /^(?:Sold (?:and|&) shipped by|Sold by|Seller:?)\\s*(.*?)(?:\\s*\\|.*)?$/i;
   const priceRe = /^(?:current price\\s*)?(?:Now\\s*)?\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)(?:\\s*(?:each|\\/ea))?$/i;
   const parse = (text) => {
     const lines = text.split(/\\n+/).map((l) => l.trim()).filter(Boolean);
     const out = [];
     lines.forEach((l, i) => {
       const m = sellerRe.exec(l); if (!m) return;
-      const seller = m[1].replace(/\\s*\\(.*$/, "").trim(); if (seller.length < 2 || seller.length > 60) return;
+      const nextLine = !m[1].trim();
+      const seller = (nextLine ? lines[i + 1] || "" : m[1]).replace(/\\s*\\(.*$/, "").trim();
+      if (seller.length < 2 || seller.length > 60 || priceRe.test(seller) || sellerRe.test(seller)) return;
+      const after = nextLine ? i + 2 : i + 1;
       let price = null;
       for (let j = i - 1; j >= Math.max(0, i - 14) && price == null; j--) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
-      for (let j = i + 1; j <= Math.min(lines.length - 1, i + 6) && price == null; j++) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
+      for (let j = after; j <= Math.min(lines.length - 1, after + 5) && price == null; j++) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
       if (ok(price)) out.push({ seller, price });
     });
     return out;
@@ -689,6 +698,7 @@ const OFFERS_SCRIPT = `(async () => {
   const panelRoot = () => document.querySelector('[role="dialog"]') || document.querySelector('[data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]') || null;
   const panelText = () => { const r = panelRoot(); const t = r ? (r.innerText || "") : ""; return /Sold (?:and|&) shipped by|Sold by/i.test(t) ? t : ""; };
   let why = null;
+  if (/Robot or human/i.test(document.title)) return { list: [], why: "robot" };
   if (/^\\/product\\/\\d+\\/sellers/.test(location.pathname)) {
     const list = dedupe(parse(document.body?.innerText || ""));
     return { list, why: list.length ? null : "no-match" };
@@ -748,15 +758,57 @@ async function readSellersPage(w, itemId) {
   }
   return r;
 }
+// What a page held, for working out why its sellers couldn't be read: the
+// visible text and every part of Walmart's data payload whose key mentions
+// offers or sellers. Saved only when a read fails.
+const SNAPSHOT_SCRIPT = `(() => {
+  const hits = [];
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const seen = new Set();
+    const walk = (o, at, d) => {
+      if (!o || typeof o !== "object" || d > 12 || seen.has(o) || hits.length >= 60) return; seen.add(o);
+      for (const k in o) {
+        const v = o[k];
+        if (/offer|seller/i.test(k) && v != null) hits.push({ path: at + "." + k, value: JSON.stringify(v).slice(0, 6000) });
+        else walk(v, at + "." + k, d + 1);
+      }
+    };
+    walk(nd, "", 0);
+  } catch {}
+  return { url: location.href, title: document.title, text: (document.body?.innerText || "").slice(0, 40000), data: hits };
+})()`;
+async function pageSnapshot(v) {
+  try { return await v.webContents.executeJavaScript(SNAPSHOT_SCRIPT, true); } catch (e) { return { error: String(e?.message || e) }; }
+}
+const snapshotFile = (itemId) => path.join(app.getPath("userData"), "page-snapshots", `${String(itemId).replace(/\D/g, "")}.json`);
+function saveSnapshot(itemId, snap) {
+  try {
+    const f = snapshotFile(itemId);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, JSON.stringify({ itemId, at: new Date().toISOString(), version: app.getVersion(), ...snap }, null, 2));
+    return f;
+  } catch (e) { console.error("Failed to save page snapshot:", e); return null; }
+}
 // Given the sellers-panel read `r`: when it came back empty on a listing that
 // says it has more sellers (or whose sellers link goes to another page), read
-// Walmart's all-sellers page instead.
+// Walmart's all-sellers page instead. When that fails too, both pages are
+// saved as a snapshot (`snapshot` is its path).
 async function sellersPageFallback(w, itemId, r) {
   if (r.list.length || w.__item !== itemId) return r;
   if (r.why !== "link-page" && !(w.__lastPrice?.others > 0)) return r;
+  const listing = await pageSnapshot(w);
   const page = await readSellersPage(w, itemId);
   if (page.list.length) return page;
-  return { list: [], why: r.why === "no-link" || r.why === "link-page" ? "sellers-page" : r.why };
+  const snapshot = saveSnapshot(itemId, { listingRead: r.why, sellersPageRead: page.why, listing, sellersPage: await pageSnapshot(w) });
+  const why = page.why === "robot" ? "robot" : r.why === "no-link" || r.why === "link-page" ? "sellers-page" : r.why;
+  return { list: [], why, snapshot };
+}
+function showSnapshot(itemId) {
+  const f = snapshotFile(itemId);
+  if (!fs.existsSync(f)) return false;
+  shell.showItemInFolder(f);
+  return true;
 }
 // Each listing view tracks its own item, last read and retry timers.
 let lastPrice = null; // most recent read from any view (the renderer asks for it on startup)
@@ -898,7 +950,7 @@ async function marketReadWalmart(itemId) {
   r = await sellersPageFallback(w, itemId, r);
   if (w.__item !== itemId) return null;
   const others = w.__lastPrice.others;
-  const p = { ...w.__lastPrice, offers: r.list, offersWhy: r.list.length ? null : (r.why === "no-link" && (others == null || others === 0) ? null : r.why || "no-match"), at: Date.now() };
+  const p = { ...w.__lastPrice, offers: r.list, offersWhy: r.list.length ? null : (r.why === "no-link" && (others == null || others === 0) ? null : r.why || "no-match"), offersSnapshot: r.snapshot ? true : null, at: Date.now() };
   sendPrice(w, p);
   return p;
 }
@@ -1270,6 +1322,7 @@ app.whenReady().then(() => {
   ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
   ipcMain.handle("listing:offers", (_e, itemId) => paneOffers(itemId));
   ipcMain.handle("market:readWalmart", (_e, itemId) => marketReadWalmart(itemId));
+  ipcMain.handle("market:showSnapshot", (_e, itemId) => showSnapshot(itemId));
   ipcMain.handle("market:readAmazon", (_e, asin) => amazonRead(asin));
   ipcMain.handle("market:showAmazon", (_e, { asin, bounds }) => amazonShow(asin, bounds));
   ipcMain.handle("market:hideAmazon", () => amazonHide());

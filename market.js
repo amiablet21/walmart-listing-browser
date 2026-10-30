@@ -322,10 +322,11 @@ function renderPanel() {
     ? `<div class="m-seller m-muted m-note">${f.bb.others > 0 ? `Walmart lists ${f.bb.others} more seller${f.bb.others === 1 ? "" : "s"}, but ` : ""}${{
         "no-link": "the page showed no sellers link to open",
         "sellers-page": "neither the listing nor Walmart's all-sellers page could be read",
+        "robot": "Walmart showed a robot check — open the listing in the pane once to pass it",
         "no-panel": "the sellers panel didn't open in time",
         "no-match": "the sellers panel couldn't be read",
         "error": "the sellers panel couldn't be read",
-      }[f.bb.offersWhy] || "the other sellers couldn't be read"}. Re-check, or open the listing to compare.</div>`
+      }[f.bb.offersWhy] || "the other sellers couldn't be read"}. Re-check, or open the listing to compare.${f.bb.offersSnapshot ? ` <button class="mini" id="mSnapshot" title="Shows the saved copy of what Walmart's pages held — send it over so the reader can be fixed">Show page snapshot</button>` : ""}</div>`
     : "";
   const amzHtml = list.map((a, k) => {
     const editing = mEditing && mEditing.i === i && mEditing.k === k;
@@ -415,6 +416,9 @@ function renderPanel() {
   p.querySelectorAll("[data-sib]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); mSelected = Number(a.dataset.sib); mEditing = null; renderMarket(); }));
   p.querySelector("#mRecheck")?.addEventListener("click", () => runMarketScan([i]));
   p.querySelector("#mReadPage")?.addEventListener("click", () => readPageFor(i));
+  p.querySelector("#mSnapshot")?.addEventListener("click", async () => {
+    if (!(await window.api.showPageSnapshot(it.itemId))) alert("No page snapshot is saved for this item. Re-check it to take one.");
+  });
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   // window.prompt() does nothing in Electron, so the store name is edited in
   // place: the link turns the line into a field with Save / Cancel.
@@ -532,9 +536,12 @@ async function readAmazonInto(entry) {
 // page. SKUs the API doesn't know (not in the catalog under that SKU) fall
 // back to a page read, as does everything when no keys are saved.
 const rnd = (a, b) => a + Math.random() * (b - a);
-// "" (no API), "1" (older builds: API used) or "matched/asked" SKU counts
+// "matched/asked" SKU counts, "off" (no keys saved), "err" (the call failed),
+// or from older builds "1" (API used) / "0" / "" (not used)
 let mLastScanApi = localStorage.getItem("marketLastScanApi") || "";
 function apiScanText() {
+  if (mLastScanApi === "off") return " · Walmart API not connected — every page was read";
+  if (mLastScanApi === "err") return " · Walmart API failed — every page was read (see API)";
   const [got, asked] = mLastScanApi.split("/").map(Number);
   if (!mLastScanApi || mLastScanApi === "0") return "";
   if (!(asked > 0)) return " · via Walmart API";
@@ -566,7 +573,7 @@ async function runMarketScan(onlyRows = null) {
   renderMarket();
   // 1) Walmart API — every SKU in one go
   const apiCovered = new Set(); // item IDs whose buy box the API supplied
-  let usedApi = "";
+  let usedApi = apiReady() ? "" : "off";
   if (apiReady()) {
     const skus = [...new Set(rows.map((i) => String(items[i].sku ?? "").trim()).filter(Boolean))];
     if (skus.length) {
@@ -587,6 +594,8 @@ async function runMarketScan(onlyRows = null) {
           cacheBuyBoxes();
         } else {
           mScan.apiError = res?.error || "The Walmart API didn't answer.";
+          usedApi = "err";
+          localStorage.setItem("marketLastApiError", mScan.apiError);
         }
       }
       mScan.step = ""; mScan.current = "";
@@ -698,7 +707,10 @@ $("apiReveal").addEventListener("click", () => {
   $("apiReveal").title = show ? "Hide the secret" : "Show the secret";
   f.focus();
 });
-$("mApiBtn").addEventListener("click", () => openApiModal(""));
+$("mApiBtn").addEventListener("click", () => {
+  const err = mLastScanApi === "err" ? localStorage.getItem("marketLastApiError") : "";
+  openApiModal(err ? `The last scan's Walmart API call failed: ${err}` : "", !!err);
+});
 $("apiCancel").addEventListener("click", closeApiModal);
 $("apiModal").addEventListener("click", (e) => { if (e.target.id === "apiModal") closeApiModal(); });
 $("apiModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeApiModal(); });
