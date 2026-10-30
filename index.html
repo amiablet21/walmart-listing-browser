@@ -308,11 +308,16 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L19 4m-3 3l3 3"/></svg>
         <span>API</span>
       </button>
+      <button id="mRaiseRulesBtn" title="When to flag a listing as having room to raise, and what price to suggest" aria-label="Raise rules">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+        <span>Raise rules</span>
+      </button>
       <span class="tb-sep"></span>
       <span class="m-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="mSearch" type="search" placeholder="Search SKU, Item ID, seller…" aria-label="Search the market table" />
       </span>
+      <button id="mRaiseBtn" class="m-chip" title="Show only the listings where you hold the buy box and the next seller is far enough above you to raise your price">Room to raise<span class="n"></span></button>
       <button id="mMissedBtn" class="m-chip" title="Show only the rows where a Walmart or Amazon read failed">Missed<span class="n"></span></button>
       <button id="mRetryBtn" class="hidden" title="Read the missed rows again now">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
@@ -383,6 +388,47 @@
     </div>
   </div>
 
+  <!-- Raise rules: when a listing has room to raise, and what to suggest -->
+  <div id="raiseModal" class="modal-overlay hidden">
+    <div class="modal api-card raise-card" role="dialog" aria-labelledby="raiseTitle">
+      <div class="api-head"><h2 id="raiseTitle">Raise rules</h2></div>
+      <p class="api-sub">Walmart's repricer lowers your price to win the buy box but never raises it back. When you hold the buy box and the next seller is far above you, the scan flags the listing and suggests a higher price.</p>
+      <div class="raise-field">
+        <span class="raise-label">Flag a listing when the next seller is at least</span>
+        <div class="raise-row">
+          <span class="raise-in"><i>$</i><input id="raiseMinGap" type="text" inputmode="decimal" aria-label="Minimum gap in dollars" /></span>
+          <span class="raise-and">and</span>
+          <span class="raise-in"><input id="raiseMinGapPct" type="text" inputmode="decimal" aria-label="Minimum gap in percent" /><i>%</i></span>
+          <span class="raise-and">above my price</span>
+        </div>
+        <span class="raise-hint">Leave one blank to use only the other.</span>
+      </div>
+      <div class="raise-field">
+        <span class="raise-label">Suggest a price below the next seller by</span>
+        <div class="raise-row">
+          <span class="raise-in"><input id="raiseUnder" type="text" inputmode="decimal" aria-label="How far below the next seller" /></span>
+          <span class="raise-unit" role="group" aria-label="Unit">
+            <button type="button" data-unit="$">$</button><button type="button" data-unit="%">%</button>
+          </span>
+        </div>
+      </div>
+      <div class="raise-field">
+        <span class="raise-label">Never raise more than</span>
+        <div class="raise-row">
+          <span class="raise-in"><i>$</i><input id="raiseMax" type="text" inputmode="decimal" placeholder="no limit" aria-label="Largest raise in one go" /></span>
+          <span class="raise-and">in one go</span>
+        </div>
+      </div>
+      <label class="api-sandbox"><input id="raiseRound" type="checkbox" /> Round the suggestion down to a price ending in .99</label>
+      <p id="raiseExample" class="raise-example"></p>
+      <div class="api-actions">
+        <button id="raiseReset" class="linkish" type="button">Reset to defaults</button>
+        <button id="raiseCancel">Cancel</button>
+        <button id="raiseSave" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Linnworks mapping: group Walmart SKUs that are one product -->
   <div id="lwModal" class="modal-overlay hidden">
     <div class="modal api-card" role="dialog" aria-labelledby="lwTitle">
@@ -398,19 +444,30 @@
     </div>
   </div>
 
-  <!-- end-of-scan pop-up: the listings Amazon undercuts, biggest gap first -->
+  <!-- end-of-scan pop-up: buy box tally, listings with room to raise, listings Amazon undercuts -->
   <div id="mSummary" class="modal-overlay hidden">
     <div class="modal confirm-modal m-summary">
       <h2>Scan finished</h2>
-      <p class="hint" id="mSumText"></p>
-      <div class="m-sum-table">
-        <div class="m-sum-head"><span></span><span>SKU</span><span class="num">Our price</span><span class="num">Amazon buy box</span><span class="num">Match price</span></div>
-        <div id="mSumRows"></div>
-      </div>
+      <p class="hint" id="mSumBox"></p>
+      <section class="m-sum-sec">
+        <div class="m-sum-sec-head"><h3>Room to raise on Walmart</h3><span class="m-sum-exp"><button id="mRaiseCsv" class="mini"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> CSV</button><button id="mRaiseXlsx" class="mini"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Excel</button></span></div>
+        <p class="hint" id="mRaiseText"></p>
+        <div class="m-sum-table" id="mRaiseTable">
+          <div class="m-sum-head"><span></span><span>SKU</span><span class="num">Your price</span><span class="num">Next seller</span><span class="num">Suggested</span></div>
+          <div id="mRaiseRows"></div>
+        </div>
+      </section>
+      <section class="m-sum-sec">
+        <div class="m-sum-sec-head"><h3>Amazon is cheaper</h3><span class="m-sum-exp"><button id="mSumCsv" class="mini"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> CSV</button><button id="mSumXlsx" class="mini"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Excel</button></span></div>
+        <p class="hint" id="mSumText"></p>
+        <div class="m-sum-table" id="mSumTable">
+          <div class="m-sum-head"><span></span><span>SKU</span><span class="num">Our price</span><span class="num">Amazon buy box</span><span class="num">Match price</span></div>
+          <div id="mSumRows"></div>
+        </div>
+      </section>
       <div class="confirm-actions">
-        <button id="mSumClose">Close</button>
-        <button id="mSumCsv"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export CSV</button>
-        <button id="mSumXlsx" class="primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg> Export Excel</button>
+        <button id="mRaiseRulesSum" class="linkish" type="button">Raise rules</button>
+        <button id="mSumClose" class="primary">Close</button>
       </div>
     </div>
   </div>

@@ -170,9 +170,52 @@ function rowFacts(i) {
   const amzMissed = amzList(it).some((a) => !a.manual && a.asin && (a.failed || a.robot));
   return { it, during, bb, api, mine, lost, known, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed };
 }
+// ---- room to raise ---------------------------------------------------------------
+// Walmart's repricer lowers a price to win the buy box but never raises it
+// back: when the seller you were matching sells out, you keep your low price
+// with the next seller far above. A row has room to raise when you hold the
+// buy box and the cheapest other seller is at least minGap ($) and minGapPct
+// (%) above you (a blank rule is skipped). The suggestion sits `under` ($ or %)
+// below that seller, optionally rounded down to .99 and capped at maxRaise.
+// All of it is set in the Raise rules dialog.
+const RAISE_DEFAULTS = { minGap: 2, minGapPct: 2, under: 0.01, underUnit: "$", round99: false, maxRaise: null };
+let raiseRules = { ...RAISE_DEFAULTS };
+try { raiseRules = { ...RAISE_DEFAULTS, ...(JSON.parse(localStorage.getItem("raiseRules") || "{}") || {}) }; } catch { /* defaults */ }
+const cents = (n) => Math.round(n * 100);
+// Suggested price for `current` with the next seller at `next`, under `rules`.
+function raiseTarget(current, next, rules = raiseRules) {
+  let t = rules.underUnit === "%" ? cents(next * (1 - (Number(rules.under) || 0) / 100)) : cents(next) - cents(Number(rules.under) || 0);
+  if (rules.maxRaise > 0) t = Math.min(t, cents(current) + cents(rules.maxRaise));
+  if (rules.round99) t = Math.floor((t + 1) / 100) * 100 - 1; // the highest x.99 at or below
+  t = Math.min(t, cents(next) - 1); // always stay under the next seller
+  return t / 100;
+}
+// { current, next, nextSeller, gap, gapPct, target, ok } when you hold the buy
+// box and another seller is known; { only: true } when Walmart says no one
+// else sells it; null otherwise.
+function raiseFor(f, rules = raiseRules) {
+  if (!f.bb || !f.mine) return null;
+  const current = f.bb.price;
+  const others = f.sellers.filter((s) => !s.mine);
+  if (!others.length) return f.bb.others === 0 ? { only: true, current } : null;
+  const nextOne = others.reduce((a, b) => (b.price < a.price ? b : a));
+  const gap = (cents(nextOne.price) - cents(current)) / 100;
+  const gapPct = current > 0 ? (gap / current) * 100 : 0;
+  const target = raiseTarget(current, nextOne.price, rules);
+  const ok = gap > 0
+    && (!(rules.minGap > 0) || gap >= rules.minGap - 0.0001)
+    && (!(rules.minGapPct > 0) || gapPct >= rules.minGapPct - 0.0001)
+    && target >= current + 0.01;
+  return { current, next: nextOne.price, nextSeller: nextOne.seller, gap, gapPct, target, ok };
+}
+const raiseRows = () => items.map((_, i) => i).filter((i) => idOf(items[i]))
+  .map((i) => ({ i, f: rowFacts(i) })).map((x) => ({ ...x, r: raiseFor(x.f) })).filter((x) => x.r?.ok)
+  .sort((a, b) => b.r.gap - a.r.gap);
+
 function rowMatches(i) {
   const f = rowFacts(i);
   if (mFilter === "lost" && !f.lost) return false;
+  if (mFilter === "raise" && !raiseFor(f)?.ok) return false;
   if (mFilter === "amz" && !f.cheaper) return false;
   if (mFilter === "noamz" && f.linked) return false;
   if (mFilter === "missed" && !f.missed) return false;
@@ -243,7 +286,9 @@ function renderMarket() {
       const pill = f.known ? `<span class="m-pill ${f.mine ? "you" : "lost"}">${f.mine ? "You" : "Lost"}</span>` : "";
       const note = !f.mine && f.bb.seller ? esc(f.bb.seller)
         : f.api?.winRate != null ? `win rate ${Math.round(f.api.winRate * 10) / 10}%` : "";
-      wm = `${pill}<b>${fmt(f.bb.price)}</b>${note ? `<span class="m-muted">${note}</span>` : ""}`;
+      const r = raiseFor(f);
+      const raise = r?.ok ? `<span class="m-pill raise" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">↑ ${fmt(r.gap)} room</span>` : "";
+      wm = `${pill}<b>${fmt(f.bb.price)}</b>${note ? `<span class="m-muted">${note}</span>` : ""}${raise}`;
     } else if (f.it.buyBox?.notInCatalog) wm = `<span class="m-muted">Not in your Walmart catalog under this SKU</span>`;
     else if (f.it.buyBox?.noBuyBox) wm = `<span class="m-muted">No buy box reported</span>`;
     else if (f.it.buyBox?.failed) wm = `<span class="m-muted">Couldn't read the page</span>`;
@@ -273,6 +318,10 @@ function renderMarket() {
   $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
   $("mMissedBtn").querySelector(".n").textContent = missedRows.length ? ` · ${missedRows.length}` : "";
   $("mRetryBtn").classList.toggle("hidden", !(mFilter === "missed" && missedRows.length && !mScan.running));
+  const raiseN = raiseRows().length;
+  $("mRaiseBtn").classList.toggle("active", mFilter === "raise");
+  $("mRaiseBtn").classList.toggle("has-raise", raiseN > 0);
+  $("mRaiseBtn").querySelector(".n").textContent = raiseN ? ` · ${raiseN}` : "";
   if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}${apiScanText()}` : "No scan yet";
   renderApiBtn();
   renderScanBar();
@@ -328,6 +377,17 @@ function renderPanel() {
         "error": "the sellers panel couldn't be read",
       }[f.bb.offersWhy] || "the other sellers couldn't be read"}. Re-check, or open the listing to compare.${f.bb.offersSnapshot ? ` <button class="mini" id="mSnapshot" title="Shows the saved copy of what Walmart's pages held — send it over so the reader can be fixed">Show page snapshot</button>` : ""}</div>`
     : "";
+  // you hold the buy box: is there room to raise toward the next seller?
+  const rz = raiseFor(f);
+  const pct = (n) => `${Math.round(n * 10) / 10}%`;
+  const raiseHtml = !rz ? ""
+    : rz.only ? `<div class="m-raise quiet">You're the only seller on this listing, so there's no one to price against.</div>`
+    : rz.ok ? `<div class="m-raise">
+        <div class="m-raise-head"><b>Room to raise</b><button class="linkish" id="mRaiseRules" type="button">Raise rules</button></div>
+        <div class="m-raise-line">The next seller, <b>${esc(rz.nextSeller)}</b>, is at ${fmt(rz.next)} — ${fmt(rz.gap)} (${pct(rz.gapPct)}) above your ${fmt(rz.current)}.</div>
+        <div class="m-raise-go"><span>Suggested price</span><b>${fmt(rz.target)}</b><span class="m-muted">+${fmt((cents(rz.target) - cents(rz.current)) / 100)}</span><button class="mini" id="mRaiseCopy" data-price="${money(rz.target)}">Copy</button></div>
+      </div>`
+    : `<div class="m-raise quiet">You hold the buy box. The next seller is ${fmt(rz.gap)} (${pct(rz.gapPct)}) above you — inside your <button class="linkish" id="mRaiseRules" type="button">raise rules</button>, so nothing to raise.</div>`;
   const amzHtml = list.map((a, k) => {
     const editing = mEditing && mEditing.i === i && mEditing.k === k;
     if (editing) {
@@ -385,7 +445,7 @@ function renderPanel() {
     </div>
     <div class="m-card">
       <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : viaApi ? "via API" : ""}</span></div>
-      ${sellersHtml}${sellersNote}
+      ${sellersHtml}${sellersNote}${raiseHtml}
     </div>
     <div class="m-card">
       <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}${sibs.length ? ` · shared by ${sibs.length + 1} Walmart SKUs` : ""}</span></div>
@@ -420,6 +480,11 @@ function renderPanel() {
     if (!(await window.api.showPageSnapshot(it.itemId))) alert("No page snapshot is saved for this item. Re-check it to take one.");
   });
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
+  p.querySelector("#mRaiseRules")?.addEventListener("click", openRaiseModal);
+  p.querySelector("#mRaiseCopy")?.addEventListener("click", (e) => {
+    const b = e.currentTarget;
+    navigator.clipboard?.writeText(b.dataset.price).then(() => { b.textContent = "Copied"; setTimeout(() => { b.textContent = "Copy"; }, 1200); }).catch(() => {});
+  });
   // window.prompt() does nothing in Electron, so the store name is edited in
   // place: the link turns the line into a field with Save / Cancel.
   p.querySelector("#mStoreEdit")?.addEventListener("click", (e) => { e.preventDefault(); mStoreEditing = true; renderPanel(); const f = $("mStoreInput"); f?.focus(); f?.select(); });
@@ -805,6 +870,63 @@ function hideAmazonPage() {
 $("mAmzHide").addEventListener("click", () => { hideAmazonPage(); if (mSelected >= 0) runMarketScan([mSelected]); });
 window.addEventListener("resize", () => { if (amazonPageShown) window.api.showAmazon(null, amazonBounds()); });
 
+// ---- Raise rules (settings dialog) -----------------------------------------------------------
+let raiseUnit = "$";
+const numIn = (id) => { const v = String($(id).value).replace(/[$,%\s]/g, ""); return v === "" ? null : (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : NaN); };
+function raiseFormValues() {
+  return { minGap: numIn("raiseMinGap"), minGapPct: numIn("raiseMinGapPct"), under: numIn("raiseUnder"), underUnit: raiseUnit, round99: $("raiseRound").checked, maxRaise: numIn("raiseMax") };
+}
+function fillRaiseForm(r) {
+  const show = (v) => (v == null || v === "" ? "" : String(v));
+  $("raiseMinGap").value = show(r.minGap);
+  $("raiseMinGapPct").value = show(r.minGapPct);
+  $("raiseUnder").value = show(r.under);
+  $("raiseMax").value = show(r.maxRaise);
+  $("raiseRound").checked = !!r.round99;
+  raiseUnit = r.underUnit === "%" ? "%" : "$";
+  renderRaiseForm();
+}
+// The unit toggle and a worked example that follows the form as you type.
+function renderRaiseForm() {
+  document.querySelectorAll("#raiseModal .raise-unit button").forEach((b) => b.classList.toggle("on", b.dataset.unit === raiseUnit));
+  const v = raiseFormValues();
+  const ex = $("raiseExample");
+  if ([v.minGap, v.minGapPct, v.under, v.maxRaise].some(Number.isNaN)) { ex.textContent = "Use plain numbers, like 2 or 2.50."; ex.className = "raise-example error"; return; }
+  const rules = { ...v, under: v.under ?? 0 };
+  const cur = 134.27, next = 164.5;
+  const r = raiseFor({ bb: { price: cur, others: 1 }, mine: true, sellers: [{ seller: "Next seller", price: next, mine: false }] }, rules);
+  ex.className = "raise-example";
+  ex.innerHTML = `Example: you hold the buy box at ${fmt(cur)}, the next seller is at ${fmt(next)} — ${r.ok
+    ? `flagged, suggested <b>${fmt(r.target)}</b>.`
+    : "not flagged with these rules."}`;
+}
+function openRaiseModal() {
+  fillRaiseForm(raiseRules);
+  window.api.hideListing();
+  hideAmazonPage();
+  $("raiseModal").classList.remove("hidden");
+  setTimeout(() => $("raiseMinGap").focus(), 30);
+}
+function closeRaiseModal() { $("raiseModal").classList.add("hidden"); }
+$("mRaiseRulesBtn").addEventListener("click", openRaiseModal);
+$("mRaiseBtn").addEventListener("click", () => { mFilter = mFilter === "raise" ? "all" : "raise"; renderMarket(); });
+document.querySelectorAll("#raiseModal .raise-unit button").forEach((b) => b.addEventListener("click", () => { raiseUnit = b.dataset.unit; renderRaiseForm(); }));
+["raiseMinGap", "raiseMinGapPct", "raiseUnder", "raiseMax"].forEach((id) => $(id).addEventListener("input", renderRaiseForm));
+$("raiseRound").addEventListener("change", renderRaiseForm);
+$("raiseReset").addEventListener("click", () => fillRaiseForm(RAISE_DEFAULTS));
+$("raiseCancel").addEventListener("click", closeRaiseModal);
+$("raiseModal").addEventListener("click", (e) => { if (e.target.id === "raiseModal") closeRaiseModal(); });
+$("raiseModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeRaiseModal(); if (e.key === "Enter" && e.target.tagName === "INPUT" && e.target.type === "text") $("raiseSave").click(); });
+$("raiseSave").addEventListener("click", () => {
+  const v = raiseFormValues();
+  const bad = ["raiseMinGap", "raiseMinGapPct", "raiseUnder", "raiseMax"].find((id) => Number.isNaN(numIn(id)));
+  if (bad) { $(bad).focus(); return; }
+  raiseRules = { ...v, under: v.under ?? 0 };
+  localStorage.setItem("raiseRules", JSON.stringify(raiseRules));
+  closeRaiseModal();
+  renderMarket();
+});
+
 // ---- Linnworks mapping import ---------------------------------------------------------------
 function renderLwModal(status, kind) {
   const el = $("lwStatus");
@@ -862,17 +984,19 @@ function marketRows() {
     const f = rowFacts(i);
     const gap = f.low != null && f.during > 0 ? Math.round((f.low - f.during) * 100) / 100 : "";
     const a = apiOf(f.it) || {};
+    const r = raiseFor(f);
     return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "", f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || (f.lost ? "another seller" : "")) : "",
       f.wmLow ?? "", f.sellers.length || "", f.low ?? "", amzList(f.it).map((a) => a.asin || "typed").join(" "), gap, f.bb?.at ? new Date(f.bb.at).toLocaleString() : "",
-      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? "", lwOf(f.it) || ""];
+      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? "", lwOf(f.it) || "",
+      r?.nextSeller ?? "", r?.next ?? "", r?.ok ? r.target : ""];
   });
 }
 $("mExportBtn").addEventListener("click", async () => {
   const rows = marketRows();
   if (!rows.length) { alert("Nothing to export yet."); return; }
   const head = ["SKU", "Item ID", "Our Price", "Walmart Buy Box", "Buy Box Seller", "Walmart Lowest", "Walmart Sellers", "Amazon Buy Box", "Amazon Listings", "Gap vs Amazon", "Checked",
-    "Win Rate %", "Competitor Price", "Suggested Price", "Linnworks SKU"];
-  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14, 26] });
+    "Win Rate %", "Competitor Price", "Suggested Price", "Linnworks SKU", "Next Seller", "Next Seller Price", "Raise To"];
+  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14, 26, 24, 16, 12] });
   finishExport(res, rows.length);
 });
 
@@ -881,30 +1005,57 @@ function summaryRows() {
   return items.map((_, i) => i).filter((i) => idOf(items[i])).map((i) => rowFacts(i)).filter((f) => f.cheaper)
     .sort((a, b) => (b.during - b.low) - (a.during - a.low));
 }
+// Ticked rows of one pop-up section, exported as CSV or Excel.
+function wireSumExport(box, rows, head, toRow, name, widths, csvBtn, xlsxBtn) {
+  const go = async (ext) => {
+    const picked = [...box.querySelectorAll("input[type=checkbox]")].filter((c) => c.checked).map((c) => rows[Number(c.dataset.k)]);
+    if (!picked.length) { alert("Tick at least one row."); return; }
+    const out = picked.map(toRow);
+    const res = await window.api.exportSheet({ head, rows: out, name, ext, widths });
+    finishExport(res, out.length);
+  };
+  csvBtn.disabled = xlsxBtn.disabled = !rows.length;
+  csvBtn.onclick = () => go("csv");
+  xlsxBtn.onclick = () => go("xlsx");
+}
 function showSummary() {
+  const all = items.map((_, i) => i).filter((i) => idOf(items[i])).map(rowFacts);
+  const won = all.filter((f) => f.mine).length, lost = all.filter((f) => f.lost).length;
+  const unread = all.filter((f) => !f.known).length;
+  $("mSumBox").textContent = `You hold the buy box on ${won} of ${all.length} listing${all.length === 1 ? "" : "s"}${lost ? `, and lost it on ${lost}` : ""}${unread ? ` · ${unread} couldn't be told` : ""}.`;
+
+  // Walmart: you hold the buy box with the next seller far above
+  const raise = raiseRows();
+  const rbox = $("mRaiseRows");
+  $("mRaiseText").textContent = raise.length
+    ? `On ${raise.length} listing${raise.length === 1 ? "" : "s"} you hold the buy box and the next seller is well above you. Tick the ones to export.`
+    : "No listing has room to raise under your raise rules.";
+  $("mRaiseTable").classList.toggle("hidden", !raise.length);
+  rbox.innerHTML = raise.map(({ f, r }, k) =>
+    `<label class="m-sum-row"><input type="checkbox" checked data-k="${k}" /><span class="sku">${esc(f.it.sku || f.it.itemId)}</span><span class="num">${fmt(r.current)}</span><span class="num nx">${fmt(r.next)}<small>${esc(r.nextSeller)}</small></span><span class="num match">${fmt(r.target)}</span></label>`).join("");
+  wireSumExport(rbox, raise, ["SKU", "Item ID", "Your Price", "Next Seller", "Next Seller Price", "Gap", "Gap %", "Suggested Price"],
+    ({ f, r }) => [f.it.sku, f.it.itemId, r.current, r.nextSeller, r.next, r.gap, Math.round(r.gapPct * 10) / 10, r.target],
+    "raise-prices", [26, 14, 12, 24, 16, 10, 10, 16], $("mRaiseCsv"), $("mRaiseXlsx"));
+
+  // Amazon: cheaper than you
   const rows = summaryRows();
   const box = $("mSumRows");
   $("mSumText").textContent = rows.length
     ? `Amazon is cheaper than you on ${rows.length} listing${rows.length === 1 ? "" : "s"}. Tick the ones to export.`
     : "Amazon isn't undercutting any of your listings. Nothing to match today.";
+  $("mSumTable").classList.toggle("hidden", !rows.length);
   box.innerHTML = rows.map((f, k) =>
     `<label class="m-sum-row"><input type="checkbox" checked data-k="${k}" /><span class="sku">${esc(f.it.sku || f.it.itemId)}</span><span class="num">${fmt(f.during)}</span><span class="num amz">${fmt(f.low)}</span><span class="num match">${fmt(f.low)}</span></label>`).join("");
-  $("mSumCsv").disabled = $("mSumXlsx").disabled = !rows.length;
+  wireSumExport(box, rows, ["SKU", "Item ID", "Our Price", "Amazon Buy Box", "Match Price", "Walmart Buy Box", "Buy Box Seller"],
+    (f) => [f.it.sku, f.it.itemId, f.during, f.low, f.low, f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || "") : ""],
+    "amazon-match", [26, 14, 12, 16, 14, 16, 22], $("mSumCsv"), $("mSumXlsx"));
+
   window.api.hideListing();
   $("mSummary").classList.remove("hidden");
-  const exportSel = async (ext) => {
-    const picked = [...box.querySelectorAll("input[type=checkbox]")].filter((c) => c.checked).map((c) => rows[Number(c.dataset.k)]);
-    if (!picked.length) { alert("Tick at least one row."); return; }
-    const head = ["SKU", "Item ID", "Our Price", "Amazon Buy Box", "Match Price", "Walmart Buy Box", "Buy Box Seller"];
-    const out = picked.map((f) => [f.it.sku, f.it.itemId, f.during, f.low, f.low, f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || "") : ""]);
-    const res = await window.api.exportSheet({ head, rows: out, name: "amazon-match", ext, widths: [26, 14, 12, 16, 14, 16, 22] });
-    finishExport(res, out.length);
-  };
-  $("mSumCsv").onclick = () => exportSel("csv");
-  $("mSumXlsx").onclick = () => exportSel("xlsx");
 }
 function closeSummary() { $("mSummary").classList.add("hidden"); }
 $("mSumClose").addEventListener("click", closeSummary);
+$("mRaiseRulesSum").addEventListener("click", () => { closeSummary(); openRaiseModal(); });
 $("mSummary").addEventListener("click", (e) => { if (e.target.id === "mSummary") closeSummary(); });
 $("mSummary").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeSummary(); });
 

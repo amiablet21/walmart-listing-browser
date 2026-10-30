@@ -705,3 +705,51 @@ button.mini { padding: 6px 11px; font-size: 12.5px; min-height: 32px; }
 #lwStatus { min-height: 18px; font-size: 12.5px; }
 #lwModal .api-actions { margin-top: 12px; }
 #lwModal .api-actions .linkish { color: #BB3B2E; }
+
+/* ---- room to raise ---- */
+.m-pill.raise { background: #DFF0EA; color: #22675A; }
+.m-toolbar #mRaiseBtn.has-raise .n { color: #22675A; }
+.m-raise { padding: 11px 14px 12px; background: #F2F8F5; border-top: 1px solid #DCEBE4; font-size: 12.5px; line-height: 1.45; }
+.m-raise.quiet { background: none; border-top-color: #F0EDE6; color: #6E6B5C; font-size: 12px; }
+.m-raise .linkish { font: inherit; padding: 0; min-height: 0; border: 0; background: none; color: #4C5B9E; text-decoration: underline; cursor: pointer; }
+.m-raise .linkish:hover { color: #3D4A85; background: none; }
+.m-raise-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.m-raise-head b { color: #22675A; }
+.m-raise-head .linkish { font-size: 12px; }
+.m-raise-go { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+.m-raise-go > span:first-child { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; }
+.m-raise-go b { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; color: #22675A; }
+.m-raise-go .mini { margin-left: auto; padding: 3px 10px; min-height: 0; font-size: 11.5px; }
+
+/* Raise rules dialog */
+.modal.raise-card { width: min(480px, 94vw); }
+.raise-field { margin-bottom: 14px; }
+.raise-label { display: block; font-size: 12px; font-weight: 600; color: #45433A; margin-bottom: 6px; }
+.raise-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.raise-in { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #D9D2C1; border-radius: 8px; background: #fff; padding: 0 10px; }
+.raise-in:focus-within { border-color: #4C5B9E; box-shadow: 0 0 0 3px rgba(76, 91, 158, .22); }
+.raise-in i { font-style: normal; color: #918D7C; font-size: 12.5px; }
+.raise-in input { border: 0; outline: none; width: 70px; padding: 8px 0; font-family: "Geist Mono", "JetBrains Mono", Consolas, monospace; font-size: 12.5px; background: transparent; color: #1C1B16; }
+.raise-in input::placeholder { color: #918D7C; font-family: "Geist", "Inter", system-ui, sans-serif; }
+.raise-and { font-size: 12.5px; color: #6E6B5C; }
+.raise-hint { display: block; font-size: 11.5px; color: #918D7C; margin-top: 5px; }
+.raise-unit { display: inline-flex; border: 1px solid #D9D2C1; border-radius: 8px; overflow: hidden; }
+.raise-unit button { border: 0; border-radius: 0; background: #fff; color: #45433A; padding: 7px 13px; min-height: 0; font-weight: 600; cursor: pointer; }
+.raise-unit button + button { border-left: 1px solid #D9D2C1; }
+.raise-unit button.on { background: #E6E8F3; color: #3D4A85; }
+.raise-example { margin: 14px 0 0; padding: 9px 11px; border-radius: 8px; background: #FAF9F5; border: 1px solid #E9E4D7; font-size: 12.5px; color: #45433A; line-height: 1.5; }
+.raise-example b { color: #22675A; }
+.raise-example.error { background: #FBE8E5; border-color: #F3CFC9; color: #BB3B2E; }
+#raiseModal .api-actions .linkish { color: #6E6B5C; }
+
+/* end-of-scan pop-up sections */
+.m-sum-sec { margin-top: 16px; }
+.m-sum-sec-head { display: flex; align-items: center; gap: 10px; }
+.m-sum-sec-head h3 { margin: 0; font-size: 14px; }
+.m-sum-exp { margin-left: auto; display: inline-flex; gap: 6px; }
+.m-sum-exp .mini { padding: 4px 10px; min-height: 0; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+.m-sum-sec .hint { margin: 4px 0 0; font-size: 12.5px; }
+.m-sum-sec .m-sum-table { max-height: 26vh; margin-top: 8px; }
+.m-sum-row .nx small { display: block; color: #6E6B5C; font-size: 11px; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m-summary .confirm-actions .linkish { border: 0; background: none; padding: 0; min-height: 0; color: #4C5B9E; margin-right: auto; }
+.m-summary .confirm-actions .linkish:hover { background: none; text-decoration: underline; }
