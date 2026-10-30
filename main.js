@@ -521,13 +521,20 @@ function hookLeanLoading() {
 
 function makePane(mode) {
   hookLeanLoading();
+  // The hidden worker renders offscreen: a plain hidden view counts as a
+  // hidden page, so Chromium stops animation frames and lazy loading there and
+  // Walmart's sellers link never appears. Offscreen, the page is "visible"
+  // (and painted at a low frame rate) while nothing is ever shown.
+  const background = mode === "worker";
   const v = new WebContentsView({
     webPreferences: {
       partition: "persist:listing", // one session for both panes: log in once
       contextIsolation: true,
       nodeIntegration: false,
+      ...(background ? { offscreen: true, backgroundThrottling: false } : {}),
     },
   });
+  if (background) v.webContents.setFrameRate(10);
   v.webContents.setUserAgent(CHROME_UA);
   v.webContents.on("dom-ready", () => {
     try { v.webContents.setZoomFactor(paneZoom); } catch { /* view gone */ }
@@ -708,7 +715,20 @@ const OFFERS_SCRIPT = `(async () => {
     let text = panelText();
     if (!text) {
       // the link's text can carry a "from $X" line too, so allow some length
-      const btn = [...document.querySelectorAll('button, a, [role="button"]')].find((b) => /Compare all (?:\\d+ )?sellers|More seller options|(?:See|View) all sellers|All sellers|\\d+ (?:more|other) sellers?|\\d+ sellers/i.test((b.textContent || "").trim()) && (b.textContent || "").trim().length < 120);
+      const findBtn = () => [...document.querySelectorAll('button, a, [role="button"]')].find((b) => /Compare all (?:\\d+ )?sellers|More seller options|(?:See|View) all sellers|All sellers|\\d+ (?:more|other) sellers?|\\d+ sellers/i.test((b.textContent || "").trim()) && (b.textContent || "").trim().length < 120);
+      let btn = findBtn();
+      // Walmart renders the sellers module lazily, once it scrolls into view:
+      // walk down the page until the link shows up (hidden worker only — the
+      // caller sets __wlbDeep there; the visible pane must never jump)
+      if (!btn && window.__wlbDeep) {
+        for (let y = 0; !btn && y < Math.min(document.documentElement.scrollHeight, 30000); y += 700) {
+          window.scrollTo(0, y);
+          await new Promise((r) => setTimeout(r, 180));
+          btn = findBtn();
+        }
+        for (let i = 0; !btn && i < 6; i++) { await new Promise((r) => setTimeout(r, 500)); btn = findBtn(); }
+        if (btn) btn.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
+      }
       if (!btn) return { list: [], why: "no-link" };
       // a real link would navigate away mid-read: let the caller load that page
       const href = btn.tagName === "A" ? btn.getAttribute("href") || "" : "";
@@ -734,10 +754,12 @@ const OFFERS_SCRIPT = `(async () => {
   if (!list.length && !why) why = "no-match";
   return { list, why: list.length ? null : why };
 })()`;
-// Runs OFFERS_SCRIPT in a view; always resolves to { list, why }.
-async function readOffers(v) {
+// Runs OFFERS_SCRIPT in a view; always resolves to { list, why }. `deep`
+// lets it scroll the page to make a lazily rendered sellers link appear —
+// only ever for the hidden worker.
+async function readOffers(v, deep = false) {
   try {
-    const r = await v.webContents.executeJavaScript(OFFERS_SCRIPT, true);
+    const r = await v.webContents.executeJavaScript(`window.__wlbDeep = ${deep ? "true" : "false"};\n` + OFFERS_SCRIPT, true);
     if (Array.isArray(r)) return { list: r, why: null };
     return { list: Array.isArray(r?.list) ? r.list : [], why: r?.why ?? null };
   } catch { return { list: [], why: "error" }; }
@@ -752,7 +774,7 @@ async function readSellersPage(w, itemId) {
   await loadAndWait(w, sellersUrl(itemId));
   let r = { list: [], why: "sellers-page" };
   for (let i = 0; i < 6 && w.__item === itemId; i++) { // offers can render after the load event
-    const got = await readOffers(w);
+    const got = await readOffers(w, true);
     if (got.list.length) { r = got; break; }
     await wait(1000);
   }
@@ -924,7 +946,7 @@ async function paneOffers(itemId) {
   for (let i = 0; i < 50 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤15 s
   if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
   try {
-    const offers = (await sellersPageFallback(w, itemId, await readOffers(w))).list;
+    const offers = (await sellersPageFallback(w, itemId, await readOffers(w, true))).list;
     if (w.__item !== itemId) return null;
     sendPrice(w, { ...w.__lastPrice, offers });
     return offers;
@@ -943,9 +965,12 @@ async function marketReadWalmart(itemId) {
   // costs one script run); when it comes back empty on a page that says it
   // has more sellers, wait a moment and try once more, then fall back to
   // Walmart's all-sellers page.
-  let r = await readOffers(w);
+  // a single-seller listing has no link to look for, so only scroll for one
+  // when the listing says (or doesn't say) there are other sellers
+  const deep = w.__lastPrice.others !== 0;
+  let r = await readOffers(w, deep);
   if (w.__item !== itemId) return null;
-  if (!r.list.length && r.why !== "no-link" && r.why !== "link-page") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w); }
+  if (!r.list.length && r.why !== "no-link" && r.why !== "link-page") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w, deep); }
   if (w.__item !== itemId) return null;
   r = await sellersPageFallback(w, itemId, r);
   if (w.__item !== itemId) return null;

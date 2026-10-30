@@ -73,6 +73,7 @@ Optionally add `Regular Commission` and `During Incentive Commission` columns (a
 
 - Electron 33, plain HTML/CSS/JS renderer (no framework).
 - The listing pane is a `WebContentsView` — walmart.com refuses to render into a `<webview>`, so a window-grade view is docked over the layout instead.
+- Background reads (scans, seller lookups) run in a second, never-shown view that renders **offscreen**. A merely hidden view counts as a hidden page, so Chromium pauses animation frames and lazy loading there and Walmart's lazily rendered "Compare all sellers" link never appears; offscreen, the page behaves as visible, so the worker can scroll to that link, click it and read the panel.
 - `exceljs` powers `.xlsx` import/export.
 - Icon assets live in [`build/`](build/) — `icon.svg` is the master; `icon.png` / `icon.ico` are rasterized from it. `icon-mac.svg` / `icon-mac.png` place the same artwork on Apple's 1024 icon grid (tile 824 px, clear margin around it) so the Dock shows it at the same size as other Mac apps.
 
