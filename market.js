@@ -56,9 +56,9 @@ const AMZ_PAUSE_MS = [2000, 3500]; // breathing room between Amazon pages (rando
 const WM_PAUSE_MS = 400;
 
 // Walmart Marketplace API (Pricing Insights). When keys are saved, the scan
-// pulls every SKU's buy box in one batched call instead of reading pages;
-// pages are still read for SKUs the API doesn't know, and on request for
-// seller names (which the API doesn't carry).
+// first pulls every SKU's buy box, win rate and suggested price in one batched
+// call. Every listing's page is still read, since only the page names who
+// holds the buy box.
 let apiSettings = { clientId: "", env: "production", hasSecret: false, lastScan: null };
 const apiReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
 
@@ -366,8 +366,11 @@ function renderPanel() {
         <div><span>Competitor</span><b>${fmt(api.competitorPrice)}</b></div>
         <div title="${api.suggestedDriver ? esc(DRIVER[api.suggestedDriver] || api.suggestedDriver) : ""}"><span>Suggested</span><b>${fmt(api.suggestedPrice)}</b>${api.suggestedDriver ? `<i>${esc(DRIVER[api.suggestedDriver] || "")}</i>` : ""}</div>
       </div>` : "";
-  // one seller listed although Walmart says there are more: say why
-  const sellersNote = f.bb && f.sellers.length <= 1 && (f.bb.others > 0 || f.bb.offersWhy)
+  // one seller listed although Walmart says there are more: the scan skipped
+  // them (it reads only the buy box), or say why they couldn't be read
+  const sellersNote = f.bb && f.sellers.length <= 1 && f.bb.offersWhy === "skipped"
+    ? `<div class="m-seller m-muted m-note">${f.bb.others > 0 ? `Walmart lists ${f.bb.others} more seller${f.bb.others === 1 ? "" : "s"}.` : ""} <button class="mini" id="mReadPage" ${mScan.running ? "disabled" : ""}>Read the page for sellers</button></div>`
+    : f.bb && f.sellers.length <= 1 && (f.bb.others > 0 || f.bb.offersWhy)
     ? `<div class="m-seller m-muted m-note">${f.bb.others > 0 ? `Walmart lists ${f.bb.others} more seller${f.bb.others === 1 ? "" : "s"}, but ` : ""}${{
         "no-link": "the page showed no sellers link to open",
         "sellers-page": "neither the listing nor Walmart's all-sellers page could be read",
@@ -596,21 +599,21 @@ async function readAmazonInto(entry) {
 }
 
 // ---- the scan ----------------------------------------------------------------------
-// With API keys saved: one batched Pricing Insights call covers every SKU's
-// Walmart buy box up front, then only the Amazon listings are read page by
-// page. SKUs the API doesn't know (not in the catalog under that SKU) fall
-// back to a page read, as does everything when no keys are saved.
+// With API keys saved, one batched Pricing Insights call adds every SKU's win
+// rate and suggested price up front. Then each listing's page is read for the
+// buy box price and who holds it (the other sellers only where you hold it,
+// for Room to raise), and each linked Amazon listing.
 const rnd = (a, b) => a + Math.random() * (b - a);
 // "matched/asked" SKU counts, "off" (no keys saved), "err" (the call failed),
 // or from older builds "1" (API used) / "0" / "" (not used)
 let mLastScanApi = localStorage.getItem("marketLastScanApi") || "";
 function apiScanText() {
-  if (mLastScanApi === "off") return " · Walmart API not connected — every page was read";
-  if (mLastScanApi === "err") return " · Walmart API failed — every page was read (see API)";
+  if (mLastScanApi === "off") return " · Walmart API not connected";
+  if (mLastScanApi === "err") return " · Walmart API failed (see API)";
   const [got, asked] = mLastScanApi.split("/").map(Number);
   if (!mLastScanApi || mLastScanApi === "0") return "";
-  if (!(asked > 0)) return " · via Walmart API";
-  return got === asked ? " · all via Walmart API" : ` · Walmart API knew ${got} of ${asked} SKUs, the rest read from the page`;
+  if (!(asked > 0)) return " · with Walmart API";
+  return got === asked ? " · Walmart API knew every SKU" : ` · Walmart API knew ${got} of ${asked} SKUs`;
 }
 window.api.onApiProgress?.(({ done, total }) => {
   if (mScan.running && mScan.step === "api") { mScan.current = `Walmart API: ${done} of ${total} SKUs`; renderScanBar(); }
@@ -622,7 +625,7 @@ async function readPageFor(i) {
   if (!id) return;
   mScan = { running: true, done: 0, total: 1, current: `Walmart: ${items[i].sku || id}`, currentId: id, step: "walmart", stepN: "", stop: false, startedAt: Date.now(), pageOnly: true };
   renderMarket();
-  const r = await window.api.marketReadWalmart(id).catch(() => null);
+  const r = await window.api.marketReadWalmart(id, { allSellers: true }).catch(() => null);
   if (r && r.price) rememberPrice(r); else markNoPrice(id);
   mScan.running = false; mScan.currentId = "";
   renderMarket();
@@ -637,7 +640,6 @@ async function runMarketScan(onlyRows = null) {
   const full = !onlyRows;
   renderMarket();
   // 1) Walmart API — every SKU in one go
-  const apiCovered = new Set(); // item IDs whose buy box the API supplied
   let usedApi = apiReady() ? "" : "off";
   if (apiReady()) {
     const skus = [...new Set(rows.map((i) => String(items[i].sku ?? "").trim()).filter(Boolean))];
@@ -651,7 +653,6 @@ async function runMarketScan(onlyRows = null) {
           if (!Object.keys(res.bySku).length) mScan.apiNone = skus.length;
           for (const [sku, ins] of Object.entries(res.bySku)) {
             rememberApi(sku, ins, res.at);
-            for (const i of rowsWithSku(sku)) apiCovered.add(idOf(items[i]));
           }
           for (const sku of res.missing || []) markNotInCatalog(sku, res.at);
           apiSettings.lastScan = res.at;
@@ -673,15 +674,12 @@ async function runMarketScan(onlyRows = null) {
     const rowsFor = items.map((_, i) => i).filter((i) => idOf(items[i]) === id);
     const sku = items[rowsFor[0]]?.sku || id;
     mScan.currentId = id;
-    mScan.current = apiCovered.has(id) ? `${sku} — buy box from the API` : "";
-    if (!apiCovered.has(id)) {
-      // 2) page read — no keys, the API didn't know this SKU, or the call failed
-      mScan.current = `Walmart: ${sku}`; mScan.step = "walmart";
-      renderMarket();
-      const r = await window.api.marketReadWalmart(id).catch(() => null);
-      if (mScan.stop) break;
-      if (r && r.price) rememberPrice(r); else markNoPrice(id);
-    }
+    // 2) page read: the buy box price and who holds it
+    mScan.current = `Walmart: ${sku}`; mScan.step = "walmart";
+    renderMarket();
+    const r = await window.api.marketReadWalmart(id, { store: myStore }).catch(() => null);
+    if (mScan.stop) break;
+    if (r && r.price) rememberPrice(r); else markNoPrice(id);
     // every Amazon listing linked to any row with this item ID
     const entries = [];
     for (const i of rowsFor) for (const a of amzList(items[i])) if (!a.manual && a.asin) entries.push(a);
@@ -716,8 +714,8 @@ async function runMarketScan(onlyRows = null) {
   }
   const apiError = mScan.apiError, apiNone = mScan.apiNone;
   renderMarket();
-  if (apiError) openApiModal(`The Walmart API scan failed, so the pages were read instead. ${apiError}`, true);
-  else if (apiNone) openApiModal(`Walmart's API connected, but returned nothing for any of your ${apiNone} SKU${apiNone === 1 ? "" : "s"}, so every listing was read from its page. Pricing Insights only covers published items in this seller account, looked up by the exact SKU in Seller Center — check the SKUs match, and that these keys belong to the same account.`, true);
+  if (apiError) openApiModal(`The Walmart API part of the scan failed, so win rates and suggested prices are missing (buy boxes were read from the pages as usual). ${apiError}`, true);
+  else if (apiNone) openApiModal(`Walmart's API connected, but returned nothing for any of your ${apiNone} SKU${apiNone === 1 ? "" : "s"}, so there are no win rates or suggested prices (buy boxes were read from the pages as usual). Pricing Insights only covers published items in this seller account, looked up by the exact SKU in Seller Center — check the SKUs match, and that these keys belong to the same account.`, true);
   else if (full && !stopped) showSummary();
 }
 
@@ -727,12 +725,12 @@ function renderApiBtn() {
   if (!b) return;
   b.classList.toggle("attention", !apiReady());
   b.title = apiReady()
-    ? `Walmart API connected (${apiSettings.env === "sandbox" ? "sandbox" : "production"}) — the scan pulls every buy box from Walmart's Pricing Insights`
-    : "Connect your Walmart seller API keys — the scan then pulls every buy box in seconds instead of reading each page";
+    ? `Walmart API connected (${apiSettings.env === "sandbox" ? "sandbox" : "production"}) — the scan adds win rates and suggested prices from Pricing Insights`
+    : "Connect your Walmart seller API keys — the scan then adds win rates and suggested prices";
   const scan = $("mScanBtn");
   if (scan) scan.title = apiReady()
-    ? "Pull every SKU's Walmart buy box from the API, then read each linked Amazon listing"
-    : "Read every listing's Walmart buy box and sellers, then each linked Amazon listing";
+    ? "Pull win rates from the Walmart API, read each listing's buy box price and holder, then each linked Amazon listing"
+    : "Read each listing's Walmart buy box price and who holds it, then each linked Amazon listing";
 }
 async function refreshApiSettings() {
   try { apiSettings = await window.api.getApiSettings(); } catch { /* keep defaults */ }

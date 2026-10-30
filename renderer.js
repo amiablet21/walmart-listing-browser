@@ -802,8 +802,10 @@ function rememberPrice(p) {
   const id = String(p.itemId);
   for (const i of rowsWithItem(id)) {
     const prev = items[i].buyBox;
+    // a scan that skipped the other sellers drops an old list rather than show it as current
+    const skipped = p.offersWhy === "skipped";
     items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null,
-      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : (prev?.offers || []),
+      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : skipped ? [] : (prev?.offers || []),
       offersWhy: Array.isArray(p.offers) && p.offers.length ? null : (p.offersWhy ?? prev?.offersWhy ?? null),
       offersSnapshot: Array.isArray(p.offers) && p.offers.length ? null : (p.offersSnapshot ?? null), at: Date.now(),
       api: prev?.api ?? null, apiAt: prev?.apiAt ?? null, notInCatalog: prev?.notInCatalog || undefined };

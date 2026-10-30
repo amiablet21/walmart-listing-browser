@@ -290,7 +290,7 @@
     </div>
 
     <div class="m-toolbar">
-      <button id="mScanBtn" class="primary" title="Read every listing's Walmart buy box and sellers, then each linked Amazon listing">
+      <button id="mScanBtn" class="primary" title="Read each listing's Walmart buy box price and who holds it, then each linked Amazon listing">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
         <span>Run market scan</span>
       </button>
@@ -349,7 +349,7 @@
           </thead>
           <tbody id="mTbody"></tbody>
         </table>
-        <p class="m-hint">Green edge: you hold the buy box and Amazon isn't cheaper. Amber: buy box lost. Red: Amazon undercuts your price. Click a row for every seller and every linked Amazon listing.</p>
+        <p class="m-hint">Green edge: you hold the buy box and Amazon isn't cheaper. Amber: buy box lost. Red: Amazon undercuts your price. Click a row for its buy box holder, its linked Amazon listings, and the other sellers on request.</p>
       </div>
       <aside id="mPanel" class="m-panel"></aside>
     </div>
@@ -362,7 +362,7 @@
         <h2 id="apiTitle">Walmart API keys</h2>
         <span id="apiState" class="api-state off">Not connected</span>
       </div>
-      <p class="api-sub">The market scan then pulls every buy box straight from Walmart. <button id="apiKeysLink" class="linkish" type="button">Where to get keys</button></p>
+      <p class="api-sub">The market scan then adds your win rate and Walmart's suggested price for every SKU. <button id="apiKeysLink" class="linkish" type="button">Where to get keys</button></p>
       <p id="apiMsg" class="api-msg hidden"></p>
       <label class="api-field">
         <span>Client ID</span>

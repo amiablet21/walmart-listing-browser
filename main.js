@@ -952,15 +952,35 @@ async function paneOffers(itemId) {
     return offers;
   } catch { return null; }
 }
-// The Market tab's scan: buy box, seller and every other seller's price for
-// one item, read fresh in the hidden worker (a day-old page is reloaded).
-async function marketReadWalmart(itemId) {
+// The Market tab's scan: the buy box price and who holds it, read fresh in the
+// hidden worker (a day-old page is reloaded). The other sellers' prices take
+// far longer (open the sellers panel, wait, retry, the all-sellers page), so
+// they are read only when asked for one row (opts.allSellers) or when the
+// holder is you (opts.store names your store) — then the next seller's price
+// shows whether there is room to raise yours.
+async function marketReadWalmart(itemId, opts = {}) {
   if (!itemId) return null;
   const w = ensureWorker();
   w.__item = null; // force a reload even if this item was the last one read
   workerLoad(itemId);
   for (let i = 0; i < 80 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤24 s
   if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
+  // the holder's name can render a moment after the price: look once more
+  if (!w.__lastPrice.seller) {
+    await wait(1500);
+    if (w.__item !== itemId) return null;
+    try {
+      const s = (await w.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {};
+      w.__lastPrice = { ...w.__lastPrice, seller: s.seller ?? null, others: w.__lastPrice.others ?? s.others ?? null };
+    } catch { /* keep what we have */ }
+  }
+  const holder = String(w.__lastPrice.seller ?? "").trim().toLowerCase();
+  const isYou = !!(opts.store && holder && holder === String(opts.store).trim().toLowerCase());
+  if (!opts.allSellers && !isYou) {
+    const p = { ...w.__lastPrice, offers: [], offersWhy: w.__lastPrice.others > 0 ? "skipped" : null, at: Date.now() };
+    sendPrice(w, p);
+    return p;
+  }
   // Always try the sellers panel (a single-seller page has no link, so this
   // costs one script run); when it comes back empty on a page that says it
   // has more sellers, wait a moment and try once more, then fall back to
@@ -1346,7 +1366,7 @@ app.whenReady().then(() => {
   ipcMain.handle("listing:hide", () => paneHide());
   ipcMain.handle("listing:prefetch", (_e, itemId) => panePrefetch(itemId));
   ipcMain.handle("listing:offers", (_e, itemId) => paneOffers(itemId));
-  ipcMain.handle("market:readWalmart", (_e, itemId) => marketReadWalmart(itemId));
+  ipcMain.handle("market:readWalmart", (_e, itemId, opts) => marketReadWalmart(itemId, opts || {}));
   ipcMain.handle("market:showSnapshot", (_e, itemId) => showSnapshot(itemId));
   ipcMain.handle("market:readAmazon", (_e, asin) => amazonRead(asin));
   ipcMain.handle("market:showAmazon", (_e, { asin, bounds }) => amazonShow(asin, bounds));

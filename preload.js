@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld("api", {
   hideListing: () => ipcRenderer.invoke("listing:hide"),
   prefetchListing: (itemId) => ipcRenderer.invoke("listing:prefetch", itemId),
   listingOffers: (itemId) => ipcRenderer.invoke("listing:offers", itemId),
-  marketReadWalmart: (itemId) => ipcRenderer.invoke("market:readWalmart", itemId),
+  marketReadWalmart: (itemId, opts) => ipcRenderer.invoke("market:readWalmart", itemId, opts),
   showPageSnapshot: (itemId) => ipcRenderer.invoke("market:showSnapshot", itemId),
   marketReadAmazon: (asin) => ipcRenderer.invoke("market:readAmazon", asin),
   showAmazon: (asin, bounds) => ipcRenderer.invoke("market:showAmazon", { asin, bounds }),
