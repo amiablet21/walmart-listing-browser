@@ -62,7 +62,7 @@ function normalizeRows(rows) {
   // with $ Change / % Change in columns E-F can't be misread. Without labeled
   // columns every row gets the defaults.
   const REG_DEFAULT = 6, INC_DEFAULT = 2;
-  let regIdx = -1, incIdx = -1;
+  let regIdx = -1, incIdx = -1, stockIdx = -1;
   const header = rows.find((p) => /^sku$/i.test(String(p?.[0] ?? "").trim()));
   if (header) {
     const labels = header.map((s) => String(s ?? "").toLowerCase());
@@ -70,6 +70,8 @@ function normalizeRows(rows) {
     incIdx = labels.findIndex((l) =>
       l.includes("commission") && (l.includes("incentive") || l.includes("during")));
     if (incIdx === -1) incIdx = labels.findIndex((l, k) => l.includes("commission") && k !== regIdx);
+    // a stock/quantity column (any position) fills the sheet's Stock column
+    stockIdx = labels.findIndex((l) => /\bstock\b|\bqty\b|\bquantity\b|\bavailable\b/.test(l));
   }
   const commission = (parts, idx, dflt) => {
     const s = String(idx >= 0 ? parts[idx] ?? "" : "").trim();
@@ -83,14 +85,18 @@ function normalizeRows(rows) {
     if (/^sku$/i.test(String(parts[0] ?? "").trim())) continue;    // header row
     const [sku, itemId, before, during] = parts;
     if (!String(sku ?? "").trim()) continue;                        // SKU is the only required column
-    out.push({
+    const row = {
       sku: String(sku ?? "").trim(),
       itemId: String(itemId ?? "").trim(),
       before: parseNumMain(before),
       during: parseNumMain(during),
       regCom: commission(parts, regIdx, REG_DEFAULT),
       incCom: commission(parts, incIdx, INC_DEFAULT),
-    });
+    };
+    if (stockIdx >= 0 && String(parts[stockIdx] ?? "").trim() !== "") {
+      row.stock = parseNumMain(parts[stockIdx]);
+    }
+    out.push(row);
   }
   return out;
 }
@@ -123,7 +129,7 @@ async function parseXlsx(file) {
   const ws = wb.worksheets[0];
   if (!ws) throw new Error("No worksheet found in the file.");
   const rows = [];
-  ws.eachRow((row) => rows.push([1, 2, 3, 4, 5, 6, 7, 8].map((c) => cellText(row.getCell(c)))));
+  ws.eachRow((row) => rows.push([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((c) => cellText(row.getCell(c)))));
   return normalizeRows(rows);
 }
 

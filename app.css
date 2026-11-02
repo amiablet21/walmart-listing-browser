@@ -131,17 +131,18 @@ body.pane-closed .toolbar #paneOpenBtn { display: inline-flex; }
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #1F4E79;               /* navy header like the sheet */
+  background: #1E3A66;               /* navy header, like the organized list */
   color: #FFFFFF;
   font-weight: 700;
-  font-size: 12px;
-  text-align: center;
-  padding: 8px 10px;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 8px 8px;
   white-space: nowrap;
-  border-right: 1px solid #16385A;   /* one-sided: doubled edges would show  */
-  border-bottom: 1px solid #16385A;  /* now that border-spacing tiles cells  */
-  letter-spacing: 0;
 }
+#sheet thead th.num-h { text-align: right; }
+#sheet thead th.aux-h { font-weight: 600; opacity: 0.85; }
 #sheet thead th.rn { background: #F4F3EF; border-color: #E4E2DA; width: 34px; }
 /* no position:relative here — it would override the th's position:sticky and
    the header would scroll out of line; sticky already anchors the × button */
@@ -163,9 +164,8 @@ body.pane-closed .toolbar #paneOpenBtn { display: inline-flex; }
 #sheet td.custom { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 
 #sheet td {
-  border-right: 1px solid #E7E5DE;   /* light gridlines (right/bottom only — */
-  border-bottom: 1px solid #E7E5DE;  /* border-spacing is 0, so they tile)   */
-  padding: 6px 10px;
+  border-bottom: 1px solid #E3E6EC;  /* hairline rows, no vertical gridlines */
+  padding: 5px 8px;
   white-space: nowrap;
   overflow: hidden;                  /* narrow columns clip with … */
   text-overflow: ellipsis;
@@ -256,13 +256,28 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   box-shadow: none;
 }
 #sheet td.sku {
-  background: #E7F0E3;               /* light green SKU column */
+  background: #FFFFFF;               /* opaque: the column pins left on scroll */
   color: var(--ink);
-  font-weight: 500;
+  font-family: "Geist Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
   max-width: 230px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* US / INTL pill after a phone SKU (read from the SKU text) */
+#sheet td.sku .b {
+  display: inline-block;
+  margin-left: 7px;
+  vertical-align: 1px;
+  font-family: "Geist", "Inter", "Segoe UI", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 1px 7px;
+  border-radius: 9px;
+}
+#sheet td.sku .b.us { background: #E8F2E8; color: #1E6B2E; }
+#sheet td.sku .b.int { background: #E8EEFB; color: #24509E; }
 #sheet td.id { font-size: 12px; }
 #sheet td.num { text-align: right; }
 #sheet td.neg { color: var(--red); }
@@ -270,8 +285,46 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* row interactions */
 .sku-row { cursor: pointer; }
 #sheet .sku-row:hover td { background: #F6F8FB; }
-#sheet .sku-row:hover td.sku { background: #DEEBD8; }
+#sheet .sku-row:hover td.sku { background: #F6F8FB; }
 #sheet .sku-row:hover td.rn { background: #ECEBE5; }
+
+/* catalog organization: section bands and model lines over each group */
+#sheet tr.secr td.grp {
+  background: #EEF1F6;
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 8px;
+  border-top: 2px solid #1E3A66;
+  cursor: pointer;
+}
+#sheet tr.secr td.rn { background: #ECEBE5; border-top: 2px solid #1E3A66; }
+#sheet tr.secr .n { opacity: 0.55; font-weight: 500; margin-left: 6px; font-size: 12px; }
+#sheet tr.secr .tw, #sheet tr.modr .tw {
+  display: inline-block;
+  width: 16px;
+  color: var(--faint);
+  font-size: 11px;
+  transition: transform 0.12s;
+}
+#sheet tr.secr.closed .tw, #sheet tr.modr.closed .tw { transform: rotate(-90deg); }
+#sheet tr.modr td.grp {
+  background: #F7F8FB;
+  color: var(--ink);
+  opacity: 0.85;
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: 0.3px;
+  padding: 5px 8px 5px 14px;
+  cursor: pointer;
+}
+#sheet tr.modr td.rn { background: #F0EFE9; }
+#sheet tr.hidden { display: none; }
+
+/* display-only catalog columns */
+#sheet td.cond { font-size: 12px; }
+#sheet td.stk { font-size: 12px; }
+#sheet td.stk.zero { color: var(--faint); }
 /* selected — Sheets-style: the WHOLE row tints blue (including the SKU
    column), accent rules run along its top and bottom edges, and the row
    number becomes a solid accent chip. These selectors carry the #sheet

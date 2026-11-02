@@ -227,6 +227,7 @@ async function load() {
     localStorage.setItem("seedVersion", SEED_VERSION);
   }
   items.forEach(fillComs); // rows saved before commission columns existed
+  organizeItems();         // file every row into its catalog place
   // one-time migrations for the cost/shipping/profit columns:
   // a user-created custom column literally named "Cost" becomes the built-in
   const costIdx = customCols.findIndex((c) => c.name.trim().toLowerCase() === "cost");
@@ -308,6 +309,135 @@ const money = (n) => (Number.isFinite(n) ? n.toFixed(2) : "#ERR");
 const chDollar = (n) => (!Number.isFinite(n) ? "#ERR" : n < 0 ? `($${Math.abs(n).toFixed(2)})` : `$${n.toFixed(2)}`);
 const chPct = (n) => (!Number.isFinite(n) ? "#ERR" : n < 0 ? `(${Math.abs(n).toFixed(1)}%)` : `${n.toFixed(1)}%`);
 const comPct = (n) => (Number.isFinite(n) ? `${Math.round(n * 100) / 100}%` : "#ERR");
+
+// ---- catalog organization ---------------------------------------------------
+// The sheet shows itself organized like the Walmart channel-SKU list: sections
+// (Tablets → Phones → Open Box → Other) with a model line over each group,
+// oldest model first, US listings before International. None of it is stored —
+// a row's place comes from its SKU text alone, so imported and pasted rows file
+// themselves, and renaming a SKU re-files its row. The items array is kept in
+// this order (organizeItems), so row numbers, formulas and exports follow it.
+const SECTIONS = ["Tablets", "Phones", "Open Box", "Other"];
+// Rules are tried top to bottom (specific before general — S26 FE before S26);
+// ord is the model's place within its section (release order, oldest first).
+const MODEL_RULES = [
+  // tablets
+  { sec: 0, ord: 0,  name: "Tab A7 Lite",      test: (c) => c.includes("T227") || c.includes("T220") || c.includes("UTSMT") },
+  { sec: 0, ord: 1,  name: "Tab A11",          test: (c) => c.includes("X133") || c.includes("X135") },
+  { sec: 0, ord: 2,  name: "Tab A9+",          test: (c) => c.includes("X210") || c.includes("A9+") || c.includes("TABA9") },
+  { sec: 0, ord: 3,  name: "Tab A11+",         test: (c) => c.includes("X230") },
+  { sec: 0, ord: 4,  name: "Tab A11+ 5G",      test: (c) => c.includes("X236") },
+  { sec: 0, ord: 6,  name: "Active5 Pro",      test: (c) => c.includes("X356") || c.includes("ACTIVE5PRO") },
+  { sec: 0, ord: 5,  name: "Tab Active5",      test: (c) => c.includes("X306") || c.includes("ACTIVE5") },
+  { sec: 0, ord: 7,  name: "Tab S10 Lite",     test: (c) => c.includes("X400") },
+  { sec: 0, ord: 8,  name: "Tab S10 Lite 5G",  test: (c) => c.includes("X406") },
+  { sec: 0, ord: 9,  name: "Tab S10 FE",       test: (c) => c.includes("X520") },
+  { sec: 0, ord: 10, name: "Tab S10 FE 5G",    test: (c) => c.includes("X528") },
+  { sec: 0, ord: 11, name: "Tab S9 FE+",       test: (c) => c.includes("X610") || c.includes("S9+FE") || c.includes("S9FE") },
+  { sec: 0, ord: 12, name: "Tab S10 FE+",      test: (c) => c.includes("X620") },
+  { sec: 0, ord: 13, name: "Tab S11",          test: (c) => c.includes("X730") },
+  { sec: 0, ord: 14, name: "Tab S10+",         test: (c) => c.includes("X820") },
+  { sec: 0, ord: 15, name: "Tab S11 Ultra",    test: (c) => c.includes("X930") },
+  { sec: 0, ord: 16, name: "iPad 11th gen",    test: (c) => c.includes("IPAD") },
+  // phones
+  { sec: 1, ord: 0,  name: "Galaxy A23",       test: (c) => c.includes("A23") },
+  { sec: 1, ord: 1,  name: "Galaxy A54",       test: (c) => c.includes("A54") },
+  { sec: 1, ord: 2,  name: "Galaxy A15",       test: (c) => c.includes("A15") },
+  { sec: 1, ord: 4,  name: "Galaxy S24 FE",    test: (c) => c.includes("S24FE") },
+  { sec: 1, ord: 3,  name: "Galaxy S24",       test: (c) => c.includes("S24") },
+  { sec: 1, ord: 6,  name: "Galaxy S25 Ultra", test: (c) => c.includes("S25ULTRA") },
+  { sec: 1, ord: 7,  name: "Galaxy S25 FE",    test: (c) => c.includes("S25FE") },
+  { sec: 1, ord: 5,  name: "Galaxy S25",       test: (c) => c.includes("S25") },
+  { sec: 1, ord: 8,  name: "Galaxy A56",       test: (c) => c.includes("A56") },
+  { sec: 1, ord: 9,  name: "Z Fold7",          test: (c) => c.includes("ZFOLD") },
+  { sec: 1, ord: 11, name: "Galaxy S26+",      test: (c) => c.includes("S26PLUS") || c.includes("S26+") },
+  { sec: 1, ord: 12, name: "Galaxy S26 Ultra", test: (c) => c.includes("S26ULTRA") },
+  { sec: 1, ord: 13, name: "Galaxy S26 FE",    test: (c) => c.includes("S26FE") },
+  { sec: 1, ord: 10, name: "Galaxy S26",       test: (c) => c.includes("S26") },
+];
+// a model code with no rule yet still gets its own group (after the known
+// models of its section), so a new release never falls into "Other"
+function autoModel(c) {
+  let m = /X(\d{3})/.exec(c);
+  if (m) return { sec: 0, ord: 100 + Number(m[1]) / 1000, name: "X" + m[1] };
+  m = /S(\d{2})(ULTRA|PLUS|FE)?/.exec(c);
+  if (m) {
+    const mod = m[2] === "ULTRA" ? " Ultra" : m[2] === "PLUS" ? "+" : m[2] === "FE" ? " FE" : "";
+    return { sec: 1, ord: 100 + Number(m[1]) + (m[2] ? 0.1 : 0), name: "Galaxy S" + m[1] + mod };
+  }
+  m = /^A(\d{2})/.exec(c);
+  if (m) return { sec: 1, ord: 100 + Number(m[1]), name: "Galaxy A" + m[1] };
+  return null;
+}
+
+const classifyCache = new Map();
+function classify(skuRaw) {
+  const key = String(skuRaw ?? "");
+  const hit = classifyCache.get(key);
+  if (hit) return hit;
+  const s = key.toUpperCase();
+  const c = s.replace(/[^A-Z0-9+]/g, "");
+  const openBox = c.includes("OPENBOX") || /\bOB\b/.test(s);
+  const cm = c.replace(/^OPENBOX/, "");          // match the model under the prefix
+  const rule = MODEL_RULES.find((r) => r.test(cm)) || autoModel(cm);
+  const secIdx = openBox ? 2 : rule ? rule.sec : 3;
+  // US / INTL applies to phones (that's where both versions sell side by side);
+  // \b keeps MINT from reading as INT
+  const intl = /\b(INTL|INTRL|INTERNATIONAL|GLOBAL|INT)\b/.test(s);
+  const badge = rule?.sec === 1 ? (intl ? "int" : "us") : null;
+  const k = {
+    secIdx,
+    secName: SECTIONS[secIdx],
+    modOrd: rule ? rule.sec * 1000 + rule.ord : 9999, // in Open Box, tablets still sort before phones
+    model: rule ? rule.name : "Other",
+    badge,
+    badgeRank: badge === "int" ? 1 : 0,
+    cond: openBox ? "Open Box" : "New",
+  };
+  if (classifyCache.size > 4000) classifyCache.clear();
+  classifyCache.set(key, k);
+  return k;
+}
+
+// Sort items into catalog order (stable — equal rows keep their relative
+// order, so drag-reordering inside a group survives). Remaps the selection.
+function organizeItems() {
+  const selIt = items[selected] ?? null;
+  const actIt = activeCell ? items[activeCell.i] ?? null : null;
+  const keyed = items.map((it, idx) => ({ it, idx, k: classify(it.sku) }));
+  keyed.sort((a, b) =>
+    a.k.secIdx - b.k.secIdx || a.k.modOrd - b.k.modOrd ||
+    a.k.badgeRank - b.k.badgeRank || a.idx - b.idx);
+  items = keyed.map((x) => x.it);
+  if (selIt) selected = items.indexOf(selIt);
+  if (actIt) activeCell = { ...activeCell, i: items.indexOf(actIt) };
+}
+
+// folded sections / model groups (remembered between launches)
+let foldedSecs = new Set(), foldedMods = new Set();
+try { foldedSecs = new Set(JSON.parse(localStorage.getItem("foldSecs") || "[]")); } catch { foldedSecs = new Set(); }
+try { foldedMods = new Set(JSON.parse(localStorage.getItem("foldMods") || "[]")); } catch { foldedMods = new Set(); }
+function saveFolds() {
+  localStorage.setItem("foldSecs", JSON.stringify([...foldedSecs]));
+  localStorage.setItem("foldMods", JSON.stringify([...foldedMods]));
+}
+// rows drag-reorder only within their own model group (and US/INTL cluster) —
+// the catalog organization owns the larger order
+function sameGroup(a, b) {
+  const ka = classify(items[a]?.sku), kb = classify(items[b]?.sku);
+  return ka.secIdx === kb.secIdx && ka.model === kb.model && ka.badgeRank === kb.badgeRank;
+}
+
+// a row inside a folded group unfolds it before being selected or scrolled to
+function ensureRowVisible(i) {
+  const it = items[i];
+  if (!it) return;
+  const k = classify(it.sku);
+  let changed = false;
+  if (foldedSecs.delete(k.secName)) changed = true;
+  if (foldedMods.delete(k.secName + "|" + k.model)) changed = true;
+  if (changed) { saveFolds(); render(); }
+}
 
 // ---- formula engine --------------------------------------------------------
 // Price cells accept "=" formulas with A1-style refs matching the sheet's
@@ -494,18 +624,22 @@ function startEdit(tr, i, td) {
   const commit = () => {
     if (done) return;
     done = true;
-    applyMutation(() => setCell(i, field, input.value));
-    if (nav && activeCell && activeCell.i === i && activeCell.field === field) {
-      if (nav === "down" && i + 1 < items.length) activeCell = { i: i + 1, field };
+    const itm = items[i];
+    // a SKU edit may re-file the row into another group, so re-find it after
+    applyMutation(() => { setCell(i, field, input.value); if (field === "sku") organizeItems(); });
+    const ci = field === "sku" ? items.indexOf(itm) : i;
+    if (nav && activeCell && activeCell.i === ci && activeCell.field === field) {
+      if (nav === "down" && ci + 1 < items.length) activeCell = { i: ci + 1, field };
       if (nav === "right") {
         const ord = visibleOrder();
         const idx = ord.indexOf(field);
-        activeCell = { i, field: ord[Math.min(ord.length - 1, idx + 1)] };
+        activeCell = { i: ci, field: ord[Math.min(ord.length - 1, idx + 1)] };
       }
     }
     persist();
+    if (activeCell) ensureRowVisible(activeCell.i);
     render();
-    if (nav) document.querySelectorAll(".sku-row")[activeCell?.i ?? i]?.scrollIntoView({ block: "nearest" });
+    if (nav) document.querySelectorAll(".sku-row")[activeCell?.i ?? ci]?.scrollIntoView({ block: "nearest" });
   };
   const cancel = () => { if (done) return; done = true; render(); };
   input.addEventListener("keydown", (e) => {
@@ -561,12 +695,29 @@ function renderHead() {
         ? "During Incentive × (1 − Incent Comm %) − Cost − Shipping. Type a target profit and the During Incentive price adjusts to hit it. Drag to move."
         : "Drag to move";
     }
+    if (NUM_FIELDS.has(f)) th.classList.add("num-h");
     th.style.width = colW(f) + "px";
     attachColDrag(th, f);
     addResizeHandle(th, f);
     tr.appendChild(th);
   }
+  // display-only catalog columns (not part of the data model: no letters,
+  // no formulas, no export changes) — condition read from the SKU, stock
+  // filled by imports that carry a Stock column
+  const condTh = document.createElement("th");
+  condTh.className = "aux-h";
+  condTh.textContent = "Cond.";
+  condTh.title = "Read from the SKU — OPEN-BOX rows show Open Box";
+  condTh.style.width = "64px";
+  tr.appendChild(condTh);
+  const stockTh = document.createElement("th");
+  stockTh.className = "aux-h num-h";
+  stockTh.textContent = "Stock";
+  stockTh.title = "Filled by importing a file with a Stock column (matched by header name)";
+  stockTh.style.width = "58px";
+  tr.appendChild(stockTh);
 }
+const NUM_FIELDS = new Set(["before", "during", "change", "pct", "regCom", "incCom", "cost", "shipping", "profit"]);
 
 // drag a header to reorder columns (display only — letters stay put)
 let dragCol = null;
@@ -612,7 +763,7 @@ function render() {
   if (!items.length) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
-    td.colSpan = visibleOrder().length + 1;
+    td.colSpan = visibleOrder().length + 3;
     const btn = document.createElement("button");
     btn.className = "linkish";
     btn.textContent = "+ Add a row";
@@ -623,9 +774,55 @@ function render() {
     tr.appendChild(td);
     tb.appendChild(tr);
   }
+  // section / model header rows — items are kept in catalog order
+  // (organizeItems), so each group is one contiguous run of rows. A row whose
+  // SKU is still blank (just inserted) displays in the group it sits in
+  // instead of opening a stray "Other" band mid-table.
+  const ks = [];
   items.forEach((it, i) => {
+    ks.push(String(it.sku ?? "").trim() ? classify(it.sku) : (ks[i - 1] ?? classify(it.sku)));
+  });
+  const secCounts = {};
+  for (const k of ks) secCounts[k.secName] = (secCounts[k.secName] || 0) + 1;
+  const groupCols = visibleOrder().length + 2; // field columns + Cond. + Stock
+  const folds = !findTerm;                     // searching looks through folds
+  let lastSec = null, lastMod = null;
+  const mkGroupRow = (cls, html, folded, onClick) => {
     const tr = document.createElement("tr");
-    tr.className = "sku-row" + (i === selected ? " sel" : "");
+    tr.className = cls + (folded ? " closed" : "");
+    tr.innerHTML = `<td class="rn"></td><td class="grp" colspan="${groupCols}">${html}</td>`;
+    tr.addEventListener("click", onClick);
+    tb.appendChild(tr);
+    return tr;
+  };
+  items.forEach((it, i) => {
+    const k = ks[i];
+    if (k.secName !== lastSec) {
+      lastSec = k.secName;
+      lastMod = null;
+      const name = k.secName;
+      mkGroupRow("secr", `<span class="tw">▾</span>${name}<span class="n">${secCounts[name]}</span>`,
+        folds && foldedSecs.has(name), () => {
+          if (foldedSecs.has(name)) foldedSecs.delete(name); else foldedSecs.add(name);
+          saveFolds();
+          render();
+        });
+    }
+    const modKey = k.secName + "|" + k.model;
+    const secFolded = folds && foldedSecs.has(k.secName);
+    if (k.model !== lastMod) {
+      lastMod = k.model;
+      const row = mkGroupRow("modr", `<span class="tw">▾</span>${k.model}`,
+        folds && foldedMods.has(modKey), () => {
+          if (foldedMods.has(modKey)) foldedMods.delete(modKey); else foldedMods.add(modKey);
+          saveFolds();
+          render();
+        });
+      if (secFolded) row.classList.add("hidden");
+    }
+    const rowHidden = secFolded || (folds && foldedMods.has(modKey));
+    const tr = document.createElement("tr");
+    tr.className = "sku-row" + (i === selected ? " sel" : "") + (rowHidden ? " hidden" : "");
     tr.draggable = true;
     tr.innerHTML = `<td class="rn"><span class="n">${i + 2}</span></td>`;
     // cells follow the (draggable) display order
@@ -635,6 +832,12 @@ function render() {
       if (f === "sku") {
         td.className = "sku";
         td.textContent = it.sku;
+        if (k.badge && it.sku) {
+          const b = document.createElement("span");
+          b.className = "b " + k.badge;
+          b.textContent = k.badge === "us" ? "US" : "INTL";
+          td.appendChild(b);
+        }
       } else if (f === "itemId") {
         td.className = "mono id";
         td.textContent = it.itemId;
@@ -674,6 +877,18 @@ function render() {
       }
       tr.appendChild(td);
     }
+    // display-only catalog columns: condition (from the SKU) and stock
+    // (filled by imports carrying a Stock column)
+    const condTd = document.createElement("td");
+    condTd.className = "cond";
+    condTd.dataset.col = "cond";
+    condTd.textContent = k.cond;
+    tr.appendChild(condTd);
+    const stockTd = document.createElement("td");
+    stockTd.className = "num stk" + (it.stock === 0 ? " zero" : "");
+    stockTd.dataset.col = "stock";
+    stockTd.textContent = Number.isFinite(it.stock) ? it.stock.toLocaleString("en-US") : "";
+    tr.appendChild(stockTd);
     // mark formula cells (dotted underline + the formula as a tooltip)
     FIELD_ORDER.filter((f) => f !== "sku" && f !== "itemId").forEach((f) => {
       const raw = getRaw(i, f);
@@ -720,7 +935,7 @@ function render() {
         .forEach((r) => r.classList.remove("drop-above", "drop-below"));
     });
     tr.addEventListener("dragover", (e) => {
-      if (dragFrom < 0 || dragFrom === i) return;
+      if (dragFrom < 0 || dragFrom === i || !sameGroup(dragFrom, i)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = "move";
       const above = e.offsetY < tr.offsetHeight / 2;
@@ -729,7 +944,7 @@ function render() {
     });
     tr.addEventListener("dragleave", () => tr.classList.remove("drop-above", "drop-below"));
     tr.addEventListener("drop", (e) => {
-      if (dragFrom < 0 || dragFrom === i) return;
+      if (dragFrom < 0 || dragFrom === i || !sameGroup(dragFrom, i)) return;
       e.preventDefault();
       const above = e.offsetY < tr.offsetHeight / 2;
       moveItem(dragFrom, above ? i : i + 1);
@@ -977,6 +1192,7 @@ document.querySelectorAll("#modeSeg .seg-btn").forEach((b) => {
 function select(i) {
   if (i < 0 || i >= items.length) return;
   selected = i;
+  ensureRowVisible(i); // stepping into a folded group opens it
   dockListing();
   render();
   // keep the selected row in view
@@ -1046,6 +1262,7 @@ window.api.onListingNavigated((itemId) => {
   const idx = items.findIndex((it) => String(it.itemId ?? "").trim() === id);
   if (idx < 0 || idx === selected) return;
   selected = idx;
+  ensureRowVisible(idx);
   render();
   const row = document.querySelectorAll(".sku-row")[idx];
   row?.scrollIntoView({ block: "nearest" });
@@ -1154,6 +1371,7 @@ function handlePaste(text) {
       const at = selected >= 0 ? selected + 1 : items.length;
       items.splice(at, 0, ...rows);
     }
+    organizeItems(); // pasted rows (and edited SKUs) file into their groups
   });
   persist();
   render();
@@ -1825,7 +2043,17 @@ function finishImport(mode) {
       skipped = rows.length - fresh.length;
       kept = restoreBuyBoxes(fresh);
       items.push(...fresh);
+      // a labeled Stock column updates matched rows even when the row itself
+      // was skipped as a duplicate
+      const byKey = new Map(items.map((r) => [key(r), r]));
+      const bySku = new Map(items.map((r) => [r.sku, r]));
+      for (const r of rows) {
+        if (!Number.isFinite(r.stock)) continue;
+        const t = byKey.get(key(r)) || bySku.get(r.sku);
+        if (t) t.stock = r.stock;
+      }
     }
+    organizeItems(); // file the new rows into their catalog groups
   });
   persist();
   render();
@@ -1893,6 +2121,7 @@ window.addEventListener("keydown", (e) => {
       e.preventDefault();
       const ni = Math.min(items.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)));
       activeCell = { i: ni, field };
+      ensureRowVisible(ni);
       render();
       document.querySelectorAll(".sku-row")[ni]?.scrollIntoView({ block: "nearest" });
       return;
