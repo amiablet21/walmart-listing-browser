@@ -218,15 +218,19 @@ function letterToField(L) {
 // ---- persistence -----------------------------------------------------------
 async function load() {
   const saved = await window.api.listItems();
-  if (localStorage.getItem("seedVersion") === SEED_VERSION && saved.length) {
+  // A saved sheet always wins. The sample sheet loads only into an EMPTY
+  // file — a stale/missing seedVersion flag (fresh localStorage partition,
+  // dev run beside the installed app) must never replace real rows.
+  if (saved.length) {
     items = saved;
+    localStorage.setItem("seedVersion", SEED_VERSION);
   } else {
-    // first run with this sheet (or older data format) — load the sheet
     items = SEED.slice();
     persist();
     localStorage.setItem("seedVersion", SEED_VERSION);
   }
   items.forEach(fillComs); // rows saved before commission columns existed
+  restoreBuyBoxes(items);  // rows that lost their read get it from the cache
   organizeItems();         // file every row into its catalog place
   // one-time migrations for the cost/shipping/profit columns:
   // a user-created custom column literally named "Cost" becomes the built-in
