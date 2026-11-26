@@ -391,7 +391,20 @@
   <div id="bbxModal" class="modal-overlay hidden">
     <div class="modal api-card bbx-card" role="dialog" aria-labelledby="bbxTitle">
       <div class="api-head"><h2 id="bbxTitle">Buy box check</h2></div>
-      <p class="api-sub">Each scan reads your repricer strategy's items, then every seller on each listing with a screenshot, and writes the results to a file other apps can read. Nothing in Seller Center is ever changed.</p>
+      <p class="api-sub">Each scan opens the listing of every row on your Incentive price list that has an Item ID, records every seller with a screenshot, and writes the results to a file other apps can read. <span id="bbxApiLine"></span></p>
+      <label class="api-sandbox bbx-every"><input id="bbxSchedOn" type="checkbox" /> Scan by itself every <input id="bbxHours" type="number" min="0.5" max="48" step="0.5" aria-label="Hours between scans" /> hours while the app is open</label>
+      <label class="api-sandbox"><input id="bbxShots" type="checkbox" /> Save a screenshot of each listing's seller list</label>
+      <div class="api-field bbx-gap">
+        <span>Results file for other apps</span>
+        <p id="bbxExportPath" class="bbx-path"></p>
+        <div class="bbx-row">
+          <button id="bbxFolder" type="button">Change folder…</button>
+          <button id="bbxFolderOpen" type="button">Open folder</button>
+          <button id="bbxFolderReset" class="linkish" type="button">Use the default</button>
+        </div>
+      </div>
+      <label class="api-sandbox bbx-gap"><input id="bbxUseStrategy" type="checkbox" /> Also read one repricer strategy's item list (optional)</label>
+      <div id="bbxStrategyBox" class="bbx-strategy hidden">
       <label class="api-field">
         <span>Repricer strategy</span>
         <input id="bbxStrategy" type="text" autocomplete="off" spellcheck="false" />
@@ -426,16 +439,6 @@
           <option value="all">Every row with an Item ID</option>
         </select>
       </label>
-      <label class="api-sandbox bbx-every"><input id="bbxSchedOn" type="checkbox" /> Scan by itself every <input id="bbxHours" type="number" min="0.5" max="48" step="0.5" aria-label="Hours between scans" /> hours while the app is open</label>
-      <label class="api-sandbox"><input id="bbxShots" type="checkbox" /> Save a screenshot of each listing's seller list</label>
-      <div class="api-field bbx-gap">
-        <span>Results file for other apps</span>
-        <p id="bbxExportPath" class="bbx-path"></p>
-        <div class="bbx-row">
-          <button id="bbxFolder" type="button">Change folder…</button>
-          <button id="bbxFolderOpen" type="button">Open folder</button>
-          <button id="bbxFolderReset" class="linkish" type="button">Use the default</button>
-        </div>
       </div>
       <div class="api-actions">
         <button id="bbxCancel">Close</button>

@@ -1,9 +1,11 @@
 // Market tab — Walmart buy box and Amazon buy box side by side, per SKU.
 //
-// The scan is a full buy box check: the repricer strategy's items are read
-// first (SKU, price, min, max, inventory, status — read-only), then every
-// listing's whole seller list with shipping, a screenshot of it, and after
-// the scan a results file for other apps. It repeats every few hours.
+// The scan is a full buy box check of the price list's rows: every listing's
+// whole seller list with shipping, a screenshot of it, and after the scan a
+// results file for other apps. It repeats every few hours. Min / max price
+// and inventory come from the Walmart API when keys are saved. Optionally
+// (Check settings) one repricer strategy's item list is read first and the
+// scan is limited to it.
 //
 // Runs after renderer.js and shares its globals (items, $, safe, money,
 // rememberPrice, markNoPrice, isMyStore, render, dockListing …). All scraping
@@ -73,10 +75,10 @@ const apiReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
 // Settings and the item list live in the main process (userData); this is the
 // renderer's copy. rpOf(row) is the strategy's entry for a row, matched by SKU
 // first, then by item ID.
-let bbx = { settings: { strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24 }, list: null };
+let bbx = { settings: { useStrategy: false, strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24 }, list: null };
 let bbxLoaded = false;
 let rpBySku = new Map(), rpById = new Map();
-const rpItems = () => (bbx.list && Array.isArray(bbx.list.items) ? bbx.list.items : []);
+const rpItems = () => (bbx.settings.useStrategy && bbx.list && Array.isArray(bbx.list.items) ? bbx.list.items : []);
 function indexRp() {
   rpBySku = new Map(); rpById = new Map();
   for (const r of rpItems()) {
@@ -84,10 +86,20 @@ function indexRp() {
     if (r.itemId) rpById.set(String(r.itemId).trim(), r);
   }
 }
-const rpOf = (it) => rpBySku.get(String(it?.sku ?? "").trim().toLowerCase()) || rpById.get(String(it?.itemId ?? "").trim()) || null;
+const rpListed = (it) => rpBySku.get(String(it?.sku ?? "").trim().toLowerCase()) || rpById.get(String(it?.itemId ?? "").trim()) || null;
+// The repricer's numbers for a row: from the strategy list when one is read,
+// otherwise from the Walmart API's answer for the SKU (the scan asks for it
+// when keys are saved), which carries the same fields.
+function rpFromApi(it) {
+  const a = it?.buyBox?.api;
+  if (!a || (a.repricerMin == null && a.repricerMax == null && a.inventory == null && a.currentPrice == null)) return null;
+  return { sku: it.sku, itemId: String(it.itemId ?? "").trim(), price: a.currentPrice, min: a.repricerMin, max: a.repricerMax, inventory: a.inventory,
+    status: a.repricerStatus || null, strategy: a.repricerStrategy || null, fromApi: true };
+}
+const rpOf = (it) => rpListed(it) || rpFromApi(it);
 // Which rows a scan visits: the strategy's items, or every row with an Item ID.
 const scanAll = () => bbx.settings.scope !== "strategy" || !rpItems().length;
-const inScope = (i) => !!String(items[i]?.itemId ?? "").trim() && (scanAll() || !!rpOf(items[i]));
+const inScope = (i) => !!String(items[i]?.itemId ?? "").trim() && (scanAll() || !!rpListed(items[i]));
 const round2m = (n) => Math.round(n * 100) / 100;
 const fileUrl = (f) => { let u = String(f).replace(/\\/g, "/"); if (!u.startsWith("/")) u = "/" + u; return "file://" + encodeURI(u).replace(/#/g, "%23").replace(/\?/g, "%3F"); };
 
@@ -481,7 +493,7 @@ function renderPanel() {
   }).join("");
   // the repricer strategy's numbers for this SKU
   const rp = f.rp;
-  const rpStats = rp ? `<div class="m-stats api rp" title="From the ${esc(bbx.list?.strategy || "repricer")} list, read ${when(bbx.list?.at)}">
+  const rpStats = rp ? `<div class="m-stats api rp" title="${rp.fromApi ? `From the Walmart API${rp.strategy ? ` · strategy ${esc(rp.strategy)}` : ""}` : `From the ${esc(bbx.list?.strategy || "repricer")} list, read ${when(bbx.list?.at)}`}">
         <div><span>Repricer price</span><b>${fmt(rp.price)}</b></div>
         <div><span>Min – max</span><b>${rp.min > 0 ? "$" + money(rp.min) : "—"} – ${rp.max > 0 ? "$" + money(rp.max) : "—"}</b></div>
         <div><span>Inventory</span><b>${rp.inventory == null ? "—" : rp.inventory}</b>${rp.status ? `<i>${esc(rp.status)}</i>` : ""}</div>
@@ -717,7 +729,7 @@ async function runMarketScan(onlyRows = null, opts = {}) {
   if (full && !resume) { mResume = null; localStorage.setItem("marketLastScanStart", String(Date.now())); }
   renderMarket();
   // 0) the repricer strategy's items, fresh from Walmart (read-only)
-  if (full && !resume && bbx.settings.source !== "file") {
+  if (full && !resume && bbx.settings.useStrategy && bbx.settings.source !== "file") {
     mScan.step = "api"; mScan.current = `Reading the "${bbx.settings.strategy}" items…`;
     renderMarket();
     const got = await refreshRepricerList();
@@ -730,7 +742,7 @@ async function runMarketScan(onlyRows = null, opts = {}) {
   if (!ids.length || mScan.stop) {
     mScan.running = false;
     renderMarket();
-    if (!ids.length && !opts.auto) alert(scanAll() ? "No rows have an Item ID to look up. Add them on the Incentive price list tab." : `None of the "${bbx.settings.strategy}" items has an Item ID yet. Open Buy box check to read the list again.`);
+    if (!ids.length && !opts.auto) alert(scanAll() ? "No rows have an Item ID to look up. Add them on the Incentive price list tab." : `None of the "${bbx.settings.strategy}" items has an Item ID yet. Open Check settings to read the list again.`);
     return;
   }
   // where this scan's screenshots go: a new folder per full scan; a single
@@ -907,7 +919,7 @@ function bbxExportRows() {
       : bb.oos && (missed || !(bb.price > 0)) ? "out-of-stock" : bb.failed || missed ? "failed" : bb.price > 0 ? "ok" : "not-scanned";
     out.push({
       sku, itemId,
-      strategy: rp ? (rp.strategy || bbx.list?.strategy || null) : null,
+      strategy: rp ? (rp.strategy || (rp.fromApi ? null : bbx.list?.strategy) || null) : null,
       myPrice, minPrice: numOr(rp?.min), maxPrice: numOr(rp?.max), inventory: numOr(rp?.inventory), status: rp?.status ?? null,
       buyBoxPrice: f?.bb ? f.bb.price : null,
       buyBoxSeller: f?.bb?.seller ?? null,
@@ -938,8 +950,8 @@ async function writeBbxExport(scan = {}) {
     scanFinishedAt: new Date().toISOString(),
     scanComplete: !!scan.complete,
     store: myStore,
-    strategy: bbx.list?.strategy || bbx.settings.strategy,
-    repricerList: bbx.list ? { source: bbx.list.source, readAt: new Date(bbx.list.at).toISOString(), items: rpItems().length } : null,
+    strategy: bbx.settings.useStrategy ? (bbx.list?.strategy || bbx.settings.strategy) : null,
+    repricerList: bbx.settings.useStrategy && bbx.list ? { source: bbx.list.source, readAt: new Date(bbx.list.at).toISOString(), items: rpItems().length } : null,
     rows: bbxExportRows(),
   };
   bbxLastExport = await window.api.bbxWriteExport(payload).catch((e) => ({ error: String(e?.message || e) }));
@@ -962,12 +974,17 @@ function renderBbxModal() {
     ? `${n} item${n === 1 ? "" : "s"} on "${list.strategy}" · read from ${SOURCE_NAME[list.source] || list.source}${list.file ? ` (${list.file})` : ""} ${when(list.at)} · ${onList} on your price list${noId ? ` · ${noId} without an Item ID` : ""}${list.assumed ? " · the source didn't name a strategy, so every item on it was taken" : ""}`
     : "The strategy's items haven't been read yet.";
   $("bbxExportPath").textContent = st.exportPath || "";
+  $("bbxStrategyBox").classList.toggle("hidden", !$("bbxUseStrategy").checked);
+  $("bbxApiLine").textContent = apiReady()
+    ? "The Walmart API is connected, so each SKU also gets its min / max price, inventory and win rate."
+    : "No API keys are needed for that; with keys saved, each SKU also gets its min / max price, inventory and win rate.";
   $("bbxApiState").textContent = apiReady() ? "Walmart API connected." : "Walmart API not connected — the list is read from Seller Center.";
   $("bbxUrlRow").classList.toggle("hidden", !(($("bbxSource").value || st.source) === "seller" || ($("bbxSource").value || st.source) === "auto"));
   $("bbxRead").textContent = $("bbxSource").value === "file" ? "Choose file…" : "Read now";
 }
 function fillBbxForm() {
   const st = bbx.settings;
+  $("bbxUseStrategy").checked = !!st.useStrategy;
   $("bbxStrategy").value = st.strategy || "";
   $("bbxSource").value = st.source || "auto";
   $("bbxUrl").value = st.sellerUrl || "";
@@ -979,15 +996,18 @@ function fillBbxForm() {
   $("bbxShots").checked = !!st.shots;
 }
 const bbxFormValues = () => ({
+  useStrategy: $("bbxUseStrategy").checked,
   strategy: $("bbxStrategy").value.trim(), source: $("bbxSource").value, sellerUrl: $("bbxUrl").value.trim(), scope: $("bbxScope").value,
   addRows: $("bbxAddRows").checked, scheduleOn: $("bbxSchedOn").checked, everyHours: Number($("bbxHours").value), shots: $("bbxShots").checked,
 });
 async function saveBbxForm() {
   const v = bbxFormValues();
-  if (!v.strategy) { $("bbxStrategy").focus(); return false; }
+  if (v.useStrategy && !v.strategy) { $("bbxStrategy").focus(); return false; }
+  if (!v.strategy) delete v.strategy;
   if (!(v.everyHours >= 0.5 && v.everyHours <= 48)) { bbxStatus("Scan every 0.5 to 48 hours.", "error"); $("bbxHours").focus(); return false; }
   if (v.sellerUrl && !/^https:\/\/seller\.walmart\.com\//i.test(v.sellerUrl)) { bbxStatus("The Seller Center page must start with https://seller.walmart.com/", "error"); $("bbxUrl").focus(); return false; }
   bbx.settings = await window.api.bbxSave(v);
+  indexRp(); // the strategy list counts only while the option is on
   return true;
 }
 function openBbxModal() {
@@ -1004,6 +1024,7 @@ $("bbxCancel").addEventListener("click", closeBbxModal);
 $("bbxModal").addEventListener("click", (e) => { if (e.target.id === "bbxModal") closeBbxModal(); });
 $("bbxModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeBbxModal(); });
 $("bbxSource").addEventListener("change", renderBbxModal);
+$("bbxUseStrategy").addEventListener("change", renderBbxModal);
 $("bbxApiKeys").addEventListener("click", () => { closeBbxModal(); openApiModal("", false); });
 $("bbxSave").addEventListener("click", async () => { if (await saveBbxForm()) { closeBbxModal(); renderMarket(); } });
 $("bbxUsePane").addEventListener("click", async () => {

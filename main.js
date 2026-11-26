@@ -1099,7 +1099,7 @@ async function marketReadWalmart(itemId, opts = {}) {
 // for other apps to read (see the README for the format).
 let bbxFile = null, rpFile = null;
 const SELLER_REPRICER = "https://seller.walmart.com/repricer";
-const BBX_DEFAULTS = { strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24, exportDir: "" };
+const BBX_DEFAULTS = { useStrategy: false, strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24, exportDir: "" };
 const shotsRoot = () => path.join(app.getPath("userData"), "buybox-shots");
 const defaultExportDir = () => path.join(app.getPath("userData"), "buybox-export");
 function loadBbx() {
@@ -1120,7 +1120,7 @@ function saveBbx(patch) {
   if (["auto", "api", "seller", "file"].includes(p.source)) next.source = p.source;
   if (typeof p.sellerUrl === "string") next.sellerUrl = /^https:\/\/seller\.walmart\.com\//i.test(p.sellerUrl.trim()) ? p.sellerUrl.trim() : "";
   if (["strategy", "all"].includes(p.scope)) next.scope = p.scope;
-  for (const k of ["addRows", "scheduleOn", "shots"]) if (typeof p[k] === "boolean") next[k] = p[k];
+  for (const k of ["useStrategy", "addRows", "scheduleOn", "shots"]) if (typeof p[k] === "boolean") next[k] = p[k];
   if (Number.isFinite(Number(p.everyHours)) && p.everyHours !== "" && p.everyHours != null) next.everyHours = Math.min(48, Math.max(0.5, Math.round(Number(p.everyHours) * 100) / 100));
   if (Number.isFinite(Number(p.keepScans)) && p.keepScans != null && p.keepScans !== "") next.keepScans = Math.min(500, Math.max(1, Math.round(Number(p.keepScans))));
   if (typeof p.exportDir === "string") next.exportDir = p.exportDir.trim();
