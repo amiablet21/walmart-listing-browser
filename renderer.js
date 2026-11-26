@@ -407,21 +407,28 @@ function classify(skuRaw) {
     badge,
     badgeRank: badge === "int" ? 1 : 0,
     cond: openBox ? "Open Box" : "New",
+    // inside a model group: the variant's code first (X133 Wi-Fi before X135
+    // LTE), then the smaller storage first; a SKU that names neither goes last
+    sub: Number(/X(\d{3})/.exec(cm)?.[1] ?? 0),
+    // (real sizes only: in "X13364GB" the storage is 64, not 3364)
+    gb: (() => { const m = /(1024|512|256|128|64|32|16)\s*GB/.exec(sm) || /([124])\s*TB/.exec(sm); return m ? Number(m[1]) * (/TB$/.test(m[0]) ? 1024 : 1) : 99999; })(),
   };
   if (classifyCache.size > 4000) classifyCache.clear();
   classifyCache.set(key, k);
   return k;
 }
 
-// Sort items into catalog order (stable — equal rows keep their relative
-// order, so drag-reordering inside a group survives). Remaps the selection.
+// Sort items into catalog order: section, model, US before International,
+// then variant code and storage (64GB above 128GB). Stable — rows equal on
+// all of that keep their relative order, so drag-reordering among them
+// survives. Remaps the selection.
 function organizeItems() {
   const selIt = items[selected] ?? null;
   const actIt = activeCell ? items[activeCell.i] ?? null : null;
   const keyed = items.map((it, idx) => ({ it, idx, k: classify(it.sku) }));
   keyed.sort((a, b) =>
     a.k.secIdx - b.k.secIdx || a.k.modOrd - b.k.modOrd ||
-    a.k.badgeRank - b.k.badgeRank || a.idx - b.idx);
+    a.k.badgeRank - b.k.badgeRank || a.k.sub - b.k.sub || a.k.gb - b.k.gb || a.idx - b.idx);
   items = keyed.map((x) => x.it);
   if (selIt) selected = items.indexOf(selIt);
   if (actIt) activeCell = { ...activeCell, i: items.indexOf(actIt) };
