@@ -43,7 +43,7 @@ document.querySelectorAll(".app-tabs .app-tab").forEach((b) => b.addEventListene
 
 // ---- state -------------------------------------------------------------------
 let mSelected = -1;      // index into items
-let mFilter = "all";      // filter chips were removed; the search box is the only filter
+let mFilter = "all";      // all | lost | won | oos | missed (the chips beside the search box)
 let mSearch = "";
 let mEditing = null;      // { i, k } — Amazon listing whose price is being typed
 let mStoreEditing = false; // the store-name line is a field
@@ -60,7 +60,10 @@ const WM_PAUSE_MS = 400;
 // call. Every listing's page is still read, since only the page names who
 // holds the buy box.
 let apiSettings = { clientId: "", env: "production", hasSecret: false, lastScan: null };
-const apiReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
+// The Walmart API is switched off: the buy box check reads everything it needs
+// from the listings, and the keys dialog is no longer reachable. Keys saved
+// earlier stay on disk, unused; API numbers kept from older scans are not shown.
+const apiReady = () => false;
 
 // ---- buy box check: settings ------------------------------------------------------
 // Settings live in the main process (userData); this is the renderer's copy.
@@ -69,7 +72,7 @@ let bbxLoaded = false;
 // The repricer's numbers for a row, from the Walmart API's answer for the SKU
 // (the scan asks for it when keys are saved): price, min, max, inventory, status.
 function rpOf(it) {
-  const a = it?.buyBox?.api;
+  const a = apiOf(it);
   if (!a || (a.repricerMin == null && a.repricerMax == null && a.inventory == null && a.currentPrice == null)) return null;
   return { price: a.currentPrice, min: a.repricerMin, max: a.repricerMax, inventory: a.inventory, status: a.repricerStatus || null, strategy: a.repricerStrategy || null };
 }
@@ -172,7 +175,7 @@ function markNotInCatalog(sku, at) {
     else items[i].buyBox.notInCatalog = true;
   }
 }
-const apiOf = (it) => it?.buyBox?.api || null;
+const apiOf = (it) => (apiReady() ? it?.buyBox?.api || null : null);
 
 function rowFacts(i) {
   const it = items[i];
@@ -242,6 +245,8 @@ const raiseRows = () => items.map((_, i) => i).filter((i) => idOf(items[i]))
 function rowMatches(i) {
   const f = rowFacts(i);
   if (mFilter === "lost" && !f.lost) return false;
+  if (mFilter === "won" && !f.mine) return false;
+  if (mFilter === "oos" && !f.it.buyBox?.oos) return false;
   if (mFilter === "raise" && !raiseFor(f)?.ok) return false;
   if (mFilter === "amz" && !f.cheaper) return false;
   if (mFilter === "noamz" && f.linked) return false;
@@ -343,6 +348,14 @@ function renderMarket() {
     });
     tb.appendChild(tr);
   }
+  // the filter chips, each with how many listings it holds
+  const allFacts = items.map((_, i) => i).filter((i) => idOf(items[i])).map(rowFacts);
+  const filterCount = { all: allFacts.length, lost: allFacts.filter((f) => f.lost).length, won: allFacts.filter((f) => f.mine).length,
+    oos: allFacts.filter((f) => f.it.buyBox?.oos).length, missed: allFacts.filter((f) => f.missed).length };
+  document.querySelectorAll("#mFilters .m-chip").forEach((b) => {
+    b.classList.toggle("active", mFilter === b.dataset.f);
+    b.querySelector(".n").textContent = ` ${filterCount[b.dataset.f]}`;
+  });
   const missedRows = items.map((_, i) => i).filter((i) => idOf(items[i]) && rowFacts(i).missed);
   $("mMissedBtn").classList.toggle("active", mFilter === "missed");
   $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
@@ -666,7 +679,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 let mLastScanApi = localStorage.getItem("marketLastScanApi") || "";
 let mLastScanN = Number(localStorage.getItem("marketLastScanN")) || 0; // listings the last full scan read
 function apiScanText() {
-  if (mLastScanApi === "off") return " · Walmart API not connected";
+  if (!apiReady() || mLastScanApi === "off") return "";
   if (mLastScanApi === "err") return " · Walmart API failed (see API)";
   const [got, asked] = mLastScanApi.split("/").map(Number);
   if (!mLastScanApi || mLastScanApi === "0") return "";
@@ -889,10 +902,11 @@ function bbxStatus(text, kind) {
   el.className = "status" + (kind ? " " + kind : "");
 }
 function renderBbxModal() {
-  $("bbxExportPath").textContent = bbx.settings.exportPath || "";
-  $("bbxApiLine").textContent = apiReady()
-    ? "The Walmart API is connected, so each SKU also gets its min / max price, inventory and win rate."
-    : "No API keys are needed for that; with keys saved, each SKU also gets its min / max price, inventory and win rate.";
+  // the path's last three parts fit the row; the whole path is the tooltip
+  const full = bbx.settings.exportPath || "";
+  const parts = full.split(/[\\/]/);
+  $("bbxExportPath").textContent = parts.length > 4 ? "…" + (full.includes("\\") ? "\\" : "/") + parts.slice(-3).join(full.includes("\\") ? "\\" : "/") : full;
+  $("bbxExportPath").title = full;
 }
 function fillBbxForm() {
   const st = bbx.settings;
@@ -919,7 +933,6 @@ $("mBbxBtn").addEventListener("click", openBbxModal);
 $("bbxCancel").addEventListener("click", closeBbxModal);
 $("bbxModal").addEventListener("click", (e) => { if (e.target.id === "bbxModal") closeBbxModal(); });
 $("bbxModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeBbxModal(); });
-$("bbxApiKeys2").addEventListener("click", () => { closeBbxModal(); openApiModal("", false); });
 $("bbxSave").addEventListener("click", async () => { if (await saveBbxForm()) { closeBbxModal(); renderMarket(); } });
 $("bbxFolder").addEventListener("click", async () => {
   const dir = await window.api.bbxPickFolder();
@@ -1187,6 +1200,16 @@ $("lwClear").addEventListener("click", () => {
   renderLwModal("Mapping removed.", "");
 });
 
+// The filter chips beside the search box: All / Losing / Winning / Out of stock / Not read.
+function setMarketFilter(f) {
+  mFilter = f;
+  const shown = items.map((_, i) => i).filter((i) => idOf(items[i]) && rowMatches(i));
+  if (!shown.includes(mSelected)) mSelected = shown[0] ?? -1; // the panel follows the filter
+  mEditing = null;
+  renderMarket();
+}
+document.querySelectorAll("#mFilters .m-chip").forEach((b) => b.addEventListener("click", () => setMarketFilter(b.dataset.f)));
+
 // ---- filters, search, export ---------------------------------------------------------------
 $("mSearch").addEventListener("input", () => { mSearch = $("mSearch").value.trim(); renderMarket(); });
 $("mMissedBtn").addEventListener("click", () => { mFilter = mFilter === "missed" ? "all" : "missed"; renderMarket(); });
@@ -1272,6 +1295,7 @@ function showSummary() {
 }
 function closeSummary() { $("mSummary").classList.add("hidden"); }
 $("mSumClose").addEventListener("click", closeSummary);
+$("mSumLost").addEventListener("click", () => { closeSummary(); setMarketFilter("lost"); });
 $("mRaiseRulesSum").addEventListener("click", () => { closeSummary(); openRaiseModal(); });
 $("mSummary").addEventListener("click", (e) => { if (e.target.id === "mSummary") closeSummary(); });
 $("mSummary").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeSummary(); });
