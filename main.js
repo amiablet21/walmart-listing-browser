@@ -775,7 +775,19 @@ const OFFERS_SCRIPT = `(async () => {
   // (data-wlb-panel) so the screenshot step captures the same element.
   const panelRoot = () => {
     const all = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]')];
-    const hit = all.find((el) => el.getClientRects().length && /Sold (?:and|&) shipped by|Sold by/i.test(el.innerText || "")) || null;
+    let hit = all.find((el) => el.getClientRects().length && /Sold (?:and|&) shipped by|Sold by/i.test(el.innerText || "")) || null;
+    // Not marked up as a dialog? Then find it by its title ("More seller
+    // options") and walk up to the tall, narrow box that holds the sellers.
+    if (!hit) {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const title = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div, p')].find((e) => e.getClientRects().length && e.children.length === 0
+        && /^(More seller options|Compare all sellers|All sellers|Seller options)$/i.test((e.textContent || "").trim()) && !e.closest("a, button"));
+      for (let e = title; e && e !== document.body; e = e.parentElement) {
+        const r = e.getBoundingClientRect();
+        if (r.width > vw * 0.6) break;
+        if (r.height >= vh * 0.5 && /Sold (?:and|&) shipped by|Sold by/i.test(e.innerText || "")) { hit = e; break; }
+      }
+    }
     document.querySelectorAll("[data-wlb-panel]").forEach((e) => { if (e !== hit) e.removeAttribute("data-wlb-panel"); });
     if (hit) hit.setAttribute("data-wlb-panel", "1");
     return hit;
@@ -844,6 +856,17 @@ const OFFERS_SCRIPT = `(async () => {
   const list = dedupe(found);
   if (!list.length && !why) why = "no-match";
   return { list, why: list.length ? null : why, panel: panelOpen };
+})()`;
+// What the page holds where the sellers panel should be: every dialog, and
+// every element titled like the panel or its link, with the boxes around it.
+const PANEL_PROBE_SCRIPT = `(() => {
+  const vis = (e) => e.getClientRects().length > 0;
+  const info = (e) => { const r = e.getBoundingClientRect(); return { tag: e.tagName.toLowerCase(), role: e.getAttribute("role"), testid: e.getAttribute("data-testid"), cls: String(e.className && e.className.baseVal != null ? e.className.baseVal : e.className || "").slice(0, 90),
+    href: e.getAttribute("href"), pos: getComputedStyle(e).position, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
+  const dialogs = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"]')].slice(0, 12).map((e) => ({ ...info(e), visible: vis(e), text: (e.innerText || "").slice(0, 400) }));
+  const titled = [...document.querySelectorAll("a, button, h1, h2, h3, h4, span, div, p")].filter((e) => vis(e) && e.children.length <= 1 && /^(More seller options|Compare all (\\d+ )?sellers|All sellers|Seller options)/i.test((e.textContent || "").trim()) && (e.textContent || "").trim().length < 60)
+    .slice(0, 10).map((e) => { const up = []; for (let p = e.parentElement, i = 0; p && i < 9; p = p.parentElement, i++) up.push(info(p)); return { ...info(e), text: (e.textContent || "").trim(), up }; });
+  return { url: location.href, title: document.title, viewport: [window.innerWidth, window.innerHeight], scrollY: Math.round(window.scrollY), dialogs, titled, text: (document.body?.innerText || "").slice(0, 5000) };
 })()`;
 const CLOSE_PANEL_SCRIPT = `(() => {
   try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
@@ -1154,6 +1177,16 @@ async function marketReadWalmart(itemId, opts = {}) {
   if (check && opts.scanId) {
     shot = await saveShot(w, itemId, opts.scanId, w.__onSellers === itemId ? "page" : r.panel ? "panel" : "buybox");
     if (w.__item !== itemId) return null;
+    // The page says there are more sellers, yet the picture is the buy box:
+    // the sellers panel wasn't found. Keep a note of what the page held, next
+    // to the picture (<item>.debug.json), so the reader can be fixed from it.
+    if (shot?.kind === "buybox" && (w.__lastPrice.others > 0 || r.list.length > 1)) {
+      try {
+        const probe = await w.webContents.executeJavaScript(PANEL_PROBE_SCRIPT, true);
+        fs.writeFileSync(shot.file.replace(/\.png$/i, ".debug.json"), JSON.stringify({ itemId, at: new Date().toISOString(), version: app.getVersion(),
+          read: { why: r.why ?? null, sellers: r.list.length, others: w.__lastPrice.others ?? null, panel: !!r.panel, onSellersPage: w.__onSellers === itemId }, ...probe }, null, 2));
+      } catch { /* best effort */ }
+    }
   }
   if (check) { try { await w.webContents.executeJavaScript(CLOSE_PANEL_SCRIPT, true); } catch { /* page moved on */ } }
   const others = w.__lastPrice.others;
