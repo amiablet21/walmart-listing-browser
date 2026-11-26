@@ -88,8 +88,19 @@ const GEOM_SCRIPT = (kind) => `(() => {
     if (!inner || el.scrollHeight > inner.scrollHeight) inner = el;
   }
   if (inner) { inner.setAttribute("data-wlb-scroll", "1"); return { rect: r, scroll: { ...box(inner), scrollH: Math.min(inner.scrollHeight, 2400), clientH: inner.clientHeight }, vw, vh, win: false }; }
+  // The column's box can run far below what is in it, and sponsored cards
+  // follow the buy box: end the picture a little below the seller line (or,
+  // without one, at the last thing actually drawn in the column).
+  let bottom = r.y;
+  for (const e of col.querySelectorAll("button, a, span, p, img, svg, input, label, h1, h2, h3, li")) {
+    const b = e.getBoundingClientRect();
+    if (b.width > 0 && b.height > 0 && b.bottom > bottom) bottom = b.bottom;
+  }
+  const soldEl = [...col.querySelectorAll("span, div, p")].find((e) => vis(e) && e.children.length <= 3 && /^Sold (?:and|&) shipped by/i.test((e.textContent || "").trim()));
+  if (soldEl) bottom = Math.min(bottom, soldEl.getBoundingClientRect().bottom + 150);
+  bottom = Math.min(bottom + 12, r.y + r.h + 8);
   const top = Math.max(0, r.y - 8);
-  return { rect: { x: Math.max(0, r.x - 8), y: top, w: r.w + 16, h: Math.min(r.y + r.h + 8, top + 2400) - top }, scroll: null, vw, vh, win: false };
+  return { rect: { x: Math.max(0, r.x - 8), y: top, w: r.w + 16, h: Math.max(120, Math.min(bottom, top + 2400) - top) }, scroll: null, vw, vh, win: false };
 })()`;
 const SCROLL_SCRIPT = (y, win) => `(() => {
   if (${win ? "true" : "false"}) { window.scrollTo({ top: ${y}, left: 0, behavior: "instant" }); return window.scrollY; }
