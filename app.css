@@ -551,17 +551,32 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-last.warn { color: #A4551B; font-weight: 600; white-space: normal; }
 
 /* Buy box check: dialog, seller ranks, screenshot card */
-.modal.api-card.bbx-card { width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; }
-.bbx-card input[type="number"] { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; background: #fff; color: #1C1B16; min-height: 34px; box-sizing: border-box; }
-.bbx-card input[type="number"] { width: 64px; padding: 4px 6px; min-height: 28px; text-align: right; }
-.bbx-card input[type="number"]:focus { outline: none; border-color: #4C5B9E; box-shadow: 0 0 0 3px rgba(76, 91, 158, .22); }
-.bbx-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.bbx-card .status { margin: 4px 0 10px; font-size: 12.5px; line-height: 1.45; min-height: 0; }
-.bbx-card .status:empty { display: none; }
-.bbx-card .api-sandbox { margin: 8px 0 0; }
-.bbx-card .bbx-every { flex-wrap: wrap; }
-.bbx-card .bbx-gap { margin-top: 14px; }
-.bbx-path { margin: 0 0 8px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; color: #45433A; word-break: break-all; line-height: 1.45; }
+.modal.set-card { width: min(470px, 94vw); padding: 0; border-radius: 16px; overflow: hidden; }
+.set-head { padding: 22px 24px 16px; }
+.set-head h2 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.set-head p { margin: 4px 0 0; font-size: 12.5px; color: #6E6B5C; }
+.set-row { display: flex; align-items: center; gap: 10px; padding: 14px 24px; border-top: 1px solid #F0EDE6; }
+.set-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.set-text b { font-size: 13.5px; font-weight: 600; color: #1C1B16; }
+.set-text > span { font-size: 12.5px; color: #6E6B5C; }
+.set-text .linkish { font-size: 12.5px; padding: 0; }
+.set-card input[type="number"] { font: inherit; font-size: 12.5px; font-weight: 600; width: 46px; height: 24px; margin: 0 3px; padding: 0 4px; text-align: center; border: 1px solid #D9D2C1; border-radius: 7px; background: #fff; color: #1C1B16; box-sizing: border-box; }
+.set-card input[type="number"]:focus { outline: none; border-color: #4C5B9E; box-shadow: 0 0 0 3px rgba(76, 91, 158, .22); }
+.set-path { display: block; margin-top: 6px; font-family: "Geist Mono", ui-monospace, monospace; font-size: 11.5px; color: #45433A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.set-switch { position: relative; flex: none; width: 36px; height: 21px; cursor: pointer; }
+.set-switch input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.set-switch i { position: absolute; inset: 0; border-radius: 999px; background: #D9D2C1; transition: background .15s; pointer-events: none; }
+.set-switch i::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s; }
+.set-switch input:checked + i { background: #4C5B9E; }
+.set-switch input:checked + i::after { transform: translateX(15px); }
+.set-switch input:focus-visible + i { outline: 2px solid rgba(76, 91, 158, .45); outline-offset: 2px; }
+.set-card button.set-mini { flex: none; padding: 5px 10px; font-size: 12px; min-height: 0; border-radius: 8px; }
+.set-card .status { margin: 0; padding: 0 24px 12px; font-size: 12.5px; line-height: 1.45; }
+.set-card .status:empty { display: none; }
+.set-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px; background: #FAF9F5; border-top: 1px solid #F0EDE6; }
+.set-foot button { padding: 8px 16px; }
+.set-foot button.set-ghost { border-color: transparent; background: transparent; color: #45433A; }
+.set-foot button.set-ghost:hover { background: #F0EDE6; }
 .m-seller .rk { flex: none; width: 18px; font-size: 11.5px; color: #918D7C; font-variant-numeric: tabular-nums; text-align: right; }
 .m-seller .sh { flex: none; font-size: 11.5px; color: #6E6B5C; white-space: nowrap; }
 .m-seller .sh:empty { display: none; }

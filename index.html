@@ -295,9 +295,9 @@
         <span>Run buy box check</span>
       </button>
       <button id="mScanOverBtn" class="hidden" title="Drop the stopped scan and start a new one from the first listing">Start over</button>
-      <button id="mBbxBtn" title="How often to scan, screenshots, and the results file for other apps" aria-label="Buy box check settings">
+      <button id="mBbxBtn" title="How often to scan, screenshots, and the results file for other apps" aria-label="Scan settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"/><path d="M18 6h2"/><circle cx="16" cy="6" r="2"/><path d="M4 12h2"/><path d="M10 12h10"/><circle cx="8" cy="12" r="2"/><path d="M4 18h10"/><path d="M18 18h2"/><circle cx="16" cy="18" r="2"/></svg>
-        <span>Check settings</span>
+        <span>Scan settings</span>
       </button>
       <button id="mLwBtn" title="Import the Linnworks SKU export so Walmart SKUs of one product share their Amazon links" aria-label="Linnworks mapping">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="8.5" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/><path d="M12 13v1"/></svg>
@@ -396,24 +396,39 @@
 
   <!-- Buy box check: schedule, screenshots, results file -->
   <div id="bbxModal" class="modal-overlay hidden">
-    <div class="modal api-card bbx-card" role="dialog" aria-labelledby="bbxTitle">
-      <div class="api-head"><h2 id="bbxTitle">Buy box check</h2></div>
-      <p class="api-sub">Each scan opens the listing of every row on your Incentive price list that has an Item ID, records every seller with a screenshot, and writes the results to a file other apps can read. <span id="bbxApiLine"></span> <button id="bbxApiKeys2" class="linkish" type="button">Walmart API keys…</button></p>
-      <label class="api-sandbox bbx-every"><input id="bbxSchedOn" type="checkbox" /> Scan by itself every <input id="bbxHours" type="number" min="0.5" max="48" step="0.5" aria-label="Hours between scans" /> hours while the app is open</label>
-      <label class="api-sandbox"><input id="bbxShots" type="checkbox" /> Save a screenshot of each listing's seller list</label>
-      <div class="api-field bbx-gap">
-        <span>Results file for other apps</span>
-        <p id="bbxExportPath" class="bbx-path"></p>
-        <div class="bbx-row">
-          <button id="bbxFolder" type="button">Change folder…</button>
-          <button id="bbxFolderOpen" type="button">Open folder</button>
-          <button id="bbxFolderReset" class="linkish" type="button">Use the default</button>
+    <div class="modal set-card" role="dialog" aria-labelledby="bbxTitle">
+      <div class="set-head">
+        <h2 id="bbxTitle">Scan settings</h2>
+        <p>Scans every listing on your Incentive price list.</p>
+      </div>
+      <div class="set-row">
+        <div class="set-text">
+          <b>Scan automatically</b>
+          <span>Every <input id="bbxHours" type="number" min="0.5" max="48" step="0.5" aria-label="Hours between scans" /> hours while the app is open</span>
         </div>
+        <label class="set-switch" title="Scan automatically"><input id="bbxSchedOn" type="checkbox" aria-label="Scan automatically" /><i></i></label>
+      </div>
+      <div class="set-row">
+        <div class="set-text">
+          <b>Save screenshots</b>
+          <span>A picture of each listing's sellers</span>
+        </div>
+        <label class="set-switch" title="Save screenshots"><input id="bbxShots" type="checkbox" aria-label="Save screenshots" /><i></i></label>
+      </div>
+      <div class="set-row">
+        <div class="set-text">
+          <b>Results file</b>
+          <span>For DWS Stock and other apps</span>
+          <code id="bbxExportPath" class="set-path"></code>
+          <span><button id="bbxFolderReset" class="linkish" type="button">Use the default folder</button></span>
+        </div>
+        <button id="bbxFolder" class="set-mini" type="button">Change…</button>
+        <button id="bbxFolderOpen" class="set-mini" type="button">Open</button>
       </div>
       <p id="bbxStatus" class="status"></p>
-      <div class="api-actions">
-        <button id="bbxCancel">Close</button>
-        <button id="bbxSave" class="primary">Save</button>
+      <div class="set-foot">
+        <button id="bbxCancel" class="set-ghost" type="button">Cancel</button>
+        <button id="bbxSave" class="primary" type="button">Save</button>
       </div>
     </div>
   </div>
