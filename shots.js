@@ -28,8 +28,20 @@ const GEOM_SCRIPT = (kind) => `(() => {
     return { rect: { x: 0, y: 0, w: vw, h: Math.min(docH, vh) }, scroll: { x: 0, y: 0, w: vw, h: vh, scrollH: docH, clientH: vh }, vw, vh, win: true };
   }
   if (kind === "panel") {
-    const root = document.querySelector('[role="dialog"]') || document.querySelector('[data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]');
+    let root = document.querySelector("[data-wlb-panel]")
+      || [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]')]
+        .find((el) => el.getClientRects().length && /Sold (?:and|&) shipped by|Sold by/i.test(el.innerText || ""));
     if (!root) return null;
+    // The dialog can be a wrapper as large as the window (its dimmed backdrop
+    // included): step down to the panel itself, the part that holds every seller.
+    const sold = /Sold (?:and|&) shipped by|Sold by/gi;
+    const count = (el) => ((el.innerText || "").match(sold) || []).length;
+    const total = count(root);
+    for (let i = 0; i < 10 && root.getBoundingClientRect().width > vw * 0.7; i++) {
+      const kid = [...root.children].find((c) => c.getClientRects().length && count(c) === total);
+      if (!kid) break;
+      root = kid;
+    }
     let best = null;
     for (const el of [root, ...root.querySelectorAll("*")]) {
       if (el.scrollHeight - el.clientHeight < 4 || el.clientHeight < 60) continue;
@@ -37,11 +49,11 @@ const GEOM_SCRIPT = (kind) => `(() => {
       if (oy !== "auto" && oy !== "scroll" && oy !== "overlay") continue;
       if (!best || el.scrollHeight > best.scrollHeight) best = el;
     }
-    if (best) { best.setAttribute("data-wlb-scroll", "1"); best.scrollTop = 0; }
+    if (best) { best.setAttribute("data-wlb-scroll", "1"); best.scrollTo({ top: 0, behavior: "instant" }); }
     return { rect: box(root), scroll: best ? { ...box(best), scrollH: best.scrollHeight, clientH: best.clientHeight } : null, vw, vh, win: false };
   }
-  // buy box: the price's column in the listing's right rail
-  window.scrollTo(0, 0);
+  // buy box: the price's column in the listing's right rail (the page was
+  // put back at its top, and left to settle, before this runs)
   let el = document.querySelector('[data-testid="add-to-cart-section"], [data-testid*="buy-box" i], [data-testid*="buybox" i], [data-seo-id*="buy-box" i]');
   if (!el) {
     let p = document.querySelector('[itemprop="price"], span[data-seo-id="hero-price"], [data-testid="price-wrap"]');
@@ -53,12 +65,13 @@ const GEOM_SCRIPT = (kind) => `(() => {
   }
   if (!el) return { rect: { x: 0, y: 0, w: vw, h: vh }, scroll: null, vw, vh, win: false, whole: true };
   const r = box(el);
+  if (r.y < 0 || r.h < 120 || r.w < 200) return { rect: { x: 0, y: 0, w: vw, h: vh }, scroll: null, vw, vh, win: false, whole: true }; // not the buy box after all: the top of the page instead
   return { rect: { x: Math.max(0, r.x - 8), y: Math.max(0, r.y - 8), w: r.w + 16, h: r.h + 16 }, scroll: null, vw, vh, win: false };
 })()`;
 const SCROLL_SCRIPT = (y, win) => `(() => {
-  if (${win ? "true" : "false"}) { window.scrollTo(0, ${y}); return window.scrollY; }
+  if (${win ? "true" : "false"}) { window.scrollTo({ top: ${y}, left: 0, behavior: "instant" }); return window.scrollY; }
   const el = document.querySelector("[data-wlb-scroll]"); if (!el) return -1;
-  el.scrollTop = ${y}; return el.scrollTop;
+  el.scrollTo({ top: ${y}, behavior: "instant" }); return el.scrollTop;
 })()`;
 
 const run = (v, js) => v.webContents.executeJavaScript(js, true).catch(() => null);
@@ -161,8 +174,22 @@ async function captureStitched(v, kind, g) {
 async function captureShot(v, kind) {
   try {
     if (!v || v.webContents.isDestroyed()) return null;
+    // The page must be still before it is measured. Walmart scrolls smoothly,
+    // so a jump to the top is still moving a moment later, and a rectangle
+    // measured mid-scroll lands on whatever is there once it stops (the site
+    // header, in the first live screenshots). Jump instantly, then wait until
+    // the scroll position stops changing.
+    if (kind !== "panel") await run(v, `window.scrollTo({ top: 0, left: 0, behavior: "instant" })`);
+    for (let i = 0, last = -1; i < 12; i++) {
+      await wait(200);
+      const y = await run(v, "window.scrollY");
+      if (y === last) break;
+      last = y;
+    }
     const g = await run(v, GEOM_SCRIPT(kind));
     if (!g) return null;
+    // a "page" this long is a whole listing, not a seller list: not worth a picture
+    if (kind === "page" && g.scroll.scrollH > g.vh * 5) return null;
     const extra = g.scroll ? g.scroll.scrollH - g.scroll.clientH : 0;
     if (extra <= 2 && (kind === "page" || g.rect.y + g.rect.h <= g.vh + 2)) {
       const img = await grab(v, clip(g.rect, g.vw, g.vh));
