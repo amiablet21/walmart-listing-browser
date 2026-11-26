@@ -1,5 +1,10 @@
 // Market tab — Walmart buy box and Amazon buy box side by side, per SKU.
 //
+// The scan is a full buy box check: the repricer strategy's items are read
+// first (SKU, price, min, max, inventory, status — read-only), then every
+// listing's whole seller list with shipping, a screenshot of it, and after
+// the scan a results file for other apps. It repeats every few hours.
+//
 // Runs after renderer.js and shares its globals (items, $, safe, money,
 // rememberPrice, markNoPrice, isMyStore, render, dockListing …). All scraping
 // lives here: the daily scan walks every row with an Item ID through the
@@ -50,6 +55,8 @@ let mSearch = "";
 let mEditing = null;      // { i, k } — Amazon listing whose price is being typed
 let mStoreEditing = false; // the store-name line is a field
 let mScan = { running: false, done: 0, total: 0, current: "", stop: false, startedAt: 0 };
+let mResume = null;       // a stopped full scan: { ids: [still to read], total, scanId, usedApi, startedAt }
+let mNotice = "";         // why the last scan paused (robot check), shown where the last-scan line is
 let mLastScan = Number(localStorage.getItem("marketLastScan")) || 0;
 let mLastScanMs = Number(localStorage.getItem("marketLastScanMs")) || 0;
 const AMZ_PAUSE_MS = [2000, 3500]; // breathing room between Amazon pages (random in this range)
@@ -61,6 +68,28 @@ const WM_PAUSE_MS = 400;
 // holds the buy box.
 let apiSettings = { clientId: "", env: "production", hasSecret: false, lastScan: null };
 const apiReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
+
+// ---- buy box check: settings and the repricer strategy's items ---------------------
+// Settings and the item list live in the main process (userData); this is the
+// renderer's copy. rpOf(row) is the strategy's entry for a row, matched by SKU
+// first, then by item ID.
+let bbx = { settings: { strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24 }, list: null };
+let bbxLoaded = false;
+let rpBySku = new Map(), rpById = new Map();
+const rpItems = () => (bbx.list && Array.isArray(bbx.list.items) ? bbx.list.items : []);
+function indexRp() {
+  rpBySku = new Map(); rpById = new Map();
+  for (const r of rpItems()) {
+    if (r.sku) rpBySku.set(String(r.sku).trim().toLowerCase(), r);
+    if (r.itemId) rpById.set(String(r.itemId).trim(), r);
+  }
+}
+const rpOf = (it) => rpBySku.get(String(it?.sku ?? "").trim().toLowerCase()) || rpById.get(String(it?.itemId ?? "").trim()) || null;
+// Which rows a scan visits: the strategy's items, or every row with an Item ID.
+const scanAll = () => bbx.settings.scope !== "strategy" || !rpItems().length;
+const inScope = (i) => !!String(items[i]?.itemId ?? "").trim() && (scanAll() || !!rpOf(items[i]));
+const round2m = (n) => Math.round(n * 100) / 100;
+const fileUrl = (f) => { let u = String(f).replace(/\\/g, "/"); if (!u.startsWith("/")) u = "/" + u; return "file://" + encodeURI(u).replace(/#/g, "%23").replace(/\?/g, "%3F"); };
 
 const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const idOf = (it) => String(it?.itemId ?? "").trim();
@@ -115,15 +144,22 @@ function amzLow(it) {
   const ps = amzList(it).map((a) => a.price).filter((p) => Number.isFinite(p) && p > 0);
   return ps.length ? Math.min(...ps) : null;
 }
+// Every seller on the listing, cheapest total (price + shipping) first, with
+// its rank. Shipping is null when the listing didn't state it (counted as 0).
 function wmSellers(it) {
   const bb = it.buyBox;
   if (!bb?.price) return [];
-  const list = Array.isArray(bb.offers) ? bb.offers.map((o) => ({ seller: o.seller, price: o.price })) : [];
+  const list = Array.isArray(bb.offers) ? bb.offers.map((o) => ({ seller: o.seller, price: o.price, shipping: o.shipping ?? null, shipNote: o.shipNote ?? null })) : [];
   if (bb.seller && !list.some((o) => Math.abs(o.price - bb.price) < 0.005 && String(o.seller).toLowerCase() === String(bb.seller).toLowerCase())) {
-    list.unshift({ seller: bb.seller, price: bb.price });
+    list.unshift({ seller: bb.seller, price: bb.price, shipping: null, shipNote: null });
   }
-  list.sort((a, b) => a.price - b.price);
-  return list.map((o) => ({ ...o, isBB: bb.seller ? String(o.seller).toLowerCase() === String(bb.seller).toLowerCase() && Math.abs(o.price - bb.price) < 0.005 : false, mine: isMyStore(o.seller) }));
+  for (const o of list) {
+    o.total = round2m(o.price + (o.shipping || 0));
+    o.isBB = bb.seller ? String(o.seller).toLowerCase() === String(bb.seller).toLowerCase() && Math.abs(o.price - bb.price) < 0.005 : false;
+    o.mine = isMyStore(o.seller);
+  }
+  list.sort((a, b) => a.total - b.total || (b.isBB - a.isBB) || a.price - b.price);
+  return list.map((o, k) => ({ ...o, rank: k + 1 }));
 }
 // Rows sharing one SKU (the API is keyed by SKU, the page by item ID).
 function rowsWithSku(sku) {
@@ -153,7 +189,9 @@ const apiOf = (it) => it?.buyBox?.api || null;
 
 function rowFacts(i) {
   const it = items[i];
-  const during = safe(i, "during");
+  // our price: the sheet's During Incentive, or the repricer list's price for a row that has none
+  const rpRow = rpOf(it);
+  const during = safe(i, "during") > 0 ? safe(i, "during") : (rpRow?.price > 0 ? rpRow.price : safe(i, "during"));
   const bb = it.buyBox?.price > 0 ? it.buyBox : null;
   const api = bb ? apiOf(it) : null;
   // who holds the buy box: the page names the seller; the API only tells us
@@ -164,11 +202,13 @@ function rowFacts(i) {
   const low = amzLow(it);
   const cheaper = low != null && during > 0 && low < during - 0.005;
   const sellers = wmSellers(it);
-  const wmLow = sellers.length ? sellers[0].price : (bb ? bb.price : null);
+  const wmLow = sellers.length ? Math.min(...sellers.map((s) => s.price)) : (bb ? bb.price : null);
+  const me = sellers.find((s) => s.mine) || null;
   const edge = cheaper ? "red" : lost ? "amber" : bb && mine ? "green" : "none";
   const wmMissed = !!(it.buyBox?.failed && !bb);
   const amzMissed = amzList(it).some((a) => !a.manual && a.asin && (a.failed || a.robot));
-  return { it, during, bb, api, mine, lost, known, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed };
+  return { it, during, bb, api, mine, lost, known, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed,
+    rp: rpRow, me, rank: me ? me.rank : null, oos: !!it.buyBox?.oos };
 }
 // ---- room to raise ---------------------------------------------------------------
 // Walmart's repricer lowers a price to win the buy box but never raises it
@@ -288,8 +328,11 @@ function renderMarket() {
         : f.api?.winRate != null ? `win rate ${Math.round(f.api.winRate * 10) / 10}%` : "";
       const r = raiseFor(f);
       const raise = r?.ok ? `<span class="m-pill raise" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">↑ ${fmt(r.gap)} room</span>` : "";
-      wm = `${pill}<b>${fmt(f.bb.price)}</b>${note ? `<span class="m-muted">${note}</span>` : ""}${raise}`;
-    } else if (f.it.buyBox?.notInCatalog) wm = `<span class="m-muted">Not in your Walmart catalog under this SKU</span>`;
+      const rank = f.rank && f.sellers.length > 1 ? `<span class="m-muted" title="Your place among the sellers, by price plus shipping">#${f.rank} of ${f.sellers.length}</span>` : "";
+      wm = `${pill}<b>${fmt(f.bb.price)}</b>${note ? `<span class="m-muted">${note}</span>` : ""}${rank}${f.oos ? `<span class="m-pill warn">Out of stock</span>` : ""}${raise}`;
+    } else if (f.it.buyBox?.oos) wm = `<span class="m-pill warn">Out of stock</span>`;
+    else if (f.it.buyBox?.robot) wm = `<span class="m-muted">Robot check — pass it in the listing pane</span>`;
+    else if (f.it.buyBox?.notInCatalog) wm = `<span class="m-muted">Not in your Walmart catalog under this SKU</span>`;
     else if (f.it.buyBox?.noBuyBox) wm = `<span class="m-muted">No buy box reported</span>`;
     else if (f.it.buyBox?.failed) wm = `<span class="m-muted">Couldn't read the page</span>`;
     else wm = `<span class="m-muted">Not scanned yet</span>`;
@@ -322,7 +365,14 @@ function renderMarket() {
   $("mRaiseBtn").classList.toggle("active", mFilter === "raise");
   $("mRaiseBtn").classList.toggle("has-raise", raiseN > 0);
   $("mRaiseBtn").querySelector(".n").textContent = raiseN ? ` · ${raiseN}` : "";
-  if (!mScan.running) $("mLastScan").textContent = mLastScan ? `Last scan ${when(mLastScan)} · ${items.filter(idOf).length} listings${mLastScanMs ? ` · ${Math.round(mLastScanMs / 1000)} s` : ""}${apiScanText()}` : "No scan yet";
+  if (!mScan.running) {
+    const next = nextScanAt();
+    const nextText = next ? ` · next scan ${next <= Date.now() ? "due now" : when(next)}` : "";
+    $("mLastScan").textContent = mNotice || (mResume ? `Scan stopped at ${mResume.total - mResume.ids.length} of ${mResume.total}${nextText}`
+      : mLastScan ? `Last scan ${when(mLastScan)} · ${mLastScanN || items.filter(idOf).length} listings${mLastScanMs ? ` · ${mLastScanMs >= 90000 ? Math.round(mLastScanMs / 60000) + " min" : Math.round(mLastScanMs / 1000) + " s"}` : ""}${apiScanText()}${nextText}` : `No scan yet${nextText}`);
+    $("mLastScan").classList.toggle("warn", !!mNotice);
+    $("mLastScan").title = mNotice || "";
+  }
   renderApiBtn();
   renderScanBar();
   renderPanel();
@@ -331,11 +381,14 @@ function renderMarket() {
 function renderScanBar() {
   const btn = $("mScanBtn");
   btn.classList.toggle("scanning", mScan.running);
-  btn.querySelector("span").textContent = mScan.running ? "Stop scan" : "Run market scan";
+  btn.querySelector("span").textContent = mScan.running ? (mScan.stop ? "Stopping…" : "Stop scan") : mResume ? `Resume scan · ${mResume.ids.length} left` : "Run buy box check";
+  $("mScanOverBtn").classList.toggle("hidden", !(mResume && !mScan.running));
   $("mProgress").classList.toggle("hidden", !mScan.running);
   if (!mScan.running) return;
+  $("mLastScan").classList.remove("warn");
   const el = Date.now() - mScan.startedAt;
-  const left = mScan.done ? Math.round((el / mScan.done) * (mScan.total - mScan.done) / 1000) : null;
+  const read = mScan.done - (mScan.base || 0);
+  const left = read > 0 ? Math.round((el / read) * (mScan.total - mScan.done) / 1000) : null;
   const leftText = left != null ? ` · about ${left >= 90 ? Math.round(left / 60) + " min" : left + " s"} left` : "";
   $("mLastScan").textContent = mScan.step === "api"
     ? mScan.current
@@ -353,11 +406,11 @@ function renderPanel() {
   const list = amzList(it);
   const viaApi = it.buyBox?.source === "api";
   const sellersHtml = f.sellers.length
-    ? f.sellers.map((s) => `<div class="m-seller${s.isBB ? " bb" : ""}"><span class="s${s.mine ? " me" : ""}">${esc(s.seller)}</span>${s.isBB ? `<span class="m-pill bb">Buy box</span>` : ""}${s.mine ? `<span class="m-pill you">You</span>` : ""}<span class="p">${fmt(s.price)}</span></div>`).join("")
+    ? f.sellers.map((s) => `<div class="m-seller${s.isBB ? " bb" : ""}"><span class="rk">${s.rank}</span><span class="s${s.mine ? " me" : ""}" title="${esc(s.shipNote || "")}">${esc(s.seller)}</span>${s.isBB ? `<span class="m-pill bb">Buy box</span>` : ""}${s.mine ? `<span class="m-pill you">You</span>` : ""}<span class="sh">${s.shipping === 0 ? "free shipping" : s.shipping > 0 ? `+${fmt(s.shipping)} shipping` : ""}</span><span class="p" title="${s.shipping > 0 ? `${fmt(s.price)} + ${fmt(s.shipping)} shipping` : "Item price"}">${fmt(s.shipping > 0 ? s.total : s.price)}</span></div>`).join("")
       + (viaApi && it.buyBox.offersAt ? `<div class="m-seller m-muted m-note">Seller names come from the page read ${when(it.buyBox.offersAt)}; the buy box price above is from Walmart's API.</div>` : "")
     : viaApi
       ? `<div class="m-seller m-muted m-note">Walmart's API gives the buy box price, not seller names. <button class="mini" id="mReadPage" ${mScan.running ? "disabled" : ""}>Read the page for sellers</button></div>`
-      : `<div class="m-seller m-muted">${f.bb ? "Only the buy box could be read" : it.buyBox?.notInCatalog ? "Walmart's API has no listing under this SKU — check the SKU, or read the page" : it.buyBox?.failed ? "The page couldn't be read — open it to check" : "Not scanned yet"}</div>`;
+      : `<div class="m-seller m-muted">${f.bb ? "Only the buy box could be read" : it.buyBox?.oos ? "Out of stock — no price on the listing" : it.buyBox?.robot ? "Walmart showed a robot check — open the listing in the pane once to pass it" : it.buyBox?.notFound ? "Walmart says this listing page doesn't exist — check the Item ID" : it.buyBox?.notInCatalog ? "Walmart's API has no listing under this SKU — check the SKU, or read the page" : it.buyBox?.failed ? "The page couldn't be read — open it to check" : "Not scanned yet"}</div>`;
   // Walmart's own numbers for this SKU (Pricing Insights), when scanned via the API
   const api = apiOf(it);
   const DRIVER = { BUYBOX_PRICE: "from the buy box", COMPETITOR_PRICE: "from a competitor", WALMART_SUGGESTED_PRICE: "Walmart's pick", REFERENCE_PRICE: "from reference price", COMPARISON_PRICE: "from comparison price" };
@@ -426,6 +479,19 @@ function renderPanel() {
       ${a.robot && a.asin ? `<div class="m-amz-robot"><button class="mini" data-show="${k}">Show the Amazon page here</button><span class="m-muted">Pass the check once; later reads go through.</span></div>` : ""}
     </div>`;
   }).join("");
+  // the repricer strategy's numbers for this SKU
+  const rp = f.rp;
+  const rpStats = rp ? `<div class="m-stats api rp" title="From the ${esc(bbx.list?.strategy || "repricer")} list, read ${when(bbx.list?.at)}">
+        <div><span>Repricer price</span><b>${fmt(rp.price)}</b></div>
+        <div><span>Min – max</span><b>${rp.min > 0 ? "$" + money(rp.min) : "—"} – ${rp.max > 0 ? "$" + money(rp.max) : "—"}</b></div>
+        <div><span>Inventory</span><b>${rp.inventory == null ? "—" : rp.inventory}</b>${rp.status ? `<i>${esc(rp.status)}</i>` : ""}</div>
+      </div>` : "";
+  // the scan's screenshot of the seller list (or of the buy box)
+  const shot = it.buyBox?.shot?.file ? it.buyBox.shot : null;
+  const shotHtml = shot ? `<div class="m-card m-shot">
+      <div class="m-card-head"><b>Screenshot</b><span class="m-muted">${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}</span><button class="mini" id="mShotFolder" title="Show the file in its folder">Show file</button></div>
+      <button type="button" class="m-shot-img" id="mShotOpen" title="Open full size"><img src="${esc(fileUrl(shot.file))}?t=${shot.at || 0}" alt="Screenshot of the Walmart ${shot.kind === "buybox" ? "buy box" : "seller list"}" /></button>
+    </div>` : "";
   const lw = lwOf(it);
   const sibs = lw ? groupMembers(i).filter((j) => j !== i) : [];
   const groupLine = lw
@@ -445,11 +511,13 @@ function renderPanel() {
         <div><span>Amazon</span><b class="amz">${fmt(f.low)}</b></div>
       </div>
       ${apiStats}
+      ${rpStats}
     </div>
     <div class="m-card">
-      <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : viaApi ? "via API" : ""}</span></div>
+      <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}${f.rank && f.sellers.length > 1 ? ` · you are #${f.rank}` : ""}` : viaApi ? "via API" : ""}</span>${f.oos ? `<span class="m-pill warn">Out of stock</span>` : ""}</div>
       ${sellersHtml}${sellersNote}${raiseHtml}
     </div>
+    ${shotHtml}
     <div class="m-card">
       <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}${sibs.length ? ` · shared by ${sibs.length + 1} Walmart SKUs` : ""}</span></div>
       ${amzHtml}
@@ -482,6 +550,8 @@ function renderPanel() {
   p.querySelector("#mSnapshot")?.addEventListener("click", async () => {
     if (!(await window.api.showPageSnapshot(it.itemId))) alert("No page snapshot is saved for this item. Re-check it to take one.");
   });
+  p.querySelector("#mShotOpen")?.addEventListener("click", () => window.api.bbxOpenShot(shot.file));
+  p.querySelector("#mShotFolder")?.addEventListener("click", () => window.api.bbxShowShot(shot.file));
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   p.querySelector("#mRaiseRules")?.addEventListener("click", openRaiseModal);
   p.querySelector("#mRaiseCopy")?.addEventListener("click", (e) => {
@@ -607,6 +677,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 // "matched/asked" SKU counts, "off" (no keys saved), "err" (the call failed),
 // or from older builds "1" (API used) / "0" / "" (not used)
 let mLastScanApi = localStorage.getItem("marketLastScanApi") || "";
+let mLastScanN = Number(localStorage.getItem("marketLastScanN")) || 0; // listings the last full scan read
 function apiScanText() {
   if (mLastScanApi === "off") return " · Walmart API not connected";
   if (mLastScanApi === "err") return " · Walmart API failed (see API)";
@@ -615,33 +686,66 @@ function apiScanText() {
   if (!(asked > 0)) return " · with Walmart API";
   return got === asked ? " · Walmart API knew every SKU" : ` · Walmart API knew ${got} of ${asked} SKUs`;
 }
-window.api.onApiProgress?.(({ done, total }) => {
+window.api.onApiProgress?.(({ done, total, pages }) => {
+  if (pages) { bbxStatus(`Walmart API: page ${done} of ${total}…`); if (mScan.running && mScan.step === "api") { mScan.current = `Reading the repricer list from the Walmart API: page ${done} of ${total}`; renderScanBar(); } return; }
   if (mScan.running && mScan.step === "api") { mScan.current = `Walmart API: ${done} of ${total} SKUs`; renderScanBar(); }
 });
-// One page read for a single row (seller names), outside a full scan.
-async function readPageFor(i) {
-  if (mScan.running) return;
-  const id = idOf(items[i]);
-  if (!id) return;
-  mScan = { running: true, done: 0, total: 1, current: `Walmart: ${items[i].sku || id}`, currentId: id, step: "walmart", stepN: "", stop: false, startedAt: Date.now(), pageOnly: true };
-  renderMarket();
-  const r = await window.api.marketReadWalmart(id, { allSellers: true }).catch(() => null);
-  if (r && r.price) rememberPrice(r); else markNoPrice(id);
-  mScan.running = false; mScan.currentId = "";
-  renderMarket();
+// One row's full read (every seller, a fresh screenshot), outside a full scan.
+function readPageFor(i) { return runMarketScan([i]); }
+
+// A listing with no price to read: out of stock, a robot check, a dead page.
+// A row that had a price keeps it (dated), marked with what happened this time.
+function noteNoPrice(id, r) {
+  for (const i of rowsWithItem(id)) {
+    const bb = items[i].buyBox;
+    const what = { oos: r?.oos ?? null, robot: !!r?.robot || undefined, notFound: !!r?.notFound || undefined };
+    if (bb?.price > 0) items[i].buyBox = { ...bb, oos: what.oos, missedAt: Date.now(), shot: r?.shot ?? bb.shot ?? null };
+    else items[i].buyBox = { failed: true, at: Date.now(), ...what, shot: r?.shot ?? null };
+  }
+  saveQuiet();
 }
-async function runMarketScan(onlyRows = null) {
+
+// opts.resume: carry on a stopped full scan. opts.auto: started by the
+// schedule, so nothing pops up when it ends.
+async function runMarketScan(onlyRows = null, opts = {}) {
   if (mScan.running) return;
-  const rows = (onlyRows || items.map((_, i) => i)).filter((i) => idOf(items[i]));
-  const ids = [...new Set(rows.map((i) => idOf(items[i])))];
-  if (!ids.length) { alert("No rows have an Item ID to look up. Add them on the Incentive price list tab."); return; }
-  hideAmazonPage();
-  mScan = { running: true, done: 0, total: ids.length, current: "", currentId: "", step: "", stepN: "", stop: false, startedAt: Date.now() };
   const full = !onlyRows;
+  const resume = full && opts.resume && mResume ? mResume : null;
+  hideAmazonPage();
+  mNotice = "";
+  mScan = { running: true, done: 0, total: 0, base: 0, current: "", currentId: "", step: "", stepN: "", stop: false, startedAt: Date.now(), auto: !!opts.auto };
+  if (full && !resume) { mResume = null; localStorage.setItem("marketLastScanStart", String(Date.now())); }
+  renderMarket();
+  // 0) the repricer strategy's items, fresh from Walmart (read-only)
+  if (full && !resume && bbx.settings.source !== "file") {
+    mScan.step = "api"; mScan.current = `Reading the "${bbx.settings.strategy}" items…`;
+    renderMarket();
+    const got = await refreshRepricerList();
+    if (got?.added) render(); // new rows show on the price list too
+    mScan.step = ""; mScan.current = "";
+  }
+  const rows = (onlyRows || items.map((_, i) => i).filter(inScope)).filter((i) => idOf(items[i]));
+  let ids = [...new Set(rows.map((i) => idOf(items[i])))];
+  if (resume) ids = resume.ids.filter((id) => rowsWithItem(id).length);
+  if (!ids.length || mScan.stop) {
+    mScan.running = false;
+    renderMarket();
+    if (!ids.length && !opts.auto) alert(scanAll() ? "No rows have an Item ID to look up. Add them on the Incentive price list tab." : `None of the "${bbx.settings.strategy}" items has an Item ID yet. Open Buy box check to read the list again.`);
+    return;
+  }
+  // where this scan's screenshots go: a new folder per full scan; a single
+  // re-check replaces the row's picture in the scan it came from
+  let scanId = resume ? resume.scanId : null;
+  if (!scanId && !full) scanId = items[rows[0]]?.buyBox?.shot?.scanId || localStorage.getItem("marketLastScanId") || null;
+  if (!scanId) { try { scanId = (await window.api.bbxNewScan()).scanId; } catch { scanId = null; } }
+  if (full && scanId) localStorage.setItem("marketLastScanId", scanId);
+  mScan.total = resume ? resume.total : ids.length;
+  mScan.done = mScan.base = mScan.total - ids.length;
+  mScan.startedAt = Date.now();
   renderMarket();
   // 1) Walmart API — every SKU in one go
-  let usedApi = apiReady() ? "" : "off";
-  if (apiReady()) {
+  let usedApi = resume ? resume.usedApi : apiReady() ? "" : "off";
+  if (apiReady() && !resume) {
     const skus = [...new Set(rows.map((i) => String(items[i].sku ?? "").trim()).filter(Boolean))];
     if (skus.length) {
       mScan.step = "api"; mScan.current = `Walmart API: 0 of ${skus.length} SKUs`;
@@ -669,17 +773,24 @@ async function runMarketScan(onlyRows = null) {
     }
   }
   const amzSeen = new Map(); // asin → read result, so a SKU listed twice reads each ASIN once per scan
-  for (const id of ids) {
+  let at = 0; // ids before this index are done
+  for (; at < ids.length; at++) {
+    const id = ids[at];
     if (mScan.stop) break;
     const rowsFor = items.map((_, i) => i).filter((i) => idOf(items[i]) === id);
     const sku = items[rowsFor[0]]?.sku || id;
     mScan.currentId = id;
-    // 2) page read: the buy box price and who holds it
+    // 2) page read: the buy box, every seller with shipping, and the screenshot
     mScan.current = `Walmart: ${sku}`; mScan.step = "walmart";
     renderMarket();
-    const r = await window.api.marketReadWalmart(id, { store: myStore }).catch(() => null);
-    if (mScan.stop) break;
-    if (r && r.price) rememberPrice(r); else markNoPrice(id);
+    const r = await window.api.marketReadWalmart(id, { full: true, scanId, store: myStore }).catch(() => null);
+    if (r?.robot) { // every read after this would fail too: stop here, Resume picks this one up again
+      noteNoPrice(id, r);
+      mScan.stop = true; mScan.robot = true;
+      break;
+    }
+    if (r && r.price) rememberPrice(r); else { markNoPrice(id); noteNoPrice(id, r); }
+    if (mScan.stop) { at++; break; }
     // every Amazon listing linked to any row with this item ID
     const entries = [];
     for (const i of rowsFor) for (const a of amzList(items[i])) if (!a.manual && a.asin) entries.push(a);
@@ -700,24 +811,244 @@ async function runMarketScan(onlyRows = null) {
     renderMarket();
     if (!mScan.stop && ids.length > 1) await sleep(WM_PAUSE_MS);
   }
-  const stopped = mScan.stop;
+  const stopped = at < ids.length;
+  const robot = mScan.robot;
   mScan.running = false;
   mScan.currentId = "";
+  if (full) {
+    mResume = stopped ? { ids: ids.slice(at), total: mScan.total, scanId, usedApi, startedAt: resume?.startedAt || mScan.startedAt } : null;
+    if (robot) mNotice = "Scan paused: Walmart asked for a robot check. Open any listing in the Incentive price list tab's pane, pass the check there, then press Resume scan.";
+  }
   if (full && !stopped) {
     mLastScan = Date.now();
     mLastScanMs = mLastScan - mScan.startedAt;
     mLastScanApi = usedApi;
+    mLastScanN = mScan.total;
     localStorage.setItem("marketLastScan", String(mLastScan));
     localStorage.setItem("marketLastScanMs", String(mLastScanMs));
-    localStorage.setItem("marketLastScanDay", new Date().toDateString());
+    localStorage.setItem("marketLastScanN", String(mLastScanN));
     localStorage.setItem("marketLastScanApi", usedApi);
   }
   const apiError = mScan.apiError, apiNone = mScan.apiNone;
   renderMarket();
+  // 3) the results file for other apps — after every scan, finished or not
+  await writeBbxExport({ scanId, startedAt: resume?.startedAt || mScan.startedAt, complete: full && !stopped });
+  if (opts.auto) return;
   if (apiError) openApiModal(`The Walmart API part of the scan failed, so win rates and suggested prices are missing (buy boxes were read from the pages as usual). ${apiError}`, true);
   else if (apiNone) openApiModal(`Walmart's API connected, but returned nothing for any of your ${apiNone} SKU${apiNone === 1 ? "" : "s"}, so there are no win rates or suggested prices (buy boxes were read from the pages as usual). Pricing Insights only covers published items in this seller account, looked up by the exact SKU in Seller Center — check the SKUs match, and that these keys belong to the same account.`, true);
   else if (full && !stopped) showSummary();
 }
+
+// ---- buy box check: the repricer list, the results file, the settings dialog ---------------
+// Reads the strategy's items again (read-only) and adds the ones the price
+// list doesn't have yet as plain rows (SKU and Item ID only), so the scan and
+// the Market table cover them. → { ok, added } or { error }.
+let bbxLastError = "";
+async function refreshRepricerList(source) {
+  const known = {};
+  for (const it of items) { const k = String(it.sku ?? "").trim().toLowerCase(); if (k && idOf(it)) known[k] = idOf(it); }
+  const res = await window.api.bbxImport({ source, known }).catch((e) => ({ error: String(e?.message || e) }));
+  if (!res || res.canceled) return { canceled: true };
+  if (res.error) { bbxLastError = res.error; return res; }
+  bbxLastError = "";
+  bbx.list = res.list;
+  indexRp();
+  let added = 0;
+  if (bbx.settings.addRows) {
+    const haveSku = new Set(items.map((it) => String(it.sku ?? "").trim().toLowerCase()).filter(Boolean));
+    for (const r of rpItems()) {
+      const k = String(r.sku).trim().toLowerCase();
+      if (haveSku.has(k)) { // a row that has the SKU but no Item ID gets the ID
+        if (r.itemId) for (const it of items) if (String(it.sku ?? "").trim().toLowerCase() === k && !idOf(it)) it.itemId = r.itemId;
+        continue;
+      }
+      if (!r.itemId) continue; // nothing to look up without an Item ID
+      items.push({ ...newRow(), sku: r.sku, itemId: r.itemId });
+      haveSku.add(k);
+      added++;
+    }
+    if (added) restoreBuyBoxes(items);
+    saveQuiet();
+  }
+  return { ok: true, added };
+}
+
+// One row per SKU for other apps (the format is documented in the README).
+function bbxExportRows() {
+  const iso = (t) => (t ? new Date(t).toISOString() : null);
+  const numOr = (n) => (Number.isFinite(n) ? n : null);
+  const rowFor = (r) => {
+    const k = String(r.sku ?? "").trim().toLowerCase();
+    let i = items.findIndex((it) => k && String(it.sku ?? "").trim().toLowerCase() === k && idOf(it));
+    if (i < 0 && r.itemId) i = items.findIndex((it) => idOf(it) === String(r.itemId));
+    return i;
+  };
+  const base = scanAll()
+    ? items.map((_, i) => i).filter((i) => idOf(items[i])).map((i) => ({ i, rp: rpOf(items[i]) }))
+    : rpItems().map((r) => ({ i: rowFor(r), rp: r }));
+  const seen = new Set();
+  const out = [];
+  for (const { i, rp } of base) {
+    const it = i >= 0 ? items[i] : null;
+    const sku = String(rp?.sku ?? it?.sku ?? "").trim();
+    const itemId = String(it ? idOf(it) : rp?.itemId ?? "").trim();
+    const key = (sku || itemId).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const f = i >= 0 ? rowFacts(i) : null;
+    const bb = it?.buyBox || null;
+    const sellers = f ? f.sellers : [];
+    const me = f?.me || null;
+    const rival = sellers.find((s) => !s.mine) || null; // sellers are sorted by total, so this is the cheapest other seller
+    const myPrice = numOr(rp?.price) ?? numOr(me?.price) ?? numOr(f?.api?.currentPrice) ?? (f && f.during > 0 ? f.during : null);
+    const myTotal = me ? me.total : myPrice;
+    const missed = !!(bb?.missedAt && bb.missedAt > (bb.at || 0));
+    const readStatus = !itemId ? "no-item-id" : !bb ? "not-scanned" : bb.robot ? "robot-check" : bb.notFound ? "not-found"
+      : bb.oos && (missed || !(bb.price > 0)) ? "out-of-stock" : bb.failed || missed ? "failed" : bb.price > 0 ? "ok" : "not-scanned";
+    out.push({
+      sku, itemId,
+      strategy: rp ? (rp.strategy || bbx.list?.strategy || null) : null,
+      myPrice, minPrice: numOr(rp?.min), maxPrice: numOr(rp?.max), inventory: numOr(rp?.inventory), status: rp?.status ?? null,
+      buyBoxPrice: f?.bb ? f.bb.price : null,
+      buyBoxSeller: f?.bb?.seller ?? null,
+      buyBoxIsMine: f?.known ? f.mine : null,
+      myRank: me ? me.rank : null,
+      sellerCount: sellers.length,
+      lowestCompetitorPrice: rival ? rival.price : null,
+      lowestCompetitorShipping: rival ? rival.shipping : null,
+      lowestCompetitorTotal: rival ? rival.total : null,
+      lowestCompetitorSeller: rival ? rival.seller : null,
+      gap: rival && myTotal != null ? round2m(myTotal - rival.total) : null,
+      outOfStock: bb?.oos ?? null,
+      sellers: sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, shippingNote: s.shipNote, total: s.total, isMe: s.mine, hasBuyBox: s.isBB })),
+      screenshot: bb?.shot?.file ?? null,
+      screenshotKind: bb?.shot?.kind ?? null,
+      scannedAt: iso(missed ? bb.missedAt : bb?.at),
+      readStatus,
+      listingUrl: itemId ? `https://www.walmart.com/ip/${itemId}` : null,
+    });
+  }
+  return out;
+}
+let bbxLastExport = null; // { ok, path, rows } | { error }
+async function writeBbxExport(scan = {}) {
+  const payload = {
+    scanId: scan.scanId || null,
+    scanStartedAt: scan.startedAt ? new Date(scan.startedAt).toISOString() : null,
+    scanFinishedAt: new Date().toISOString(),
+    scanComplete: !!scan.complete,
+    store: myStore,
+    strategy: bbx.list?.strategy || bbx.settings.strategy,
+    repricerList: bbx.list ? { source: bbx.list.source, readAt: new Date(bbx.list.at).toISOString(), items: rpItems().length } : null,
+    rows: bbxExportRows(),
+  };
+  bbxLastExport = await window.api.bbxWriteExport(payload).catch((e) => ({ error: String(e?.message || e) }));
+  if (bbxLastExport?.error) console.error(bbxLastExport.error);
+  return bbxLastExport;
+}
+
+function bbxStatus(text, kind) {
+  const el = $("bbxStatus");
+  if (!el || $("bbxModal").classList.contains("hidden")) return;
+  el.textContent = text || "";
+  el.className = "status" + (kind ? " " + kind : "");
+}
+const SOURCE_NAME = { api: "the Walmart API", seller: "Seller Center", file: "a report file" };
+function renderBbxModal() {
+  const st = bbx.settings, list = bbx.list;
+  const n = rpItems().length, noId = rpItems().filter((r) => !r.itemId).length;
+  const onList = rpItems().filter((r) => items.some((it) => String(it.sku ?? "").trim().toLowerCase() === String(r.sku).trim().toLowerCase() && idOf(it))).length;
+  $("bbxCurrent").textContent = list
+    ? `${n} item${n === 1 ? "" : "s"} on "${list.strategy}" · read from ${SOURCE_NAME[list.source] || list.source}${list.file ? ` (${list.file})` : ""} ${when(list.at)} · ${onList} on your price list${noId ? ` · ${noId} without an Item ID` : ""}${list.assumed ? " · the source didn't name a strategy, so every item on it was taken" : ""}`
+    : "The strategy's items haven't been read yet.";
+  $("bbxExportPath").textContent = st.exportPath || "";
+  $("bbxApiState").textContent = apiReady() ? "Walmart API connected." : "Walmart API not connected — the list is read from Seller Center.";
+  $("bbxUrlRow").classList.toggle("hidden", !(($("bbxSource").value || st.source) === "seller" || ($("bbxSource").value || st.source) === "auto"));
+  $("bbxRead").textContent = $("bbxSource").value === "file" ? "Choose file…" : "Read now";
+}
+function fillBbxForm() {
+  const st = bbx.settings;
+  $("bbxStrategy").value = st.strategy || "";
+  $("bbxSource").value = st.source || "auto";
+  $("bbxUrl").value = st.sellerUrl || "";
+  $("bbxUrl").placeholder = st.sellerUrlDefault || "https://seller.walmart.com/repricer";
+  $("bbxScope").value = st.scope === "all" ? "all" : "strategy";
+  $("bbxAddRows").checked = !!st.addRows;
+  $("bbxSchedOn").checked = !!st.scheduleOn;
+  $("bbxHours").value = String(st.everyHours ?? 3);
+  $("bbxShots").checked = !!st.shots;
+}
+const bbxFormValues = () => ({
+  strategy: $("bbxStrategy").value.trim(), source: $("bbxSource").value, sellerUrl: $("bbxUrl").value.trim(), scope: $("bbxScope").value,
+  addRows: $("bbxAddRows").checked, scheduleOn: $("bbxSchedOn").checked, everyHours: Number($("bbxHours").value), shots: $("bbxShots").checked,
+});
+async function saveBbxForm() {
+  const v = bbxFormValues();
+  if (!v.strategy) { $("bbxStrategy").focus(); return false; }
+  if (!(v.everyHours >= 0.5 && v.everyHours <= 48)) { bbxStatus("Scan every 0.5 to 48 hours.", "error"); $("bbxHours").focus(); return false; }
+  if (v.sellerUrl && !/^https:\/\/seller\.walmart\.com\//i.test(v.sellerUrl)) { bbxStatus("The Seller Center page must start with https://seller.walmart.com/", "error"); $("bbxUrl").focus(); return false; }
+  bbx.settings = await window.api.bbxSave(v);
+  return true;
+}
+function openBbxModal() {
+  fillBbxForm();
+  window.api.hideListing();
+  hideAmazonPage();
+  $("bbxModal").classList.remove("hidden");
+  renderBbxModal();
+  bbxStatus(bbxLastError ? `Last read failed: ${bbxLastError}` : bbxLastExport?.error || "", bbxLastError || bbxLastExport?.error ? "error" : "");
+}
+function closeBbxModal() { $("bbxModal").classList.add("hidden"); }
+$("mBbxBtn").addEventListener("click", openBbxModal);
+$("bbxCancel").addEventListener("click", closeBbxModal);
+$("bbxModal").addEventListener("click", (e) => { if (e.target.id === "bbxModal") closeBbxModal(); });
+$("bbxModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeBbxModal(); });
+$("bbxSource").addEventListener("change", renderBbxModal);
+$("bbxApiKeys").addEventListener("click", () => { closeBbxModal(); openApiModal("", false); });
+$("bbxSave").addEventListener("click", async () => { if (await saveBbxForm()) { closeBbxModal(); renderMarket(); } });
+$("bbxUsePane").addEventListener("click", async () => {
+  const url = await window.api.bbxSellerPaneUrl();
+  if (/^https:\/\/seller\.walmart\.com\//i.test(url || "")) { $("bbxUrl").value = url; bbxStatus("Using the page open in the Seller Center pane.", "ok"); }
+  else bbxStatus("The Seller Center pane isn't open on a Seller Center page. On the Incentive price list tab, switch the pane to Seller Center, open the strategy's item list, then come back.", "error");
+});
+$("bbxRead").addEventListener("click", async () => {
+  if (mScan.running) { bbxStatus("Wait for the scan to finish first.", "error"); return; }
+  if (!(await saveBbxForm())) return;
+  $("bbxRead").disabled = true;
+  bbxStatus(bbx.settings.source === "file" ? "Reading the file…" : "Reading the strategy's items — this can take a minute…");
+  const res = await refreshRepricerList();
+  $("bbxRead").disabled = false;
+  renderBbxModal();
+  renderMarket();
+  render();
+  if (res.canceled) bbxStatus("");
+  else if (res.error) bbxStatus(res.error, "error");
+  else bbxStatus(`Read ${rpItems().length} item${rpItems().length === 1 ? "" : "s"}.${res.added ? ` ${res.added} added to your price list.` : ""}`, "ok");
+});
+$("bbxFolder").addEventListener("click", async () => {
+  const dir = await window.api.bbxPickFolder();
+  if (!dir) return;
+  bbx.settings = await window.api.bbxSave({ exportDir: dir });
+  renderBbxModal();
+});
+$("bbxFolderOpen").addEventListener("click", () => window.api.bbxOpenExportFolder());
+$("bbxFolderReset").addEventListener("click", async () => { bbx.settings = await window.api.bbxSave({ exportDir: "" }); renderBbxModal(); });
+(async () => {
+  try {
+    const got = await window.api.bbxGet();
+    bbx = { settings: { ...bbx.settings, ...(got?.settings || {}) }, list: got?.list || null };
+    // the old once-a-day switch carries over as the new schedule's switch
+    if (!localStorage.getItem("bbxSchedMigrated")) {
+      localStorage.setItem("bbxSchedMigrated", "1");
+      let old = null;
+      try { old = JSON.parse(localStorage.getItem("marketSchedule") || "null"); } catch { /* none */ }
+      if (old?.on && !bbx.settings.scheduleOn) bbx.settings = await window.api.bbxSave({ scheduleOn: true });
+    }
+  } catch { /* defaults */ }
+  indexRp();
+  bbxLoaded = true;
+  renderMarket();
+})();
 
 // ---- Walmart API keys (settings dialog) ---------------------------------------------------
 function renderApiBtn() {
@@ -810,42 +1141,35 @@ $("apiRemove").addEventListener("click", async () => {
 });
 [$("apiClientId"), $("apiSecret")].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") $("apiSave").click(); }));
 refreshApiSettings();
-$("mScanBtn").addEventListener("click", () => { if (mScan.running) { mScan.stop = true; $("mScanBtn").querySelector("span").textContent = "Stopping…"; } else runMarketScan(); });
+// Run → Stop → Resume: a stopped scan keeps its place (and its screenshot
+// folder); Start over drops what's left and begins a new scan.
+$("mScanBtn").addEventListener("click", () => {
+  if (mScan.running) { mScan.stop = true; renderScanBar(); }
+  else if (mResume) runMarketScan(null, { resume: true });
+  else runMarketScan();
+});
+$("mScanOverBtn").addEventListener("click", () => { if (!mScan.running) { mResume = null; runMarketScan(); } });
 
-// ---- daily schedule -------------------------------------------------------------------
-// While the app is open, the scan starts by itself at the chosen time, once a
-// day. If the app was opened after that time and today's scan hasn't run, it
-// runs shortly after launch.
-let mSched = { on: false, time: "09:00" };
-try { mSched = { ...mSched, ...(JSON.parse(localStorage.getItem("marketSchedule") || "{}") || {}) }; } catch { /* default */ }
-$("mSchedOn").checked = !!mSched.on;
-$("mSchedTime").value = /^\d{2}:\d{2}$/.test(mSched.time) ? mSched.time : "09:00";
-function renderSched() {
-  document.querySelector(".m-sched").classList.toggle("on", !!mSched.on);
+// ---- schedule: every N hours ------------------------------------------------------------
+// While the app is open, a full scan starts by itself N hours after the last
+// one started (Buy box check → "Scan every N hours"). If the app was closed
+// when one was due, it runs shortly after launch. A scheduled scan stays in
+// the background: no tab switch, no pop-up at the end.
+function nextScanAt() {
+  if (!bbx.settings.scheduleOn) return null;
+  const last = Number(localStorage.getItem("marketLastScanStart")) || 0;
+  const hours = Math.min(48, Math.max(0.5, Number(bbx.settings.everyHours) || 3));
+  return last ? last + hours * 3600000 : Date.now();
 }
-function saveSched() {
-  mSched = { on: $("mSchedOn").checked, time: $("mSchedTime").value || "09:00" };
-  localStorage.setItem("marketSchedule", JSON.stringify(mSched));
-  renderSched();
+function scheduleTick() {
+  if (!bbxLoaded || mScan.running) return;
+  const next = nextScanAt();
+  if (next == null || Date.now() < next) return;
+  if (!items.some(idOf) && !rpItems().length && bbx.settings.source === "file") return;
+  runMarketScan(null, { auto: true });
 }
-renderSched();
-$("mSchedOn").addEventListener("change", saveSched);
-$("mSchedTime").addEventListener("change", saveSched);
-function scheduleTick(atLaunch = false) {
-  if (!mSched.on || mScan.running) return;
-  const today = new Date().toDateString();
-  if (localStorage.getItem("marketLastScanDay") === today) return;
-  const [h, m] = mSched.time.split(":").map(Number);
-  const now = new Date();
-  const due = now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m);
-  if (!due) return;
-  if (!atLaunch && (now.getHours() !== h || now.getMinutes() !== m)) return; // only at the minute itself while running; the launch check catches the rest
-  if (!items.some(idOf)) return;
-  setTab("market");
-  runMarketScan();
-}
-setInterval(() => scheduleTick(false), 30000);
-setTimeout(() => scheduleTick(true), 20000);
+setInterval(scheduleTick, 30000);
+setTimeout(scheduleTick, 20000);
 
 // ---- the Amazon page, shown for a robot check -------------------------------------------
 let amazonPageShown = false;
@@ -1017,7 +1341,7 @@ function wireSumExport(box, rows, head, toRow, name, widths, csvBtn, xlsxBtn) {
   xlsxBtn.onclick = () => go("xlsx");
 }
 function showSummary() {
-  const all = items.map((_, i) => i).filter((i) => idOf(items[i])).map(rowFacts);
+  const all = items.map((_, i) => i).filter(inScope).map(rowFacts); // the listings the scan covers
   const won = all.filter((f) => f.mine).length, lost = all.filter((f) => f.lost).length;
   const unread = all.filter((f) => !f.known).length;
   $("mSumBox").textContent = `You hold the buy box on ${won} of ${all.length} listing${all.length === 1 ? "" : "s"}${lost ? `, and lost it on ${lost}` : ""}${unread ? ` · ${unread} couldn't be told` : ""}.`;

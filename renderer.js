@@ -1024,10 +1024,12 @@ function rememberPrice(p) {
     // a scan that skipped the other sellers drops an old list rather than show it as current
     const skipped = p.offersWhy === "skipped";
     items[i].buyBox = { price: p.price, was: p.was ?? null, seller: p.seller ?? null, others: p.others ?? null,
-      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 12) : skipped ? [] : (prev?.offers || []),
+      offers: Array.isArray(p.offers) && p.offers.length ? p.offers.slice(0, 40) : skipped ? [] : (prev?.offers || []),
       offersWhy: Array.isArray(p.offers) && p.offers.length ? null : (p.offersWhy ?? prev?.offersWhy ?? null),
       offersSnapshot: Array.isArray(p.offers) && p.offers.length ? null : (p.offersSnapshot ?? null), at: Date.now(),
-      api: prev?.api ?? null, apiAt: prev?.apiAt ?? null, notInCatalog: prev?.notInCatalog || undefined };
+      api: prev?.api ?? null, apiAt: prev?.apiAt ?? null, notInCatalog: prev?.notInCatalog || undefined,
+      // a buy box check (market.js) read every seller and took a screenshot
+      oos: p.oos ?? null, full: p.full ? true : undefined, shot: p.full ? (p.shot ?? null) : (prev?.shot ?? null) };
   }
   window.api.saveItems(items); // quiet save — not a user edit, so no undo step / flash
   cacheBuyBoxes();

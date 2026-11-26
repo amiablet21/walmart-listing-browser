@@ -16,6 +16,17 @@ contextBridge.exposeInMainWorld("api", {
   openAmazon: (asin) => ipcRenderer.invoke("market:openAmazon", asin),
   // Walmart Marketplace API (Market tab scan)
   marketInsights: (skus) => ipcRenderer.invoke("market:insights", skus),
+  // buy box check: settings, the repricer strategy's items, screenshots, results file
+  bbxGet: () => ipcRenderer.invoke("bbx:get"),
+  bbxSave: (patch) => ipcRenderer.invoke("bbx:save", patch),
+  bbxImport: (opts) => ipcRenderer.invoke("bbx:import", opts),
+  bbxNewScan: () => ipcRenderer.invoke("bbx:newScan"),
+  bbxWriteExport: (payload) => ipcRenderer.invoke("bbx:writeExport", payload),
+  bbxPickFolder: () => ipcRenderer.invoke("bbx:pickFolder"),
+  bbxSellerPaneUrl: () => ipcRenderer.invoke("bbx:sellerPaneUrl"),
+  bbxOpenShot: (file) => ipcRenderer.invoke("bbx:openShot", file),
+  bbxShowShot: (file) => ipcRenderer.invoke("bbx:showShot", file),
+  bbxOpenExportFolder: () => ipcRenderer.invoke("bbx:openExportFolder"),
   importLinnworks: () => ipcRenderer.invoke("market:importLinnworks"),
   onApiProgress: (cb) => ipcRenderer.on("api:progress", (_e, p) => cb(p)),
   getApiSettings: () => ipcRenderer.invoke("api:getSettings"),
