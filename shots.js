@@ -96,8 +96,8 @@ const GEOM_SCRIPT = (kind) => `(() => {
     const b = e.getBoundingClientRect();
     if (b.width > 0 && b.height > 0 && b.bottom > bottom) bottom = b.bottom;
   }
-  const soldEl = [...col.querySelectorAll("span, div, p")].find((e) => vis(e) && e.children.length <= 3 && /^Sold (?:and|&) shipped by/i.test((e.textContent || "").trim()));
-  if (soldEl) bottom = Math.min(bottom, soldEl.getBoundingClientRect().bottom + 150);
+  const soldEl = [...col.querySelectorAll("span, div, p")].find((e) => vis(e) && e.children.length <= 3 && /^Sold (?:(?:and|&) shipped )?by/i.test((e.textContent || "").trim()));
+  if (soldEl) bottom = Math.min(bottom, soldEl.getBoundingClientRect().bottom + 190);
   bottom = Math.min(bottom + 12, r.y + r.h + 8);
   const top = Math.max(0, r.y - 8);
   return { rect: { x: Math.max(0, r.x - 8), y: top, w: r.w + 16, h: Math.max(120, Math.min(bottom, top + 2400) - top) }, scroll: null, vw, vh, win: false };

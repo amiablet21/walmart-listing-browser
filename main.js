@@ -775,7 +775,19 @@ const OFFERS_SCRIPT = `(async () => {
   // (data-wlb-panel) so the screenshot step captures the same element.
   const panelRoot = () => {
     const all = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]')];
-    const hit = all.find((el) => el.getClientRects().length && /Sold (?:and|&) shipped by|Sold by/i.test(el.innerText || "")) || null;
+    let hit = all.find((el) => el.getClientRects().length && /Sold (?:and|&) shipped by|Sold by/i.test(el.innerText || "")) || null;
+    // Not marked up as a dialog? Then find it by its title ("More seller
+    // options") and walk up to the tall, narrow box that holds the sellers.
+    if (!hit) {
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const title = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div, p')].find((e) => e.getClientRects().length && e.children.length === 0
+        && /^(More seller options|Compare all sellers|All sellers|Seller options)$/i.test((e.textContent || "").trim()) && !e.closest("a, button"));
+      for (let e = title; e && e !== document.body; e = e.parentElement) {
+        const r = e.getBoundingClientRect();
+        if (r.width > vw * 0.6) break;
+        if (r.height >= vh * 0.5 && /Sold (?:and|&) shipped by|Sold by/i.test(e.innerText || "")) { hit = e; break; }
+      }
+    }
     document.querySelectorAll("[data-wlb-panel]").forEach((e) => { if (e !== hit) e.removeAttribute("data-wlb-panel"); });
     if (hit) hit.setAttribute("data-wlb-panel", "1");
     return hit;
