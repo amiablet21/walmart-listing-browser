@@ -539,6 +539,9 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-toolbar #mRetryBtn.hidden { display: none; }
 .m-right { margin-left: auto; }
 .m-toolbar { position: relative; }
+/* The Market toolbar shows only the search box (and the scan progress line). The other
+   controls stay in the page so market.js keeps working, but are not shown. */
+.m-toolbar > :not(.m-search):not(#mProgress) { display: none !important; }
 .m-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: #E9E4D7; overflow: hidden; }
 .m-progress.hidden { display: none; }
 .m-prog-bar { height: 100%; width: 0; background: #4C5B9E; transition: width .3s; }
