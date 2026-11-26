@@ -637,17 +637,47 @@ const PRICE_SCRIPT = `(() => {
 // the Next.js payload first, then the page text ("Sold and shipped by X",
 // "Compare all N sellers" / "More seller options (N)").
 const SELLERS_SCRIPT = `(() => {
-  const out = { seller: null, others: null, oos: null };
+  const out = { seller: null, others: null, oos: null, colSeller: null, ndSeller: null, colPrice: null };
+  const soldRe = /Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/i;
+  // What the customer sees comes first: the listing's right-hand column (price,
+  // Add to cart, "Sold and shipped by"), found by walking up from the button
+  // to the widest ancestor that is still one column wide. Walmart's data
+  // payload can name a different seller than the page ends up showing, and the
+  // page's text has "Sold by" lines outside the buy box too.
+  try {
+    const vw = window.innerWidth, band = Math.max(640, vw * 0.36);
+    const vis = (e) => !!e && e.getClientRects().length > 0;
+    const anchors = [
+      document.querySelector('[data-testid="add-to-cart-section"]'),
+      [...document.querySelectorAll("button")].find((b) => vis(b) && /^add to cart$/i.test((b.textContent || "").trim()) && b.getBoundingClientRect().left > vw * 0.4),
+      document.querySelector('[itemprop="price"]'),
+    ].filter(vis);
+    let col = null;
+    for (const a of anchors) {
+      for (let e = a; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+        const w = e.getBoundingClientRect().width;
+        if (w > band) break;
+        if (w >= 260) col = e;
+      }
+      if (col) break;
+    }
+    if (col) {
+      const t = col.innerText || "";
+      const m = soldRe.exec(t); if (m) out.colSeller = m[1].trim();
+      const pm = /\\$\\s?(\\d[\\d,]*\\.\\d{2})/.exec(t); if (pm) out.colPrice = Number(pm[1].replace(/,/g, ""));
+    }
+  } catch {}
   try {
     const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
     const pr = nd?.props?.pageProps?.initialData?.data?.product;
-    if (pr?.sellerName) out.seller = String(pr.sellerName).trim();
+    if (pr?.sellerName) out.ndSeller = String(pr.sellerName).trim();
     if (pr?.availabilityStatus) out.oos = !/^IN_STOCK$/i.test(String(pr.availabilityStatus));
     if (Number.isInteger(pr?.additionalOfferCount)) out.others = pr.additionalOfferCount;
   } catch {}
+  out.seller = out.colSeller || out.ndSeller;
   try {
     const text = document.body?.innerText || "";
-    if (!out.seller) { const m = /Sold (?:and shipped |& shipped )?by\\s+([^\\n|]{2,60}?)(?:\\s*\\||\\n|$)/i.exec(text); if (m) out.seller = m[1].trim(); }
+    if (!out.seller) { const m = soldRe.exec(text); if (m) out.seller = m[1].trim(); }
     if (out.others == null) {
       const m = /Compare all (\\d+) sellers/i.exec(text) || /More seller options \\((\\d+)\\)/i.exec(text) || /(\\d+) more sellers?/i.exec(text);
       if (m) out.others = Math.max(0, Number(m[1]) - (/Compare all/i.test(m[0]) ? 1 : 0));
@@ -756,7 +786,15 @@ const OFFERS_SCRIPT = `(async () => {
   if (/^\\/product\\/\\d+\\/sellers/.test(location.pathname)) {
     // this address can show the listing with the sellers panel open over it:
     // read the panel then (the page behind it has "Sold by" lines of its own)
-    const list = dedupe(parse(panelText() || document.body?.innerText || ""));
+    // (the panel fills in after the page: give it a few seconds to appear and settle)
+    let text = "", last = null;
+    for (let i = 0; i < 7; i++) {
+      text = panelText();
+      if (text && text === last) break;
+      last = text;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    const list = dedupe(parse(text || document.body?.innerText || ""));
     return { list, why: list.length ? null : "no-match" };
   }
   try {
@@ -1069,6 +1107,19 @@ async function marketReadWalmart(itemId, opts = {}) {
       w.__lastPrice = { ...w.__lastPrice, seller: s.seller ?? null, others: w.__lastPrice.others ?? s.others ?? null, oos: w.__lastPrice.oos ?? s.oos ?? null };
     } catch { /* keep what we have */ }
   }
+  // A buy box check reports what the page shows once it has settled: the
+  // seller named in the buy box column (Walmart's data payload can name
+  // another), and that column's price when the two disagree.
+  if (check) {
+    await wait(1200);
+    if (w.__item !== itemId) return null;
+    try {
+      const s = (await w.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {};
+      const next = { ...w.__lastPrice, seller: s.seller ?? w.__lastPrice.seller ?? null, others: s.others ?? w.__lastPrice.others ?? null, oos: s.oos ?? w.__lastPrice.oos ?? null };
+      if (s.colSeller && s.ndSeller && s.colSeller.toLowerCase() !== s.ndSeller.toLowerCase() && s.colPrice > 0) next.price = s.colPrice;
+      w.__lastPrice = next;
+    } catch { /* keep what we have */ }
+  }
   const holder = String(w.__lastPrice.seller ?? "").trim().toLowerCase();
   const isYou = !!(opts.store && holder && holder === String(opts.store).trim().toLowerCase());
   if (!check && !opts.allSellers && !isYou) {
@@ -1089,6 +1140,14 @@ async function marketReadWalmart(itemId, opts = {}) {
   if (w.__item !== itemId) return null;
   r = await sellersPageFallback(w, itemId, r);
   if (w.__item !== itemId) return null;
+  // A check doesn't take the listing's word that there is one seller: its
+  // count of other offers can be zero while Walmart's all-sellers address
+  // lists more (your own offer among them). Look there before settling.
+  if (check && r.list.length <= 1 && w.__onSellers !== itemId) {
+    const page = await readSellersPage(w, itemId);
+    if (w.__item !== itemId) return null;
+    if (page.list.length > r.list.length) r = { ...page, panel: false };
+  }
   // the screenshot: the all-sellers page when that is where the list was read,
   // the open panel otherwise, and the buy box when there is no list to show
   let shot = null;
@@ -1156,7 +1215,7 @@ async function saveShot(w, itemId, scanId, kind) {
     // shows the listing with that panel over it, so the panel comes first even
     // there. Then the page (a real all-sellers page), then the buy box.
     let got = null;
-    for (const k of kind === "buybox" ? ["buybox"] : ["panel", ...(kind === "page" ? ["page"] : []), "buybox"]) {
+    for (const k of kind === "buybox" ? ["buybox"] : ["panel", "buybox"]) { // never the whole page: that address is a listing too
       got = await captureShot(w, k);
       if (got) break;
     }

@@ -80,7 +80,7 @@ The format is versioned by `schema`; fields are only ever added within `walmart-
 ```jsonc
 {
   "schema": "walmart-buybox/1",
-  "app": { "name": "Walmart Listing Browser", "version": "0.6.3" },
+  "app": { "name": "Walmart Listing Browser", "version": "0.6.4" },
   "generatedAt": "2026-11-26T14:05:31.000Z",   // when this file was written (ISO 8601, UTC)
   "scanId": "2026-11-26_09-01-12",             // also the screenshot folder's name
   "scanStartedAt": "2026-11-26T14:01:12.000Z",
