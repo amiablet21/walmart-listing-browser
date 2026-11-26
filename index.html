@@ -320,6 +320,7 @@
         <button class="m-chip" data-f="all" title="Every listing">All<span class="n"></span></button>
         <button class="m-chip" data-f="lost" title="Listings where another seller holds the buy box">Losing<span class="n"></span></button>
         <button class="m-chip" data-f="won" title="Listings where you hold the buy box">Winning<span class="n"></span></button>
+        <button class="m-chip m-wf-chip" data-f="wf" title="Listings with a Walmart-funded incentive in effect">Walmart-funded<span class="n"></span></button>
         <button class="m-chip" data-f="oos" title="Listings Walmart shows as out of stock">Out of stock<span class="n"></span></button>
         <button class="m-chip" data-f="missed" title="Listings whose page couldn't be read">Not read<span class="n"></span></button>
       </span>
@@ -349,6 +350,7 @@
               <th>SKU</th>
               <th>Item ID</th>
               <th class="num">Our price</th>
+              <th class="sep m-wf-col" title="Listings with a Walmart-funded incentive, from the Walmart API">Walmart-funded</th>
               <th class="sep">Walmart buy box</th>
               <th class="sep">Amazon buy box</th>
             </tr>
@@ -368,7 +370,7 @@
         <h2 id="apiTitle">Walmart API keys</h2>
         <span id="apiState" class="api-state off">Not connected</span>
       </div>
-      <p class="api-sub">The market scan then adds your win rate and Walmart's suggested price for every SKU. <button id="apiKeysLink" class="linkish" type="button">Where to get keys</button></p>
+      <p class="api-sub">Used to mark which of your listings have a Walmart-funded incentive. Read-only: nothing in your Walmart account is changed. <button id="apiKeysLink" class="linkish" type="button">Where to get keys</button></p>
       <p id="apiMsg" class="api-msg hidden"></p>
       <label class="api-field">
         <span>Client ID</span>
@@ -424,6 +426,14 @@
         </div>
         <button id="bbxFolder" class="set-mini" type="button">Change…</button>
         <button id="bbxFolderOpen" class="set-mini" type="button">Open</button>
+      </div>
+      <div class="set-row">
+        <div class="set-text">
+          <b>Walmart-funded labels</b>
+          <span id="incState">Marks the listings that have a Walmart-funded incentive. Needs your Walmart API keys.</span>
+        </div>
+        <button id="incKeys" class="set-mini" type="button">API keys…</button>
+        <button id="incRefresh" class="set-mini" type="button">Refresh</button>
       </div>
       <p id="bbxStatus" class="status"></p>
       <div class="set-foot">

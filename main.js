@@ -1226,6 +1226,41 @@ function saveBbx(patch) {
   try { fs.writeFileSync(bbxFile, JSON.stringify(next, null, 2)); } catch (e) { console.error("Failed to save buy box settings:", e); }
   return publicBbx();
 }
+// ---- Walmart-funded incentives (Market tab label) ----------------------------
+// Which SKUs have a Walmart-funded incentive, from the price-incentives API
+// (walmartApi.js). The answer is kept in userData/incentives.json so the label
+// shows right away at the next launch; a failed refresh keeps the last good
+// list and records why. The first rows of Walmart's raw answer are kept in
+// userData/incentives-debug.json, for checking the reader against the real
+// thing (Walmart's two pages on this endpoint show two different shapes).
+let incFile = null;
+let incRunning = null;
+function loadIncentives() {
+  try { const d = JSON.parse(fs.readFileSync(incFile, "utf8")); return d && Array.isArray(d.items) ? d : { at: 0, items: [] }; }
+  catch { return { at: 0, items: [] }; }
+}
+function refreshIncentives() {
+  if (incRunning) return incRunning;
+  const say = (text) => { try { win?.webContents.send("inc:progress", text); } catch { /* window gone */ } };
+  incRunning = (async () => {
+    const prev = loadIncentives();
+    try {
+      const { items, raw } = await makeClient().priceIncentives(say);
+      const data = { at: Date.now(), items, error: null, errorAt: null };
+      try { fs.writeFileSync(incFile, JSON.stringify(data)); } catch (e) { console.error("Failed to save incentives:", e); }
+      try { fs.writeFileSync(path.join(app.getPath("userData"), "incentives-debug.json"), JSON.stringify({ at: new Date().toISOString(), version: app.getVersion(), counts: { items: items.length }, raw }, null, 2)); } catch { /* best effort */ }
+      return { ok: true, ...data };
+    } catch (e) {
+      const data = { ...prev, error: e.message || String(e), errorAt: Date.now() };
+      try { fs.writeFileSync(incFile, JSON.stringify(data)); } catch { /* keep going */ }
+      return { ...data, ok: false };
+    } finally {
+      incRunning = null;
+    }
+  })();
+  return incRunning;
+}
+
 // Screenshots: one folder per scan, named for when it started; old scans are pruned.
 const safeScanId = (id) => (/^[0-9A-Za-z_-]{6,40}$/.test(String(id ?? "")) ? String(id) : null);
 function newScan() {
@@ -1657,6 +1692,7 @@ app.whenReady().then(() => {
   uiFile = path.join(app.getPath("userData"), "ui.json");
   apiFile = path.join(app.getPath("userData"), "api.json");
   bbxFile = path.join(app.getPath("userData"), "buybox.json");
+  incFile = path.join(app.getPath("userData"), "incentives.json");
   const savedZoom = loadUi().paneZoom;
   if (Number.isFinite(savedZoom)) paneZoom = Math.min(1.5, Math.max(0.4, savedZoom));
 
@@ -1674,6 +1710,8 @@ app.whenReady().then(() => {
   ipcMain.handle("market:openAmazon", (_e, asin) => shell.openExternal(amazonUrl(asin)));
   ipcMain.handle("market:insights", (_e, skus) => marketInsights(skus));
   ipcMain.handle("market:importLinnworks", () => importLinnworks());
+  ipcMain.handle("inc:get", () => ({ ...loadIncentives(), running: !!incRunning }));
+  ipcMain.handle("inc:refresh", () => refreshIncentives());
   ipcMain.handle("bbx:get", () => ({ settings: publicBbx() }));
   ipcMain.handle("bbx:save", (_e, patch) => saveBbx(patch));
   ipcMain.handle("bbx:newScan", () => newScan());

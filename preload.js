@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld("api", {
   // Walmart Marketplace API (Market tab scan)
   marketInsights: (skus) => ipcRenderer.invoke("market:insights", skus),
   // buy box check: settings, screenshots, results file
+  // Walmart-funded incentives (the Market tab's label)
+  incentivesGet: () => ipcRenderer.invoke("inc:get"),
+  incentivesRefresh: () => ipcRenderer.invoke("inc:refresh"),
+  onIncentivesProgress: (cb) => ipcRenderer.on("inc:progress", (_e, text) => cb(text)),
   bbxGet: () => ipcRenderer.invoke("bbx:get"),
   bbxSave: (patch) => ipcRenderer.invoke("bbx:save", patch),
   bbxNewScan: () => ipcRenderer.invoke("bbx:newScan"),
