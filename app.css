@@ -547,17 +547,10 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 
 /* Buy box check: dialog, seller ranks, screenshot card */
 .modal.api-card.bbx-card { width: min(560px, 94vw); max-height: 92vh; overflow-y: auto; }
-.bbx-card select, .bbx-card input[type="number"] { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; background: #fff; color: #1C1B16; min-height: 34px; box-sizing: border-box; }
-.bbx-card select { width: 100%; padding: 6px 8px; }
+.bbx-card input[type="number"] { font: inherit; font-size: 13px; border: 1px solid #D9D2C1; border-radius: 8px; background: #fff; color: #1C1B16; min-height: 34px; box-sizing: border-box; }
 .bbx-card input[type="number"] { width: 64px; padding: 4px 6px; min-height: 28px; text-align: right; }
-.bbx-card select:focus, .bbx-card input[type="number"]:focus { outline: none; border-color: #4C5B9E; box-shadow: 0 0 0 3px rgba(76, 91, 158, .22); }
-.bbx-api { margin: -4px 0 12px; font-size: 12px; color: #6E6B5C; }
-.bbx-api .linkish { font-size: 12px; }
+.bbx-card input[type="number"]:focus { outline: none; border-color: #4C5B9E; box-shadow: 0 0 0 3px rgba(76, 91, 158, .22); }
 .bbx-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.bbx-row input[type="text"] { flex: 1 1 220px; min-width: 0; }
-.bbx-list { display: flex; align-items: flex-start; gap: 12px; margin: 2px 0 4px; }
-.bbx-list .lw-current { flex: 1 1 auto; margin: 0; }
-.bbx-list button { flex: none; }
 .bbx-card .status { margin: 4px 0 10px; font-size: 12.5px; line-height: 1.45; min-height: 0; }
 .bbx-card .status:empty { display: none; }
 .bbx-card .api-sandbox { margin: 8px 0 0; }

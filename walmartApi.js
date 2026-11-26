@@ -162,36 +162,6 @@ class WalmartClient {
     const missing = wanted.filter((s) => !bySku[s]);
     return { bySku, missing };
   }
-
-  // Every item Pricing Insights knows in this account, page by page →
-  // [{ sku, itemId, …insight }]. Used to list a repricer strategy's items:
-  // each row names its strategy, min / max price, price and inventory.
-  async listPricingInsights(onProgress) {
-    const out = [];
-    for (let page = 0, pages = 1; page < pages && page < 500; page++) {
-      const body = await this.call("POST", "/v3/price/getPricingInsights", { pageNumber: page });
-      const list = Array.isArray(body?.pricingInsightsResponseList) ? body.pricingInsightsResponseList : [];
-      for (const row of list) {
-        const sku = String(row?.sku ?? "").trim();
-        if (sku) out.push({ sku, itemId: itemIdOf(row), ...normalizeInsight(row) });
-      }
-      pages = Number(body?.pageContext?.totalPages) || 1;
-      if (typeof onProgress === "function") onProgress(page + 1, pages);
-      if (!list.length) break;
-    }
-    return out;
-  }
-}
-
-// The walmart.com item ID, when the row carries one (the field isn't in every
-// version of the response, so it is found by name).
-function itemIdOf(row) {
-  for (const k in row || {}) {
-    if (!/^(wm|walmart)?item_?(id|number)$/i.test(k)) continue;
-    const s = String(row[k] ?? "").trim();
-    if (/^\d{5,}$/.test(s)) return s;
-  }
-  return "";
 }
 
 // Keep just the fields the sheet uses, as plain numbers/strings.

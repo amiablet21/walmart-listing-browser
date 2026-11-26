@@ -8,7 +8,6 @@ const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
 const { buildIncentiveBuffer } = require("./incentive");
 const { WalmartClient } = require("./walmartApi");
 const { captureShot } = require("./shots");
-const { fromApi, fromSellerCenter, fromTables } = require("./repricerImport");
 const { autoUpdater } = require("electron-updater");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
@@ -533,7 +532,7 @@ function makePane(mode) {
   // hidden page, so Chromium stops animation frames and lazy loading there and
   // Walmart's sellers link never appears. Offscreen, the page is "visible"
   // (and painted at a low frame rate) while nothing is ever shown.
-  const background = mode === "worker" || mode === "sellerWorker";
+  const background = mode === "worker";
   const v = new WebContentsView({
     webPreferences: {
       partition: "persist:listing", // one session for both panes: log in once
@@ -596,7 +595,6 @@ function makePane(mode) {
     v.webContents.on("did-finish-load", () => scheduleReadPrice(v));  // fallback for late-hydrating prices
   }
   win.contentView.addChildView(v);
-  if (mode === "sellerWorker") { v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); v.setVisible(false); }
   if (mode === "worker" || mode === "amazon") {
     workerContentsIds.add(v.webContents.id);
     v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); // real size: the page lays out and hydrates normally
@@ -1092,14 +1090,13 @@ async function marketReadWalmart(itemId, opts = {}) {
   return p;
 }
 
-// ---- buy box check: settings, the repricer strategy's items, screenshots, export ----
-// Settings live in userData/buybox.json, the strategy's item list in
-// userData/repricer-items.json, screenshots in userData/buybox-shots/<scan>/
-// (one PNG per item), and after every scan the results are written as JSON
-// for other apps to read (see the README for the format).
-let bbxFile = null, rpFile = null;
-const SELLER_REPRICER = "https://seller.walmart.com/repricer";
-const BBX_DEFAULTS = { strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24, exportDir: "" };
+// ---- buy box check: settings, screenshots, export ----------------------------
+// Settings live in userData/buybox.json, screenshots in
+// userData/buybox-shots/<scan>/ (one PNG per item), and after every scan the
+// results are written as JSON for other apps to read (see the README for the
+// format).
+let bbxFile = null;
+const BBX_DEFAULTS = { scheduleOn: false, everyHours: 3, shots: true, keepScans: 24, exportDir: "" };
 const shotsRoot = () => path.join(app.getPath("userData"), "buybox-shots");
 const defaultExportDir = () => path.join(app.getPath("userData"), "buybox-export");
 function loadBbx() {
@@ -1111,107 +1108,18 @@ function publicBbx() {
   const cfg = loadBbx();
   const api = loadApiSettings();
   return { ...cfg, exportPath: path.join(cfg.exportDir || defaultExportDir(), EXPORT_NAME), exportFolder: cfg.exportDir || defaultExportDir(),
-    shotsFolder: shotsRoot(), sellerUrlDefault: SELLER_REPRICER, hasApi: !!(api.clientId && decryptSecret(api.secret)) };
+    shotsFolder: shotsRoot(), hasApi: !!(api.clientId && decryptSecret(api.secret)) };
 }
 function saveBbx(patch) {
   const next = loadBbx();
   const p = patch && typeof patch === "object" ? patch : {};
-  if (typeof p.strategy === "string" && p.strategy.trim()) next.strategy = p.strategy.trim().slice(0, 120);
-  if (["auto", "api", "seller", "file"].includes(p.source)) next.source = p.source;
-  if (typeof p.sellerUrl === "string") next.sellerUrl = /^https:\/\/seller\.walmart\.com\//i.test(p.sellerUrl.trim()) ? p.sellerUrl.trim() : "";
-  if (["strategy", "all"].includes(p.scope)) next.scope = p.scope;
-  for (const k of ["addRows", "scheduleOn", "shots"]) if (typeof p[k] === "boolean") next[k] = p[k];
+  for (const k of ["scheduleOn", "shots"]) if (typeof p[k] === "boolean") next[k] = p[k];
   if (Number.isFinite(Number(p.everyHours)) && p.everyHours !== "" && p.everyHours != null) next.everyHours = Math.min(48, Math.max(0.5, Math.round(Number(p.everyHours) * 100) / 100));
   if (Number.isFinite(Number(p.keepScans)) && p.keepScans != null && p.keepScans !== "") next.keepScans = Math.min(500, Math.max(1, Math.round(Number(p.keepScans))));
   if (typeof p.exportDir === "string") next.exportDir = p.exportDir.trim();
   try { fs.writeFileSync(bbxFile, JSON.stringify(next, null, 2)); } catch (e) { console.error("Failed to save buy box settings:", e); }
   return publicBbx();
 }
-function loadRepricerList() {
-  try { const l = JSON.parse(fs.readFileSync(rpFile, "utf8")); return l && Array.isArray(l.items) ? l : null; } catch { return null; }
-}
-
-// The strategy's items, read-only: the Walmart API when keys are saved, the
-// signed-in Seller Center page otherwise (or to fill in item IDs the API
-// didn't give), or a report file picked by hand. `known` maps a lower-case
-// SKU to the item ID the price list already has for it.
-let importRunning = false;
-function ensureSellerWorker() {
-  if (!panes.sellerWorker) panes.sellerWorker = makePane("sellerWorker");
-  return panes.sellerWorker;
-}
-async function readReportTables(file) {
-  if (file.toLowerCase().endsWith(".xlsx")) {
-    const ExcelJS = require("exceljs");
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.readFile(file);
-    return wb.worksheets.map((ws) => {
-      const rows = [];
-      ws.eachRow((row) => {
-        const vals = [];
-        for (let c = 1; c <= Math.min(ws.columnCount || 40, 60); c++) vals.push(cellText(row.getCell(c)));
-        rows.push(vals);
-      });
-      return rows;
-    });
-  }
-  const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "").replace(/\r/g, "");
-  return [text.split("\n").filter((l) => l.trim()).map((line) => (line.includes("\t") ? line.split("\t") : splitCsvLine(line)).map((c) => c.trim()))];
-}
-async function importRepricer(opts = {}) {
-  if (importRunning) return { error: "The repricer list is already being read." };
-  importRunning = true;
-  try {
-    const cfg = loadBbx();
-    const strategy = cfg.strategy;
-    const source = ["auto", "api", "seller", "file"].includes(opts.source) ? opts.source : cfg.source;
-    const viaApi = async () => {
-      try {
-        return await fromApi(makeClient(), strategy, (done, total) => { try { win?.webContents.send("api:progress", { done, total, pages: true }); } catch { /* window gone */ } });
-      } catch (e) { return { error: e.message || String(e) }; }
-    };
-    const viaSeller = async () => {
-      try { return await fromSellerCenter(ensureSellerWorker(), cfg.sellerUrl || SELLER_REPRICER, strategy, loadAndWait); }
-      catch (e) { return { error: e.message || String(e) }; }
-    };
-    let res;
-    if (source === "file") {
-      const pick = await dialog.showOpenDialog(win, {
-        title: `Repricer report with the "${strategy}" items`,
-        filters: [{ name: "Spreadsheets", extensions: ["xlsx", "csv", "tsv", "txt"] }, { name: "All files", extensions: ["*"] }],
-        properties: ["openFile"],
-      });
-      if (pick.canceled || !pick.filePaths[0]) return { canceled: true };
-      try { res = fromTables(await readReportTables(pick.filePaths[0]), strategy); res.file = path.basename(pick.filePaths[0]); }
-      catch (e) { res = { error: e.message || String(e) }; }
-    } else if (source === "api") res = await viaApi();
-    else if (source === "seller") res = await viaSeller();
-    else {
-      const hasKeys = publicBbx().hasApi;
-      res = hasKeys ? await viaApi() : null;
-      if (!res || res.error) {
-        const s = await viaSeller();
-        res = s.error ? { error: [res?.error && `Walmart API: ${res.error}`, `Seller Center: ${s.error}`].filter(Boolean).join(" · "), signIn: s.signIn } : s;
-      }
-    }
-    if (!res || res.error) return res || { error: "The repricer list couldn't be read." };
-    const known = opts.known && typeof opts.known === "object" ? opts.known : {};
-    const fill = () => { for (const r of res.rows) if (!r.itemId) r.itemId = String(known[r.sku.toLowerCase()] ?? "").trim(); };
-    fill();
-    // the API names the strategy's SKUs but may not give item IDs: the Seller
-    // Center page can fill those in (a failure there doesn't lose the list)
-    if (source === "auto" && res.source === "api" && res.rows.some((r) => !r.itemId)) {
-      const s = await viaSeller();
-      if (!s.error) { for (const row of s.rows) if (row.itemId) known[row.sku.toLowerCase()] = known[row.sku.toLowerCase()] || row.itemId; fill(); }
-    }
-    const list = { strategy, source: res.source, file: res.file || null, at: Date.now(), assumed: !!res.assumed, items: res.rows };
-    try { fs.writeFileSync(rpFile, JSON.stringify(list, null, 2)); } catch (e) { console.error("Failed to save the repricer list:", e); }
-    return { ok: true, list };
-  } finally {
-    importRunning = false;
-  }
-}
-
 // Screenshots: one folder per scan, named for when it started; old scans are pruned.
 const safeScanId = (id) => (/^[0-9A-Za-z_-]{6,40}$/.test(String(id ?? "")) ? String(id) : null);
 function newScan() {
@@ -1636,7 +1544,6 @@ app.whenReady().then(() => {
   uiFile = path.join(app.getPath("userData"), "ui.json");
   apiFile = path.join(app.getPath("userData"), "api.json");
   bbxFile = path.join(app.getPath("userData"), "buybox.json");
-  rpFile = path.join(app.getPath("userData"), "repricer-items.json");
   const savedZoom = loadUi().paneZoom;
   if (Number.isFinite(savedZoom)) paneZoom = Math.min(1.5, Math.max(0.4, savedZoom));
 
@@ -1654,13 +1561,11 @@ app.whenReady().then(() => {
   ipcMain.handle("market:openAmazon", (_e, asin) => shell.openExternal(amazonUrl(asin)));
   ipcMain.handle("market:insights", (_e, skus) => marketInsights(skus));
   ipcMain.handle("market:importLinnworks", () => importLinnworks());
-  ipcMain.handle("bbx:get", () => ({ settings: publicBbx(), list: loadRepricerList() }));
+  ipcMain.handle("bbx:get", () => ({ settings: publicBbx() }));
   ipcMain.handle("bbx:save", (_e, patch) => saveBbx(patch));
-  ipcMain.handle("bbx:import", (_e, opts) => importRepricer(opts || {}));
   ipcMain.handle("bbx:newScan", () => newScan());
   ipcMain.handle("bbx:writeExport", (_e, payload) => writeBuyBoxExport(payload));
   ipcMain.handle("bbx:pickFolder", () => pickExportFolder());
-  ipcMain.handle("bbx:sellerPaneUrl", () => { try { return panes.seller?.webContents.getURL() || ""; } catch { return ""; } });
   ipcMain.handle("bbx:openShot", (_e, file) => { const f = shotPath(file); if (f) shell.openPath(f); return !!f; });
   ipcMain.handle("bbx:showShot", (_e, file) => { const f = shotPath(file); if (f) shell.showItemInFolder(f); return !!f; });
   ipcMain.handle("bbx:openExportFolder", () => { const d = publicBbx().exportFolder; try { fs.mkdirSync(d, { recursive: true }); } catch { /* shown as is */ } return shell.openPath(d); });
