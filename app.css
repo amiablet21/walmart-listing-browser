@@ -584,9 +584,22 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 /* the panel scrolls; its cards keep their full height (they used to be squeezed once there were many) */
 .m-panel > .m-card, .m-panel > .m-store { flex: none; }
 #mTable td.sep .m-muted + .m-muted, #mTable td.sep .m-pill + .m-muted { margin-left: 8px; }
-.m-shot .m-card-head .mini { margin-left: auto; padding: 3px 9px; min-height: 0; font-size: 11.5px; }
-#mPanel button.m-shot-img { display: block; width: 100%; max-height: 300px; overflow: hidden; padding: 0; border: 0; border-radius: 0 0 14px 14px; background: #F4F1E9; cursor: zoom-in; min-height: 0; }
-#mPanel button.m-shot-img img { display: block; width: 100%; height: auto; }
+.m-verdict { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px; background: #F4F1E9; border: 1px solid #E9E4D7; }
+.m-verdict b { font-size: 15px; font-weight: 600; color: #1C1B16; }
+.m-verdict span { font-size: 12.5px; line-height: 1.45; color: #45433A; }
+.m-verdict.lose { background: #FDF4E4; border-color: #F3DDB6; } .m-verdict.lose b { color: #8A4B12; } .m-verdict.lose span { color: #6B4A1E; }
+.m-verdict.win { background: #EEF6EA; border-color: #CFE3C4; } .m-verdict.win b { color: #3F6A2F; } .m-verdict.win span { color: #3E5A33; }
+#mPanel button.m-icon:disabled { opacity: .35; cursor: default; }
+.modal.shot-card { width: min(560px, 94vw); max-height: 92vh; padding: 0; border-radius: 16px; overflow: hidden; }
+.shot-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; border-bottom: 1px solid #F0EDE6; flex: none; }
+.shot-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.shot-text b { font-family: "Geist Mono", ui-monospace, monospace; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shot-text span { font-size: 12px; color: #6E6B5C; }
+.shot-card button.set-mini { flex: none; padding: 5px 10px; font-size: 12px; min-height: 0; border-radius: 8px; }
+.shot-card button.shot-x { flex: none; width: 30px; height: 30px; padding: 0; border: 0; background: transparent; font-size: 20px; line-height: 1; color: #6E6B5C; border-radius: 8px; }
+.shot-card button.shot-x:hover { background: #F0EDE6; color: #1C1B16; }
+.shot-body { flex: 1 1 auto; min-height: 0; overflow: auto; background: #F4F1E9; padding: 14px; }
+.shot-body img { display: block; width: 100%; height: auto; border-radius: 8px; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
 .m-progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: #E9E4D7; overflow: hidden; }
 .m-progress.hidden { display: none; }
 .m-prog-bar { height: 100%; width: 0; background: #4C5B9E; transition: width .3s; }

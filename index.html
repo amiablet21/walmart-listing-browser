@@ -433,6 +433,19 @@
     </div>
   </div>
 
+  <!-- The scan's screenshot of a listing, opened from the eye in the row's panel -->
+  <div id="shotModal" class="modal-overlay hidden">
+    <div class="modal shot-card" role="dialog" aria-labelledby="shotTitle">
+      <div class="shot-head">
+        <div class="shot-text"><b id="shotTitle"></b><span id="shotSub"></span></div>
+        <button id="shotFile" class="set-mini" type="button" title="Show the picture's file in its folder">Show file</button>
+        <button id="shotFull" class="set-mini" type="button" title="Open the picture in your image viewer">Open</button>
+        <button id="shotClose" class="shot-x" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="shot-body"><img id="shotImg" alt="Screenshot of the Walmart listing's sellers" /></div>
+    </div>
+  </div>
+
   <!-- Raise rules: when a listing has room to raise, and what to suggest -->
   <div id="raiseModal" class="modal-overlay hidden">
     <div class="modal api-card raise-card" role="dialog" aria-labelledby="raiseTitle">

@@ -322,6 +322,13 @@ const comPct = (n) => (Number.isFinite(n) ? `${Math.round(n * 100) / 100}%` : "#
 // themselves, and renaming a SKU re-files its row. The items array is kept in
 // this order (organizeItems), so row numbers, formulas and exports follow it.
 const SECTIONS = ["Tablets", "Phones", "Open Box", "Other"];
+// A model code that starts a word of the SKU: not preceded by a letter or digit.
+const wordCache = new Map();
+function word(code) {
+  let re = wordCache.get(code);
+  if (!re) { re = new RegExp("(?<![A-Z0-9])" + code); wordCache.set(code, re); }
+  return re;
+}
 // Rules are tried top to bottom (specific before general — S26 FE before S26);
 // ord is the model's place within its section (release order, oldest first).
 const MODEL_RULES = [
@@ -343,28 +350,30 @@ const MODEL_RULES = [
   { sec: 0, ord: 14, name: "Tab S10+",         test: (c) => c.includes("X820") },
   { sec: 0, ord: 15, name: "Tab S11 Ultra",    test: (c) => c.includes("X930") },
   { sec: 0, ord: 16, name: "iPad 11th gen",    test: (c) => c.includes("IPAD") },
-  // phones
-  { sec: 1, ord: 0,  name: "Galaxy A23",       test: (c) => c.includes("A23") },
-  { sec: 1, ord: 1,  name: "Galaxy A54",       test: (c) => c.includes("A54") },
-  { sec: 1, ord: 2,  name: "Galaxy A15",       test: (c) => c.includes("A15") },
-  { sec: 1, ord: 4,  name: "Galaxy S24 FE",    test: (c) => c.includes("S24FE") },
-  { sec: 1, ord: 3,  name: "Galaxy S24",       test: (c) => c.includes("S24") },
-  { sec: 1, ord: 6,  name: "Galaxy S25 Ultra", test: (c) => c.includes("S25ULTRA") },
-  { sec: 1, ord: 7,  name: "Galaxy S25 FE",    test: (c) => c.includes("S25FE") },
-  { sec: 1, ord: 5,  name: "Galaxy S25",       test: (c) => c.includes("S25") },
-  { sec: 1, ord: 8,  name: "Galaxy A56",       test: (c) => c.includes("A56") },
+  // phones — the model code has to start a word of the SKU (see `word`): as a
+  // bare substring "S25" is also found inside "S26-PLUS-256GB" (…PLUS256…),
+  // which is how every S26+ 256GB row once filed itself under Galaxy S25
+  { sec: 1, ord: 0,  name: "Galaxy A23",       test: (c, s) => word("A23").test(s) },
+  { sec: 1, ord: 1,  name: "Galaxy A54",       test: (c, s) => word("A54").test(s) },
+  { sec: 1, ord: 2,  name: "Galaxy A15",       test: (c, s) => word("A15").test(s) },
+  { sec: 1, ord: 4,  name: "Galaxy S24 FE",    test: (c, s) => word("S24[\\s-]*FE").test(s) },
+  { sec: 1, ord: 3,  name: "Galaxy S24",       test: (c, s) => word("S24").test(s) },
+  { sec: 1, ord: 6,  name: "Galaxy S25 Ultra", test: (c, s) => word("S25[\\s-]*ULTRA").test(s) },
+  { sec: 1, ord: 7,  name: "Galaxy S25 FE",    test: (c, s) => word("S25[\\s-]*FE").test(s) },
+  { sec: 1, ord: 5,  name: "Galaxy S25",       test: (c, s) => word("S25").test(s) },
+  { sec: 1, ord: 8,  name: "Galaxy A56",       test: (c, s) => word("A56").test(s) },
   { sec: 1, ord: 9,  name: "Z Fold7",          test: (c) => c.includes("ZFOLD") },
-  { sec: 1, ord: 11, name: "Galaxy S26+",      test: (c) => c.includes("S26PLUS") || c.includes("S26+") },
-  { sec: 1, ord: 12, name: "Galaxy S26 Ultra", test: (c) => c.includes("S26ULTRA") },
-  { sec: 1, ord: 13, name: "Galaxy S26 FE",    test: (c) => c.includes("S26FE") },
-  { sec: 1, ord: 10, name: "Galaxy S26",       test: (c) => c.includes("S26") },
+  { sec: 1, ord: 11, name: "Galaxy S26+",      test: (c, s) => word("S26[\\s-]*(?:PLUS|\\+)").test(s) },
+  { sec: 1, ord: 12, name: "Galaxy S26 Ultra", test: (c, s) => word("S26[\\s-]*ULTRA").test(s) },
+  { sec: 1, ord: 13, name: "Galaxy S26 FE",    test: (c, s) => word("S26[\\s-]*FE").test(s) },
+  { sec: 1, ord: 10, name: "Galaxy S26",       test: (c, s) => word("S26").test(s) },
 ];
 // a model code with no rule yet still gets its own group (after the known
 // models of its section), so a new release never falls into "Other"
-function autoModel(c) {
+function autoModel(c, s) {
   let m = /X(\d{3})/.exec(c);
   if (m) return { sec: 0, ord: 100 + Number(m[1]) / 1000, name: "X" + m[1] };
-  m = /S(\d{2})(ULTRA|PLUS|FE)?/.exec(c);
+  m = /(?<![A-Z0-9])S(\d{2})[\s-]*(ULTRA|PLUS|FE)?/.exec(s);
   if (m) {
     const mod = m[2] === "ULTRA" ? " Ultra" : m[2] === "PLUS" ? "+" : m[2] === "FE" ? " FE" : "";
     return { sec: 1, ord: 100 + Number(m[1]) + (m[2] ? 0.1 : 0), name: "Galaxy S" + m[1] + mod };
@@ -383,7 +392,8 @@ function classify(skuRaw) {
   const c = s.replace(/[^A-Z0-9+]/g, "");
   const openBox = c.includes("OPENBOX") || /\bOB\b/.test(s);
   const cm = c.replace(/^OPENBOX/, "");          // match the model under the prefix
-  const rule = MODEL_RULES.find((r) => r.test(cm)) || autoModel(cm);
+  const sm = s.replace(/^\s*OPEN[\s-]*BOX[\s-]*/, "");  // the same, with word breaks kept
+  const rule = MODEL_RULES.find((r) => r.test(cm, sm)) || autoModel(cm, sm);
   const secIdx = openBox ? 2 : rule ? rule.sec : 3;
   // US / INTL applies to phones (that's where both versions sell side by side);
   // \b keeps MINT from reading as INT
@@ -397,21 +407,28 @@ function classify(skuRaw) {
     badge,
     badgeRank: badge === "int" ? 1 : 0,
     cond: openBox ? "Open Box" : "New",
+    // inside a model group: the variant's code first (X133 Wi-Fi before X135
+    // LTE), then the smaller storage first; a SKU that names neither goes last
+    sub: Number(/X(\d{3})/.exec(cm)?.[1] ?? 0),
+    // (real sizes only: in "X13364GB" the storage is 64, not 3364)
+    gb: (() => { const m = /(1024|512|256|128|64|32|16)\s*GB/.exec(sm) || /([124])\s*TB/.exec(sm); return m ? Number(m[1]) * (/TB$/.test(m[0]) ? 1024 : 1) : 99999; })(),
   };
   if (classifyCache.size > 4000) classifyCache.clear();
   classifyCache.set(key, k);
   return k;
 }
 
-// Sort items into catalog order (stable — equal rows keep their relative
-// order, so drag-reordering inside a group survives). Remaps the selection.
+// Sort items into catalog order: section, model, US before International,
+// then variant code and storage (64GB above 128GB). Stable — rows equal on
+// all of that keep their relative order, so drag-reordering among them
+// survives. Remaps the selection.
 function organizeItems() {
   const selIt = items[selected] ?? null;
   const actIt = activeCell ? items[activeCell.i] ?? null : null;
   const keyed = items.map((it, idx) => ({ it, idx, k: classify(it.sku) }));
   keyed.sort((a, b) =>
     a.k.secIdx - b.k.secIdx || a.k.modOrd - b.k.modOrd ||
-    a.k.badgeRank - b.k.badgeRank || a.idx - b.idx);
+    a.k.badgeRank - b.k.badgeRank || a.k.sub - b.k.sub || a.k.gb - b.k.gb || a.idx - b.idx);
   items = keyed.map((x) => x.it);
   if (selIt) selected = items.indexOf(selIt);
   if (actIt) activeCell = { ...activeCell, i: items.indexOf(actIt) };

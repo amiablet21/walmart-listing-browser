@@ -488,10 +488,24 @@ function renderPanel() {
       </div>` : "";
   // the scan's screenshot of the seller list (or of the buy box)
   const shot = it.buyBox?.shot?.file ? it.buyBox.shot : null;
-  const shotHtml = shot ? `<div class="m-card m-shot">
-      <div class="m-card-head"><b>Screenshot</b><span class="m-muted">${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}</span><button class="mini" id="mShotFolder" title="Show the file in its folder">Show file</button></div>
-      <button type="button" class="m-shot-img" id="mShotOpen" title="Open full size"><img src="${esc(fileUrl(shot.file))}?t=${shot.at || 0}" alt="Screenshot of the Walmart ${shot.kind === "buybox" ? "buy box" : "seller list"}" /></button>
-    </div>` : "";
+  // The verdict, in words: winning or losing, by how much, to whom.
+  const bbx0 = it.buyBox;
+  const holder = f.sellers.find((s) => s.isBB) || null;
+  const others = f.sellers.filter((s) => !s.mine);
+  let verdict;
+  if (f.bb && f.mine) {
+    const next = others[0];
+    verdict = { kind: "win", head: "You hold the buy box", sub: `At ${fmt(f.bb.price)}.${next ? ` Next is ${esc(next.seller)} at ${fmt(next.total)}.` : f.sellers.length <= 1 ? " No other seller on this listing." : ""}` };
+  } else if (f.bb && f.lost) {
+    const gap = f.me && holder ? round2m(f.me.total - holder.total) : null;
+    verdict = { kind: "lose", head: gap > 0 ? `Losing the buy box by ${fmt(gap)}` : "Losing the buy box",
+      sub: `${esc(f.bb.seller || "Another seller")} holds it at ${fmt(f.bb.price)}.${f.me ? ` You are #${f.me.rank} of ${f.sellers.length} at ${fmt(f.me.total)}.` : " Your offer isn't on this listing."}` };
+  } else if (f.bb) verdict = { kind: "none", head: `Buy box ${fmt(f.bb.price)}`, sub: "Couldn't tell who holds it." };
+  else if (bbx0?.oos) verdict = { kind: "none", head: "Out of stock", sub: "The listing shows no price." };
+  else if (bbx0?.robot) verdict = { kind: "none", head: "Robot check", sub: "Open the listing in the pane once to pass it, then re-check." };
+  else if (bbx0?.failed) verdict = { kind: "none", head: "Couldn't read this listing", sub: bbx0.notFound ? "Walmart says the page doesn't exist — check the Item ID." : "Re-check it, or open the listing to look." };
+  else verdict = { kind: "none", head: "Not scanned yet", sub: "Run the buy box check, or re-check this listing." };
+  const verdictHtml = `<div class="m-verdict ${verdict.kind}"><b>${verdict.head}</b><span>${verdict.sub}</span></div>`;
   const lw = lwOf(it);
   const sibs = lw ? groupMembers(i).filter((j) => j !== i) : [];
   const groupLine = lw
@@ -501,15 +515,12 @@ function renderPanel() {
     <div class="m-card m-id">
       <div class="m-id-head">
         <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · ${viaApi ? "Walmart API" : "page"} read ${when(it.buyBox.at)}` : ""}${!viaApi && apiReady() && it.buyBox?.notInCatalog ? ` · <span class="m-warn" title="Walmart's Pricing Insights API returned nothing for this SKU, so the scan read the listing page instead. The SKU must match your Seller Center SKU exactly, and the item must be published.">not found in Walmart's API</span>` : ""}</div></div>
+        <button class="m-icon" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}" aria-label="See the screenshot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="m-icon" id="mOpenWm" title="Open Walmart listing" aria-label="Open Walmart listing"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>
         <button class="m-icon" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Re-check this listing now" aria-label="Re-check this listing now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
       </div>
       ${groupLine}
-      <div class="m-stats">
-        <div><span>Our price</span><b>${fmt(f.during)}</b></div>
-        <div><span>Walmart</span><b class="wm">${fmt(f.wmLow)}</b></div>
-        <div><span>Amazon</span><b class="amz">${fmt(f.low)}</b></div>
-      </div>
+      ${verdictHtml}
       ${apiStats}
       ${rpStats}
     </div>
@@ -517,7 +528,6 @@ function renderPanel() {
       <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}${f.rank && f.sellers.length > 1 ? ` · you are #${f.rank}` : ""}` : viaApi ? "via API" : ""}</span>${f.oos ? `<span class="m-pill warn">Out of stock</span>` : ""}</div>
       ${sellersHtml}${sellersNote}${raiseHtml}
     </div>
-    ${shotHtml}
     <div class="m-card">
       <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}${sibs.length ? ` · shared by ${sibs.length + 1} Walmart SKUs` : ""}</span></div>
       ${amzHtml}
@@ -550,8 +560,7 @@ function renderPanel() {
   p.querySelector("#mSnapshot")?.addEventListener("click", async () => {
     if (!(await window.api.showPageSnapshot(it.itemId))) alert("No page snapshot is saved for this item. Re-check it to take one.");
   });
-  p.querySelector("#mShotOpen")?.addEventListener("click", () => window.api.bbxOpenShot(shot.file));
-  p.querySelector("#mShotFolder")?.addEventListener("click", () => window.api.bbxShowShot(shot.file));
+  p.querySelector("#mShotEye")?.addEventListener("click", () => { if (shot) openShotModal(it, shot); });
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   p.querySelector("#mRaiseRules")?.addEventListener("click", openRaiseModal);
   p.querySelector("#mRaiseCopy")?.addEventListener("click", (e) => {
@@ -593,6 +602,25 @@ function renderPanel() {
 }
 
 function saveQuiet() { window.api.saveItems(items); }
+
+// ---- the screenshot pop-up (the eye in a row's panel) --------------------------------
+let shotShown = null;
+function openShotModal(it, shot) {
+  shotShown = shot;
+  $("shotTitle").textContent = it.sku || it.itemId;
+  $("shotSub").textContent = `${shot.kind === "buybox" ? "Buy box" : "Seller list"} as Walmart showed it · ${when(shot.at)}`;
+  $("shotImg").src = `${fileUrl(shot.file)}?t=${shot.at || 0}`;
+  window.api.hideListing();
+  hideAmazonPage();
+  $("shotModal").classList.remove("hidden");
+  $("shotClose").focus();
+}
+function closeShotModal() { $("shotModal").classList.add("hidden"); $("shotImg").removeAttribute("src"); shotShown = null; }
+$("shotClose").addEventListener("click", closeShotModal);
+$("shotModal").addEventListener("click", (e) => { if (e.target.id === "shotModal") closeShotModal(); });
+$("shotModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") closeShotModal(); });
+$("shotFile").addEventListener("click", () => { if (shotShown) window.api.bbxShowShot(shotShown.file); });
+$("shotFull").addEventListener("click", () => { if (shotShown) window.api.bbxOpenShot(shotShown.file); });
 
 // The pencil's Save: a new link replaces the ASIN (and its read data); a typed
 // price is kept as yours; an empty price means "read it from Amazon again".
