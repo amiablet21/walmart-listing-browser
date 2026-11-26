@@ -511,8 +511,8 @@ let paneZoom = 1; // 100% by default; the user's adjustment persists (ui.json)
 let paneWanted = false;  // whether the renderer currently wants a pane visible
 let paneLoading = false; // true only while WE are loading (not walmart's own background loads)
 
-// The worker view only ever has to yield numbers, so its images, media and
-// fonts are refused — most of a listing's download. The visible panes are
+// The worker view only ever has to yield numbers, so its images and media
+// are refused (fonts load: without them the icons in a screenshot are boxes) — most of a listing's download. The visible panes are
 // untouched (the filter checks which view is asking).
 const workerContentsIds = new Set();
 let leanHooked = false;
@@ -522,7 +522,7 @@ function hookLeanLoading() {
   const ses = session.fromPartition("persist:listing");
   ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) => {
     const t = details.resourceType;
-    cb({ cancel: workerContentsIds.has(details.webContentsId) && (t === "image" || t === "media" || t === "font") });
+    cb({ cancel: workerContentsIds.has(details.webContentsId) && (t === "image" || t === "media") });
   });
 }
 
@@ -738,12 +738,24 @@ const OFFERS_SCRIPT = `(async () => {
     });
     return out;
   };
-  const panelRoot = () => document.querySelector('[role="dialog"]') || document.querySelector('[data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]') || null;
-  const panelText = () => { const r = panelRoot(); const t = r ? (r.innerText || "") : ""; return /Sold (?:and|&) shipped by|Sold by/i.test(t) ? t : ""; };
+  // The sellers panel: the visible dialog (or side panel) whose text names
+  // sellers. A page can hold other dialogs (menus, location pickers), so the
+  // first one in the page is not necessarily it. The one found is marked
+  // (data-wlb-panel) so the screenshot step captures the same element.
+  const panelRoot = () => {
+    const all = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]')];
+    const hit = all.find((el) => el.getClientRects().length && /Sold (?:and|&) shipped by|Sold by/i.test(el.innerText || "")) || null;
+    document.querySelectorAll("[data-wlb-panel]").forEach((e) => { if (e !== hit) e.removeAttribute("data-wlb-panel"); });
+    if (hit) hit.setAttribute("data-wlb-panel", "1");
+    return hit;
+  };
+  const panelText = () => { const r = panelRoot(); return r ? (r.innerText || "") : ""; };
   let why = null, panelOpen = false;
   if (/Robot or human/i.test(document.title)) return { list: [], why: "robot" };
   if (/^\\/product\\/\\d+\\/sellers/.test(location.pathname)) {
-    const list = dedupe(parse(document.body?.innerText || ""));
+    // this address can show the listing with the sellers panel open over it:
+    // read the panel then (the page behind it has "Sold by" lines of its own)
+    const list = dedupe(parse(panelText() || document.body?.innerText || ""));
     return { list, why: list.length ? null : "no-match" };
   }
   try {
@@ -796,8 +808,8 @@ const OFFERS_SCRIPT = `(async () => {
 })()`;
 const CLOSE_PANEL_SCRIPT = `(() => {
   try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
-  try { document.querySelector('[role="dialog"] button[aria-label*="Close" i], [role="dialog"] button[aria-label*="close" i]')?.click(); } catch {}
-  window.scrollTo(0, 0);
+  try { (document.querySelector('[data-wlb-panel] button[aria-label*="Close" i]') || document.querySelector('[role="dialog"] button[aria-label*="Close" i]'))?.click(); } catch {}
+  window.scrollTo({ top: 0, left: 0, behavior: "instant" });
 })()`;
 // Is the listing out of stock (or showing a robot check)? Walmart's data
 // payload first, then the page text. Only asked when no price could be read.
@@ -1082,7 +1094,7 @@ async function marketReadWalmart(itemId, opts = {}) {
     shot = await saveShot(w, itemId, opts.scanId, w.__onSellers === itemId ? "page" : r.panel ? "panel" : "buybox");
     if (w.__item !== itemId) return null;
   }
-  if (r.panel) { try { await w.webContents.executeJavaScript(CLOSE_PANEL_SCRIPT, true); } catch { /* page moved on */ } }
+  if (check) { try { await w.webContents.executeJavaScript(CLOSE_PANEL_SCRIPT, true); } catch { /* page moved on */ } }
   const others = w.__lastPrice.others;
   const p = { ...w.__lastPrice, offers: r.list, offersWhy: r.list.length ? null : (r.why === "no-link" && (others == null || others === 0) ? null : r.why || "no-match"), offersSnapshot: r.snapshot ? true : null, at: Date.now() };
   if (check) { p.full = true; p.shot = shot; }
@@ -1138,7 +1150,14 @@ async function saveShot(w, itemId, scanId, kind) {
   const id = safeScanId(scanId);
   if (!id || !loadBbx().shots) return null;
   try {
-    const got = (await captureShot(w, kind)) || (kind !== "buybox" ? await captureShot(w, "buybox") : null);
+    // The sellers panel wherever it is open — Walmart's all-sellers address
+    // shows the listing with that panel over it, so the panel comes first even
+    // there. Then the page (a real all-sellers page), then the buy box.
+    let got = null;
+    for (const k of kind === "buybox" ? ["buybox"] : ["panel", ...(kind === "page" ? ["page"] : []), "buybox"]) {
+      got = await captureShot(w, k);
+      if (got) break;
+    }
     if (!got) return null;
     const dir = path.join(shotsRoot(), id);
     fs.mkdirSync(dir, { recursive: true });
