@@ -7,6 +7,8 @@ const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
 const { buildIncentiveBuffer } = require("./incentive");
 const { WalmartClient } = require("./walmartApi");
+const { captureShot } = require("./shots");
+const { fromApi, fromSellerCenter, fromTables } = require("./repricerImport");
 const { autoUpdater } = require("electron-updater");
 
 // ---- tiny JSON store (userData/items.json) --------------------------------
@@ -531,7 +533,7 @@ function makePane(mode) {
   // hidden page, so Chromium stops animation frames and lazy loading there and
   // Walmart's sellers link never appears. Offscreen, the page is "visible"
   // (and painted at a low frame rate) while nothing is ever shown.
-  const background = mode === "worker";
+  const background = mode === "worker" || mode === "sellerWorker";
   const v = new WebContentsView({
     webPreferences: {
       partition: "persist:listing", // one session for both panes: log in once
@@ -594,6 +596,7 @@ function makePane(mode) {
     v.webContents.on("did-finish-load", () => scheduleReadPrice(v));  // fallback for late-hydrating prices
   }
   win.contentView.addChildView(v);
+  if (mode === "sellerWorker") { v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); v.setVisible(false); }
   if (mode === "worker" || mode === "amazon") {
     workerContentsIds.add(v.webContents.id);
     v.setBounds({ x: 0, y: 0, width: 1024, height: 768 }); // real size: the page lays out and hydrates normally
@@ -635,11 +638,12 @@ const PRICE_SCRIPT = `(() => {
 // the Next.js payload first, then the page text ("Sold and shipped by X",
 // "Compare all N sellers" / "More seller options (N)").
 const SELLERS_SCRIPT = `(() => {
-  const out = { seller: null, others: null };
+  const out = { seller: null, others: null, oos: null };
   try {
     const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
     const pr = nd?.props?.pageProps?.initialData?.data?.product;
     if (pr?.sellerName) out.seller = String(pr.sellerName).trim();
+    if (pr?.availabilityStatus) out.oos = !/^IN_STOCK$/i.test(String(pr.availabilityStatus));
     if (Number.isInteger(pr?.additionalOfferCount)) out.others = pr.additionalOfferCount;
   } catch {}
   try {
@@ -664,7 +668,10 @@ const OFFERS_SCRIPT = `(async () => {
   const num = (s) => { const m = String(s ?? "").replace(/,/g, "").match(/\\d+(?:\\.\\d{1,2})?/); return m ? Number(m[0]) : null; };
   const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
   const found = [];
-  const dedupe = (arr) => { const out = [], seen = new Set(); for (const o of arr) { const k = o.seller.toLowerCase() + "|" + o.price; if (!seen.has(k)) { seen.add(k); out.push(o); } } return out.sort((a, b) => a.price - b.price).slice(0, 12); };
+  // one entry per seller and price (a read that knows the shipping wins), cheapest total first
+  const dedupe = (arr) => { const by = new Map(); for (const o of arr) { const k = o.seller.toLowerCase() + "|" + o.price; const p = by.get(k); if (!p) by.set(k, { ...o }); else { if (p.shipping == null && o.shipping != null) p.shipping = o.shipping; if (!p.shipNote && o.shipNote) p.shipNote = o.shipNote; } } return [...by.values()].sort((a, b) => (a.price + (a.shipping || 0)) - (b.price + (b.shipping || 0))).slice(0, 40); };
+  // shipping cost inside one offer of Walmart's data payload (0 = free, null = not stated)
+  const shipOf = (e) => { let hit = null; const look = (o, d) => { if (hit != null || !o || typeof o !== "object" || d > 3) return; for (const k in o) { const v = o[k]; if (/^(ship(ping)?(Price|Cost|Charge|Fee)|deliveryPrice)$/i.test(k)) { const n = v && typeof v === "object" ? num(v.price ?? v.amount ?? v.priceString) : num(v); if (n != null) { hit = n; return; } } else if (/^(freeShipping|isFreeShipping)$/i.test(k) && v === true) { hit = 0; return; } else if (v && typeof v === "object" && !Array.isArray(v)) look(v, d + 1); } }; look(e, 0); return hit; };
   try {
     const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
     const seen = new Set();
@@ -677,7 +684,7 @@ const OFFERS_SCRIPT = `(async () => {
       if (Array.isArray(o)) {
         // an offers list: two or more entries that each name a seller
         if (o.length > 1 && o.every(nameOf)) {
-          for (const e of o) { const n = nameOf(e), p = priceOf(e); if (n && ok(p)) found.push({ seller: String(n).trim(), price: p }); }
+          for (const e of o) { const n = nameOf(e), p = priceOf(e); if (n && ok(p)) found.push({ seller: String(n).trim(), price: p, shipping: shipOf(e), shipNote: null }); }
         }
         for (const e of o) walk(e, d + 1); return;
       }
@@ -685,15 +692,35 @@ const OFFERS_SCRIPT = `(async () => {
     };
     walk(nd, 0);
   } catch {}
-  if (found.length > 1) return { list: dedupe(found), why: null };
+  // (a buy box check always opens the panel: it is what gets screenshotted, and
+  // its cards state the shipping)
+  if (found.length > 1 && !window.__wlbForcePanel) return { list: dedupe(found), why: null };
   // Pair each "Sold by …" line with the nearest price line before it (or,
   // failing that, just after it) — the panel's cards put the price first but
   // the order has changed before.
   // the seller's name can sit on the same line or, as its own link, the next
   const sellerRe = /^(?:Sold (?:and|&) shipped by|Sold by|Seller:?)\\s*(.*?)(?:\\s*\\|.*)?$/i;
   const priceRe = /^(?:current price\\s*)?(?:Now\\s*)?\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)(?:\\s*(?:each|\\/ea))?$/i;
+  // Shipping, from the lines of one seller's card: "Free shipping, arrives…",
+  // "+$5.99 shipping", "Shipping: $5.99". Not stated → null, with the delivery
+  // line kept as a note.
+  const freeShipRe = /free\\s+(?:[\\w-]+\\s+){0,3}(?:shipping|delivery)/i;
+  const paidShipRe = /\\+?\\s*\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)\\s*(?:for\\s+)?(?:shipping|delivery)/i;
+  const paidShipRe2 = /(?:shipping|delivery)(?:\\s+fee)?[:\\s]+\\+?\\s*\\$\\s?(\\d[\\d,]*(?:\\.\\d{2})?)/i;
+  const shipIn = (ls) => {
+    let note = null;
+    for (const l of ls) {
+      if (l.length > 140) continue;
+      if (freeShipRe.test(l)) return { shipping: 0, shipNote: l.slice(0, 90) };
+      const m = paidShipRe.exec(l) || paidShipRe2.exec(l);
+      if (m) return { shipping: num(m[1]), shipNote: l.slice(0, 90) };
+      if (!note && /shipping|delivery|arrives|pickup/i.test(l)) note = l.slice(0, 90);
+    }
+    return { shipping: null, shipNote: note };
+  };
   const parse = (text) => {
     const lines = text.split(/\\n+/).map((l) => l.trim()).filter(Boolean);
+    const sellerAt = lines.map((l) => sellerRe.test(l));
     const out = [];
     lines.forEach((l, i) => {
       const m = sellerRe.exec(l); if (!m) return;
@@ -701,16 +728,21 @@ const OFFERS_SCRIPT = `(async () => {
       const seller = (nextLine ? lines[i + 1] || "" : m[1]).replace(/\\s*\\(.*$/, "").trim();
       if (seller.length < 2 || seller.length > 60 || priceRe.test(seller) || sellerRe.test(seller)) return;
       const after = nextLine ? i + 2 : i + 1;
-      let price = null;
-      for (let j = i - 1; j >= Math.max(0, i - 14) && price == null; j--) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
-      for (let j = after; j <= Math.min(lines.length - 1, after + 5) && price == null; j++) { const pm = priceRe.exec(lines[j]); if (pm) price = num(pm[1]); }
-      if (ok(price)) out.push({ seller, price });
+      let price = null, at = -1;
+      for (let j = i - 1; j >= Math.max(0, i - 14) && price == null; j--) { const pm = priceRe.exec(lines[j]); if (pm) { price = num(pm[1]); at = j; } }
+      for (let j = after; j <= Math.min(lines.length - 1, after + 5) && price == null; j++) { const pm = priceRe.exec(lines[j]); if (pm) { price = num(pm[1]); at = j; } }
+      if (!ok(price)) return;
+      // this seller's card: from its price line to just before the next card
+      const from = Math.min(at, i);
+      let to = Math.min(lines.length - 1, Math.max(at, i) + 12);
+      for (let j = Math.max(at, i) + 1; j <= to; j++) { if (sellerAt[j] || (at < i && priceRe.test(lines[j]))) { to = j - 1; break; } }
+      out.push({ seller, price, ...shipIn(lines.slice(from, to + 1)) });
     });
     return out;
   };
   const panelRoot = () => document.querySelector('[role="dialog"]') || document.querySelector('[data-testid*="seller" i][class*="panel" i], [data-testid*="allSellers" i], aside[class*="seller" i]') || null;
   const panelText = () => { const r = panelRoot(); const t = r ? (r.innerText || "") : ""; return /Sold (?:and|&) shipped by|Sold by/i.test(t) ? t : ""; };
-  let why = null;
+  let why = null, panelOpen = false;
   if (/Robot or human/i.test(document.title)) return { list: [], why: "robot" };
   if (/^\\/product\\/\\d+\\/sellers/.test(location.pathname)) {
     const list = dedupe(parse(document.body?.innerText || ""));
@@ -735,7 +767,7 @@ const OFFERS_SCRIPT = `(async () => {
         for (let i = 0; !btn && i < 6; i++) { await new Promise((r) => setTimeout(r, 500)); btn = findBtn(); }
         if (btn) btn.scrollIntoView({ block: "center" }); else window.scrollTo(0, 0);
       }
-      if (!btn) return { list: [], why: "no-link" };
+      if (!btn) return found.length > 1 ? { list: dedupe(found), why: null } : { list: [], why: "no-link" };
       // a real link would navigate away mid-read: let the caller load that page
       const href = btn.tagName === "A" ? btn.getAttribute("href") || "" : "";
       if (href && !href.startsWith("#") && !/^javascript:/i.test(href)) return { list: [], why: "link-page" };
@@ -752,22 +784,48 @@ const OFFERS_SCRIPT = `(async () => {
       if (!text) { why = "no-panel"; text = document.body?.innerText || ""; }
     }
     for (const o of parse(text)) found.push(o);
-    try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
-    const close = document.querySelector('[role="dialog"] button[aria-label*="Close" i], [role="dialog"] button[aria-label*="close" i]');
-    try { close?.click(); } catch {}
+    // a buy box check leaves the panel open for its screenshot (closeSellersPanel shuts it)
+    if (window.__wlbKeepOpen && panelText()) panelOpen = true;
+    else {
+      try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
+      const close = document.querySelector('[role="dialog"] button[aria-label*="Close" i], [role="dialog"] button[aria-label*="close" i]');
+      try { close?.click(); } catch {}
+    }
   } catch (e) { why = why || "error"; }
   const list = dedupe(found);
   if (!list.length && !why) why = "no-match";
-  return { list, why: list.length ? null : why };
+  return { list, why: list.length ? null : why, panel: panelOpen };
+})()`;
+const CLOSE_PANEL_SCRIPT = `(() => {
+  try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); } catch {}
+  try { document.querySelector('[role="dialog"] button[aria-label*="Close" i], [role="dialog"] button[aria-label*="close" i]')?.click(); } catch {}
+  window.scrollTo(0, 0);
+})()`;
+// Is the listing out of stock (or showing a robot check)? Walmart's data
+// payload first, then the page text. Only asked when no price could be read.
+const STOCK_SCRIPT = `(() => {
+  const out = { oos: null, robot: /Robot or human/i.test(document.title), notFound: false };
+  try {
+    const nd = JSON.parse(document.getElementById("__NEXT_DATA__")?.textContent || "null");
+    const st = nd?.props?.pageProps?.initialData?.data?.product?.availabilityStatus;
+    if (st) out.oos = !/^IN_STOCK$/i.test(String(st));
+  } catch {}
+  const text = (document.body?.innerText || "").slice(0, 8000);
+  if (out.oos == null && /\\bout of stock\\b|currently unavailable/i.test(text)) out.oos = true;
+  if (/this page could not be found|page not found|we couldn.t find this page/i.test(text)) out.notFound = true;
+  return out;
 })()`;
 // Runs OFFERS_SCRIPT in a view; always resolves to { list, why }. `deep`
 // lets it scroll the page to make a lazily rendered sellers link appear —
 // only ever for the hidden worker.
-async function readOffers(v, deep = false) {
+// `check` (a buy box check) always opens the panel and leaves it open, so it
+// can be screenshotted; `panel` in the result says it is open.
+async function readOffers(v, deep = false, check = false) {
   try {
-    const r = await v.webContents.executeJavaScript(`window.__wlbDeep = ${deep ? "true" : "false"};\n` + OFFERS_SCRIPT, true);
+    const flags = `window.__wlbDeep = ${deep ? "true" : "false"}; window.__wlbForcePanel = window.__wlbKeepOpen = ${check ? "true" : "false"};\n`;
+    const r = await v.webContents.executeJavaScript(flags + OFFERS_SCRIPT, true);
     if (Array.isArray(r)) return { list: r, why: null };
-    return { list: Array.isArray(r?.list) ? r.list : [], why: r?.why ?? null };
+    return { list: Array.isArray(r?.list) ? r.list : [], why: r?.why ?? null, panel: !!r?.panel };
   } catch { return { list: [], why: "error" }; }
 }
 // Walmart's all-sellers page for an item: every offer on one page, no panel
@@ -864,7 +922,7 @@ function scheduleReadPrice(v, withOffers = false) {
           offers = (await readOffers(v)).list;
         }
         if (v.__item !== item) return false; // moved on while the panel was loading
-        sendPrice(v, { itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, offers });
+        sendPrice(v, { itemId: item, price: r.price, was: r.was ?? null, seller: sellers.seller ?? null, others: sellers.others ?? null, oos: sellers.oos ?? null, offers });
         return true;
       }
     } catch { /* page navigated mid-read */ }
@@ -966,23 +1024,42 @@ async function paneOffers(itemId) {
 // shows whether there is room to raise yours.
 async function marketReadWalmart(itemId, opts = {}) {
   if (!itemId) return null;
+  // A buy box check (opts.full): every seller on every listing, with shipping,
+  // and a screenshot of the seller list saved under the scan (opts.scanId).
+  const check = !!opts.full;
   const w = ensureWorker();
   w.__item = null; // force a reload even if this item was the last one read
   workerLoad(itemId);
-  for (let i = 0; i < 80 && !(w.__lastPrice && w.__lastPrice.itemId === itemId); i++) await wait(300); // ≤24 s
-  if (w.__item !== itemId || !w.__lastPrice || w.__lastPrice.itemId !== itemId) return null;
+  const read = () => !!(w.__lastPrice && w.__lastPrice.itemId === itemId);
+  let stock = null;
+  for (let i = 0; i < 80 && !read(); i++) { // ≤24 s
+    await wait(300);
+    // a check doesn't sit out the full wait on a listing that has no price to read
+    if (check && i >= 30 && i % 10 === 0 && !read() && w.__item === itemId) {
+      stock = await w.webContents.executeJavaScript(STOCK_SCRIPT, true).catch(() => null);
+      if (stock && (stock.oos || stock.robot || stock.notFound)) break;
+    }
+  }
+  if (w.__item !== itemId) return null;
+  if (!read()) {
+    if (!check) return null;
+    stock = stock || await w.webContents.executeJavaScript(STOCK_SCRIPT, true).catch(() => null);
+    const out = { itemId, price: null, noPrice: true, oos: stock?.oos ?? null, robot: !!stock?.robot, notFound: !!stock?.notFound, at: Date.now() };
+    if (opts.scanId && !out.robot) out.shot = await saveShot(w, itemId, opts.scanId, "buybox");
+    return w.__item === itemId ? out : null;
+  }
   // the holder's name can render a moment after the price: look once more
   if (!w.__lastPrice.seller) {
     await wait(1500);
     if (w.__item !== itemId) return null;
     try {
       const s = (await w.webContents.executeJavaScript(SELLERS_SCRIPT, true)) || {};
-      w.__lastPrice = { ...w.__lastPrice, seller: s.seller ?? null, others: w.__lastPrice.others ?? s.others ?? null };
+      w.__lastPrice = { ...w.__lastPrice, seller: s.seller ?? null, others: w.__lastPrice.others ?? s.others ?? null, oos: w.__lastPrice.oos ?? s.oos ?? null };
     } catch { /* keep what we have */ }
   }
   const holder = String(w.__lastPrice.seller ?? "").trim().toLowerCase();
   const isYou = !!(opts.store && holder && holder === String(opts.store).trim().toLowerCase());
-  if (!opts.allSellers && !isYou) {
+  if (!check && !opts.allSellers && !isYou) {
     const p = { ...w.__lastPrice, offers: [], offersWhy: w.__lastPrice.others > 0 ? "skipped" : null, at: Date.now() };
     sendPrice(w, p);
     return p;
@@ -994,16 +1071,211 @@ async function marketReadWalmart(itemId, opts = {}) {
   // a single-seller listing has no link to look for, so only scroll for one
   // when the listing says (or doesn't say) there are other sellers
   const deep = w.__lastPrice.others !== 0;
-  let r = await readOffers(w, deep);
+  let r = await readOffers(w, deep, check);
   if (w.__item !== itemId) return null;
-  if (!r.list.length && r.why !== "no-link" && r.why !== "link-page") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w, deep); }
+  if (!r.list.length && r.why !== "no-link" && r.why !== "link-page") { await wait(2500); if (w.__item !== itemId) return null; r = await readOffers(w, deep, check); }
   if (w.__item !== itemId) return null;
   r = await sellersPageFallback(w, itemId, r);
   if (w.__item !== itemId) return null;
+  // the screenshot: the all-sellers page when that is where the list was read,
+  // the open panel otherwise, and the buy box when there is no list to show
+  let shot = null;
+  if (check && opts.scanId) {
+    shot = await saveShot(w, itemId, opts.scanId, w.__onSellers === itemId ? "page" : r.panel ? "panel" : "buybox");
+    if (w.__item !== itemId) return null;
+  }
+  if (r.panel) { try { await w.webContents.executeJavaScript(CLOSE_PANEL_SCRIPT, true); } catch { /* page moved on */ } }
   const others = w.__lastPrice.others;
   const p = { ...w.__lastPrice, offers: r.list, offersWhy: r.list.length ? null : (r.why === "no-link" && (others == null || others === 0) ? null : r.why || "no-match"), offersSnapshot: r.snapshot ? true : null, at: Date.now() };
+  if (check) { p.full = true; p.shot = shot; }
   sendPrice(w, p);
   return p;
+}
+
+// ---- buy box check: settings, the repricer strategy's items, screenshots, export ----
+// Settings live in userData/buybox.json, the strategy's item list in
+// userData/repricer-items.json, screenshots in userData/buybox-shots/<scan>/
+// (one PNG per item), and after every scan the results are written as JSON
+// for other apps to read (see the README for the format).
+let bbxFile = null, rpFile = null;
+const SELLER_REPRICER = "https://seller.walmart.com/repricer";
+const BBX_DEFAULTS = { strategy: "IMRAN BUY BOX 2", source: "auto", sellerUrl: "", scope: "strategy", addRows: true, scheduleOn: false, everyHours: 3, shots: true, keepScans: 24, exportDir: "" };
+const shotsRoot = () => path.join(app.getPath("userData"), "buybox-shots");
+const defaultExportDir = () => path.join(app.getPath("userData"), "buybox-export");
+function loadBbx() {
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(bbxFile, "utf8")) || {}; } catch { /* defaults */ }
+  return { ...BBX_DEFAULTS, ...saved };
+}
+function publicBbx() {
+  const cfg = loadBbx();
+  const api = loadApiSettings();
+  return { ...cfg, exportPath: path.join(cfg.exportDir || defaultExportDir(), EXPORT_NAME), exportFolder: cfg.exportDir || defaultExportDir(),
+    shotsFolder: shotsRoot(), sellerUrlDefault: SELLER_REPRICER, hasApi: !!(api.clientId && decryptSecret(api.secret)) };
+}
+function saveBbx(patch) {
+  const next = loadBbx();
+  const p = patch && typeof patch === "object" ? patch : {};
+  if (typeof p.strategy === "string" && p.strategy.trim()) next.strategy = p.strategy.trim().slice(0, 120);
+  if (["auto", "api", "seller", "file"].includes(p.source)) next.source = p.source;
+  if (typeof p.sellerUrl === "string") next.sellerUrl = /^https:\/\/seller\.walmart\.com\//i.test(p.sellerUrl.trim()) ? p.sellerUrl.trim() : "";
+  if (["strategy", "all"].includes(p.scope)) next.scope = p.scope;
+  for (const k of ["addRows", "scheduleOn", "shots"]) if (typeof p[k] === "boolean") next[k] = p[k];
+  if (Number.isFinite(Number(p.everyHours)) && p.everyHours !== "" && p.everyHours != null) next.everyHours = Math.min(48, Math.max(0.5, Math.round(Number(p.everyHours) * 100) / 100));
+  if (Number.isFinite(Number(p.keepScans)) && p.keepScans != null && p.keepScans !== "") next.keepScans = Math.min(500, Math.max(1, Math.round(Number(p.keepScans))));
+  if (typeof p.exportDir === "string") next.exportDir = p.exportDir.trim();
+  try { fs.writeFileSync(bbxFile, JSON.stringify(next, null, 2)); } catch (e) { console.error("Failed to save buy box settings:", e); }
+  return publicBbx();
+}
+function loadRepricerList() {
+  try { const l = JSON.parse(fs.readFileSync(rpFile, "utf8")); return l && Array.isArray(l.items) ? l : null; } catch { return null; }
+}
+
+// The strategy's items, read-only: the Walmart API when keys are saved, the
+// signed-in Seller Center page otherwise (or to fill in item IDs the API
+// didn't give), or a report file picked by hand. `known` maps a lower-case
+// SKU to the item ID the price list already has for it.
+let importRunning = false;
+function ensureSellerWorker() {
+  if (!panes.sellerWorker) panes.sellerWorker = makePane("sellerWorker");
+  return panes.sellerWorker;
+}
+async function readReportTables(file) {
+  if (file.toLowerCase().endsWith(".xlsx")) {
+    const ExcelJS = require("exceljs");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.readFile(file);
+    return wb.worksheets.map((ws) => {
+      const rows = [];
+      ws.eachRow((row) => {
+        const vals = [];
+        for (let c = 1; c <= Math.min(ws.columnCount || 40, 60); c++) vals.push(cellText(row.getCell(c)));
+        rows.push(vals);
+      });
+      return rows;
+    });
+  }
+  const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "").replace(/\r/g, "");
+  return [text.split("\n").filter((l) => l.trim()).map((line) => (line.includes("\t") ? line.split("\t") : splitCsvLine(line)).map((c) => c.trim()))];
+}
+async function importRepricer(opts = {}) {
+  if (importRunning) return { error: "The repricer list is already being read." };
+  importRunning = true;
+  try {
+    const cfg = loadBbx();
+    const strategy = cfg.strategy;
+    const source = ["auto", "api", "seller", "file"].includes(opts.source) ? opts.source : cfg.source;
+    const viaApi = async () => {
+      try {
+        return await fromApi(makeClient(), strategy, (done, total) => { try { win?.webContents.send("api:progress", { done, total, pages: true }); } catch { /* window gone */ } });
+      } catch (e) { return { error: e.message || String(e) }; }
+    };
+    const viaSeller = async () => {
+      try { return await fromSellerCenter(ensureSellerWorker(), cfg.sellerUrl || SELLER_REPRICER, strategy, loadAndWait); }
+      catch (e) { return { error: e.message || String(e) }; }
+    };
+    let res;
+    if (source === "file") {
+      const pick = await dialog.showOpenDialog(win, {
+        title: `Repricer report with the "${strategy}" items`,
+        filters: [{ name: "Spreadsheets", extensions: ["xlsx", "csv", "tsv", "txt"] }, { name: "All files", extensions: ["*"] }],
+        properties: ["openFile"],
+      });
+      if (pick.canceled || !pick.filePaths[0]) return { canceled: true };
+      try { res = fromTables(await readReportTables(pick.filePaths[0]), strategy); res.file = path.basename(pick.filePaths[0]); }
+      catch (e) { res = { error: e.message || String(e) }; }
+    } else if (source === "api") res = await viaApi();
+    else if (source === "seller") res = await viaSeller();
+    else {
+      const hasKeys = publicBbx().hasApi;
+      res = hasKeys ? await viaApi() : null;
+      if (!res || res.error) {
+        const s = await viaSeller();
+        res = s.error ? { error: [res?.error && `Walmart API: ${res.error}`, `Seller Center: ${s.error}`].filter(Boolean).join(" · "), signIn: s.signIn } : s;
+      }
+    }
+    if (!res || res.error) return res || { error: "The repricer list couldn't be read." };
+    const known = opts.known && typeof opts.known === "object" ? opts.known : {};
+    const fill = () => { for (const r of res.rows) if (!r.itemId) r.itemId = String(known[r.sku.toLowerCase()] ?? "").trim(); };
+    fill();
+    // the API names the strategy's SKUs but may not give item IDs: the Seller
+    // Center page can fill those in (a failure there doesn't lose the list)
+    if (source === "auto" && res.source === "api" && res.rows.some((r) => !r.itemId)) {
+      const s = await viaSeller();
+      if (!s.error) { for (const row of s.rows) if (row.itemId) known[row.sku.toLowerCase()] = known[row.sku.toLowerCase()] || row.itemId; fill(); }
+    }
+    const list = { strategy, source: res.source, file: res.file || null, at: Date.now(), assumed: !!res.assumed, items: res.rows };
+    try { fs.writeFileSync(rpFile, JSON.stringify(list, null, 2)); } catch (e) { console.error("Failed to save the repricer list:", e); }
+    return { ok: true, list };
+  } finally {
+    importRunning = false;
+  }
+}
+
+// Screenshots: one folder per scan, named for when it started; old scans are pruned.
+const safeScanId = (id) => (/^[0-9A-Za-z_-]{6,40}$/.test(String(id ?? "")) ? String(id) : null);
+function newScan() {
+  const d = new Date();
+  const two = (n) => String(n).padStart(2, "0");
+  const id = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}_${two(d.getHours())}-${two(d.getMinutes())}-${two(d.getSeconds())}`;
+  try {
+    fs.mkdirSync(path.join(shotsRoot(), id), { recursive: true });
+    const keep = loadBbx().keepScans;
+    const dirs = fs.readdirSync(shotsRoot(), { withFileTypes: true }).filter((e) => e.isDirectory() && safeScanId(e.name)).map((e) => e.name).sort();
+    for (const old of dirs.slice(0, Math.max(0, dirs.length - keep))) fs.rmSync(path.join(shotsRoot(), old), { recursive: true, force: true });
+  } catch (e) { console.error("Failed to prepare the screenshot folder:", e); }
+  return { scanId: id, dir: path.join(shotsRoot(), id) };
+}
+async function saveShot(w, itemId, scanId, kind) {
+  const id = safeScanId(scanId);
+  if (!id || !loadBbx().shots) return null;
+  try {
+    const got = (await captureShot(w, kind)) || (kind !== "buybox" ? await captureShot(w, "buybox") : null);
+    if (!got) return null;
+    const dir = path.join(shotsRoot(), id);
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${String(itemId).replace(/\D/g, "")}.png`);
+    fs.writeFileSync(file, got.png);
+    return { file, kind: got.kind === "buybox" ? "buybox" : "sellers", how: got.how, scanId: id, at: Date.now() };
+  } catch (e) { console.error("Failed to save a screenshot:", e); return null; }
+}
+// Only files inside the screenshot folder may be opened from the renderer.
+function shotPath(file) {
+  const f = path.resolve(String(file ?? ""));
+  return f.startsWith(shotsRoot() + path.sep) && f.toLowerCase().endsWith(".png") && fs.existsSync(f) ? f : null;
+}
+
+// The results file for other apps. Written to a temp name first and renamed,
+// so a reader never sees half a file.
+const EXPORT_NAME = "walmart-buybox-latest.json";
+const EXPORT_SCHEMA = "walmart-buybox/1";
+function writeBuyBoxExport(payload) {
+  const cfg = loadBbx();
+  const dir = cfg.exportDir || defaultExportDir();
+  const doc = {
+    schema: EXPORT_SCHEMA,
+    app: { name: "Walmart Listing Browser", version: app.getVersion() },
+    generatedAt: new Date().toISOString(),
+    ...(payload && typeof payload === "object" ? payload : {}),
+    screenshotsFolder: shotsRoot(),
+  };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, EXPORT_NAME);
+    const tmp = file + ".tmp";
+    const text = JSON.stringify(doc, null, 2);
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, file);
+    const id = safeScanId(doc.scanId); // a copy next to that scan's screenshots
+    if (id && fs.existsSync(path.join(shotsRoot(), id))) { try { fs.writeFileSync(path.join(shotsRoot(), id, "scan.json"), text); } catch { /* best effort */ } }
+    return { ok: true, path: file, rows: Array.isArray(doc.rows) ? doc.rows.length : 0 };
+  } catch (e) {
+    return { error: `Couldn't write the results file to ${dir}: ${e.message || e}` };
+  }
+}
+async function pickExportFolder() {
+  const res = await dialog.showOpenDialog(win, { title: "Folder for the buy box results file", properties: ["openDirectory", "createDirectory"] });
+  return res.canceled || !res.filePaths[0] ? null : res.filePaths[0];
 }
 
 // ---- Walmart Marketplace API (Market tab scan) ------------------------------
@@ -1363,6 +1635,8 @@ app.whenReady().then(() => {
   dataFile = path.join(app.getPath("userData"), "items.json");
   uiFile = path.join(app.getPath("userData"), "ui.json");
   apiFile = path.join(app.getPath("userData"), "api.json");
+  bbxFile = path.join(app.getPath("userData"), "buybox.json");
+  rpFile = path.join(app.getPath("userData"), "repricer-items.json");
   const savedZoom = loadUi().paneZoom;
   if (Number.isFinite(savedZoom)) paneZoom = Math.min(1.5, Math.max(0.4, savedZoom));
 
@@ -1380,6 +1654,16 @@ app.whenReady().then(() => {
   ipcMain.handle("market:openAmazon", (_e, asin) => shell.openExternal(amazonUrl(asin)));
   ipcMain.handle("market:insights", (_e, skus) => marketInsights(skus));
   ipcMain.handle("market:importLinnworks", () => importLinnworks());
+  ipcMain.handle("bbx:get", () => ({ settings: publicBbx(), list: loadRepricerList() }));
+  ipcMain.handle("bbx:save", (_e, patch) => saveBbx(patch));
+  ipcMain.handle("bbx:import", (_e, opts) => importRepricer(opts || {}));
+  ipcMain.handle("bbx:newScan", () => newScan());
+  ipcMain.handle("bbx:writeExport", (_e, payload) => writeBuyBoxExport(payload));
+  ipcMain.handle("bbx:pickFolder", () => pickExportFolder());
+  ipcMain.handle("bbx:sellerPaneUrl", () => { try { return panes.seller?.webContents.getURL() || ""; } catch { return ""; } });
+  ipcMain.handle("bbx:openShot", (_e, file) => { const f = shotPath(file); if (f) shell.openPath(f); return !!f; });
+  ipcMain.handle("bbx:showShot", (_e, file) => { const f = shotPath(file); if (f) shell.showItemInFolder(f); return !!f; });
+  ipcMain.handle("bbx:openExportFolder", () => { const d = publicBbx().exportFolder; try { fs.mkdirSync(d, { recursive: true }); } catch { /* shown as is */ } return shell.openPath(d); });
   ipcMain.handle("api:getSettings", () => publicApiSettings());
   ipcMain.handle("api:saveSettings", (_e, patch) => saveApiSettings(patch));
   ipcMain.handle("api:test", (_e, override) => testApi(override));
