@@ -52,21 +52,44 @@ const GEOM_SCRIPT = (kind) => `(() => {
     if (best) { best.setAttribute("data-wlb-scroll", "1"); best.scrollTo({ top: 0, behavior: "instant" }); }
     return { rect: box(root), scroll: best ? { ...box(best), scrollH: best.scrollHeight, clientH: best.clientHeight } : null, vw, vh, win: false };
   }
-  // buy box: the price's column in the listing's right rail (the page was
-  // put back at its top, and left to settle, before this runs)
-  let el = document.querySelector('[data-testid="add-to-cart-section"], [data-testid*="buy-box" i], [data-testid*="buybox" i], [data-seo-id*="buy-box" i]');
-  if (!el) {
-    let p = document.querySelector('[itemprop="price"], span[data-seo-id="hero-price"], [data-testid="price-wrap"]');
-    for (let i = 0; p && i < 12; i++) {
-      const r = p.getBoundingClientRect();
-      if (r.width >= 260 && r.width <= 620 && r.height >= 220) { el = p; break; }
-      p = p.parentElement;
+  // buy box: the listing's right-hand column — price, Add to cart, "Sold and
+  // shipped by". Found by walking up from something that is always in it to
+  // the widest ancestor that is still one column wide. (The element Walmart
+  // labels as the add-to-cart section is only the button's strip, which is how
+  // the first live pictures came out 80 px tall.) The page was put back at its
+  // top, inner scrolling included, and left to settle before this runs.
+  const band = Math.max(640, vw * 0.36);
+  const vis = (e) => !!e && e.getClientRects().length > 0;
+  const anchors = [
+    document.querySelector('[data-testid="add-to-cart-section"]'),
+    [...document.querySelectorAll("button")].find((b) => vis(b) && /^add to cart$/i.test((b.textContent || "").trim()) && b.getBoundingClientRect().left > vw * 0.4),
+    document.querySelector('[itemprop="price"]'), document.querySelector('span[data-seo-id="hero-price"]'), document.querySelector('[data-testid="price-wrap"]'),
+    [...document.querySelectorAll("span, div, p")].find((e) => vis(e) && e.children.length <= 2 && /^Sold (?:and|&) shipped by/i.test((e.textContent || "").trim())),
+  ].filter(vis);
+  let col = null;
+  for (const a of anchors) {
+    for (let e = a; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      const w = e.getBoundingClientRect().width;
+      if (w > band) break;
+      if (w >= 260) col = e;
     }
+    if (col) break;
   }
-  if (!el) return { rect: { x: 0, y: 0, w: vw, h: vh }, scroll: null, vw, vh, win: false, whole: true };
-  const r = box(el);
-  if (r.y < 0 || r.h < 120 || r.w < 200) return { rect: { x: 0, y: 0, w: vw, h: vh }, scroll: null, vw, vh, win: false, whole: true }; // not the buy box after all: the top of the page instead
-  return { rect: { x: Math.max(0, r.x - 8), y: Math.max(0, r.y - 8), w: r.w + 16, h: r.h + 16 }, scroll: null, vw, vh, win: false };
+  const whole = { rect: { x: 0, y: 0, w: vw, h: vh }, scroll: null, vw, vh, win: false, whole: true }; // no column found: the top of the page
+  if (!col) return whole;
+  const r = box(col);
+  if (r.h < 120 || r.y + r.h <= 0) return whole;
+  // a column with its own scrolling is captured like the sellers panel
+  let inner = null;
+  for (const el of [col, ...col.querySelectorAll("*")]) {
+    if (el.scrollHeight - el.clientHeight < 4 || el.clientHeight < 120) continue;
+    const oy = getComputedStyle(el).overflowY;
+    if (oy !== "auto" && oy !== "scroll" && oy !== "overlay") continue;
+    if (!inner || el.scrollHeight > inner.scrollHeight) inner = el;
+  }
+  if (inner) { inner.setAttribute("data-wlb-scroll", "1"); return { rect: r, scroll: { ...box(inner), scrollH: Math.min(inner.scrollHeight, 2400), clientH: inner.clientHeight }, vw, vh, win: false }; }
+  const top = Math.max(0, r.y - 8);
+  return { rect: { x: Math.max(0, r.x - 8), y: top, w: r.w + 16, h: Math.min(r.y + r.h + 8, top + 2400) - top }, scroll: null, vw, vh, win: false };
 })()`;
 const SCROLL_SCRIPT = (y, win) => `(() => {
   if (${win ? "true" : "false"}) { window.scrollTo({ top: ${y}, left: 0, behavior: "instant" }); return window.scrollY; }
@@ -179,13 +202,16 @@ async function captureShot(v, kind) {
     // measured mid-scroll lands on whatever is there once it stops (the site
     // header, in the first live screenshots). Jump instantly, then wait until
     // the scroll position stops changing.
-    if (kind !== "panel") await run(v, `window.scrollTo({ top: 0, left: 0, behavior: "instant" })`);
+    // Inner scrolling counts too: looking for the sellers link scrolls the
+    // listing's right-hand column inside itself.
+    if (kind !== "panel") await run(v, `(() => { for (const e of document.querySelectorAll("*")) if (e.scrollTop > 0) e.scrollTo({ top: 0, behavior: "instant" }); window.scrollTo({ top: 0, left: 0, behavior: "instant" }); })()`);
     for (let i = 0, last = -1; i < 12; i++) {
       await wait(200);
       const y = await run(v, "window.scrollY");
       if (y === last) break;
       last = y;
     }
+    await wait(350); // sticky parts finish sliding back into place
     const g = await run(v, GEOM_SCRIPT(kind));
     if (!g) return null;
     // a "page" this long is a whole listing, not a seller list: not worth a picture
