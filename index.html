@@ -316,6 +316,13 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="mSearch" type="search" placeholder="Search SKU, Item ID, seller…" aria-label="Search the market table" />
       </span>
+      <span id="mFilters" class="m-filters" role="group" aria-label="Show">
+        <button class="m-chip" data-f="all" title="Every listing">All<span class="n"></span></button>
+        <button class="m-chip" data-f="lost" title="Listings where another seller holds the buy box">Losing<span class="n"></span></button>
+        <button class="m-chip" data-f="won" title="Listings where you hold the buy box">Winning<span class="n"></span></button>
+        <button class="m-chip" data-f="oos" title="Listings Walmart shows as out of stock">Out of stock<span class="n"></span></button>
+        <button class="m-chip" data-f="missed" title="Listings whose page couldn't be read">Not read<span class="n"></span></button>
+      </span>
       <button id="mRaiseBtn" class="m-chip" title="Show only the listings where you hold the buy box and the next seller is far enough above you to raise your price">Room to raise<span class="n"></span></button>
       <button id="mMissedBtn" class="m-chip" title="Show only the rows where a Walmart or Amazon read failed">Missed<span class="n"></span></button>
       <button id="mRetryBtn" class="hidden" title="Read the missed rows again now">
@@ -490,6 +497,7 @@
       </section>
       <div class="confirm-actions">
         <button id="mRaiseRulesSum" class="linkish" type="button">Raise rules</button>
+        <button id="mSumLost" type="button">Show what I'm losing</button>
         <button id="mSumClose" class="primary">Close</button>
       </div>
     </div>

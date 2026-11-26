@@ -541,7 +541,12 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-toolbar { position: relative; }
 /* The Market toolbar shows only the search box (and the scan progress line). The other
    controls stay in the page so market.js keeps working, but are not shown. */
-.m-toolbar > :not(.m-search):not(#mProgress):not(#mScanBtn):not(#mScanOverBtn):not(#mBbxBtn) { display: none !important; }
+.m-toolbar > :not(.m-search):not(#mProgress):not(#mScanBtn):not(#mScanOverBtn):not(#mBbxBtn):not(#mFilters) { display: none !important; }
+.m-filters { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 4px; }
+.m-toolbar .m-filters .m-chip { padding: 5px 11px; }
+.m-toolbar .m-filters .m-chip .n { font-weight: 500; opacity: .75; }
+.m-toolbar .m-filters .m-chip[data-f="lost"].active { background: #FBEBD3; color: #8A4B12; }
+.m-toolbar .m-filters .m-chip[data-f="won"].active { background: #E3EFDD; color: #3F6A2F; }
 .m-toolbar #mScanOverBtn.hidden { display: none; }
 .m-last.warn { color: #A4551B; font-weight: 600; white-space: normal; }
 
