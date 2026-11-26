@@ -515,6 +515,7 @@ let paneLoading = false; // true only while WE are loading (not walmart's own ba
 // are refused (fonts load: without them the icons in a screenshot are boxes) — most of a listing's download. The visible panes are
 // untouched (the filter checks which view is asking).
 const workerContentsIds = new Set();
+let workerImages = false; // on while a buy box check that saves screenshots loads a listing: pictures belong in the picture
 let leanHooked = false;
 function hookLeanLoading() {
   if (leanHooked) return;
@@ -522,7 +523,7 @@ function hookLeanLoading() {
   const ses = session.fromPartition("persist:listing");
   ses.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, cb) => {
     const t = details.resourceType;
-    cb({ cancel: workerContentsIds.has(details.webContentsId) && (t === "image" || t === "media") });
+    cb({ cancel: workerContentsIds.has(details.webContentsId) && (t === "media" || (t === "image" && !workerImages)) });
   });
 }
 
@@ -1038,6 +1039,7 @@ async function marketReadWalmart(itemId, opts = {}) {
   // and a screenshot of the seller list saved under the scan (opts.scanId).
   const check = !!opts.full;
   const w = ensureWorker();
+  workerImages = check && !!opts.scanId && !!loadBbx().shots;
   w.__item = null; // force a reload even if this item was the last one read
   workerLoad(itemId);
   const read = () => !!(w.__lastPrice && w.__lastPrice.itemId === itemId);
