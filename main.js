@@ -698,7 +698,7 @@ const OFFERS_SCRIPT = `(async () => {
   const ok = (n) => typeof n === "number" && Number.isFinite(n) && n > 0;
   const found = [];
   // one entry per seller and price (a read that knows the shipping wins), cheapest total first
-  const dedupe = (arr) => { const by = new Map(); for (const o of arr) { const k = o.seller.toLowerCase() + "|" + o.price; const p = by.get(k); if (!p) by.set(k, { ...o }); else { if (p.shipping == null && o.shipping != null) p.shipping = o.shipping; if (!p.shipNote && o.shipNote) p.shipNote = o.shipNote; } } return [...by.values()].sort((a, b) => (a.price + (a.shipping || 0)) - (b.price + (b.shipping || 0))).slice(0, 40); };
+  const dedupe = (arr) => { const by = new Map(); for (const o of arr) { const k = o.seller.toLowerCase() + "|" + o.price; const p = by.get(k); if (!p) by.set(k, { ...o }); else { if (o.wfs) p.wfs = true; if (p.shipping == null && o.shipping != null) p.shipping = o.shipping; if (!p.shipNote && o.shipNote) p.shipNote = o.shipNote; } } return [...by.values()].sort((a, b) => (a.price + (a.shipping || 0)) - (b.price + (b.shipping || 0))).slice(0, 40); };
   // shipping cost inside one offer of Walmart's data payload (0 = free, null = not stated)
   const shipOf = (e) => { let hit = null; const look = (o, d) => { if (hit != null || !o || typeof o !== "object" || d > 3) return; for (const k in o) { const v = o[k]; if (/^(ship(ping)?(Price|Cost|Charge|Fee)|deliveryPrice)$/i.test(k)) { const n = v && typeof v === "object" ? num(v.price ?? v.amount ?? v.priceString) : num(v); if (n != null) { hit = n; return; } } else if (/^(freeShipping|isFreeShipping)$/i.test(k) && v === true) { hit = 0; return; } else if (v && typeof v === "object" && !Array.isArray(v)) look(v, d + 1); } }; look(e, 0); return hit; };
   try {
@@ -765,7 +765,9 @@ const OFFERS_SCRIPT = `(async () => {
       const from = Math.min(at, i);
       let to = Math.min(lines.length - 1, Math.max(at, i) + 12);
       for (let j = Math.max(at, i) + 1; j <= to; j++) { if (sellerAt[j] || (at < i && priceRe.test(lines[j]))) { to = j - 1; break; } }
-      out.push({ seller, price, ...shipIn(lines.slice(from, to + 1)) });
+      // "Fulfilled by Walmart" on the card: the offer ships from Walmart's warehouse (WFS)
+      const card = lines.slice(from, to + 1);
+      out.push({ seller, price, ...shipIn(card), wfs: card.some((x) => /fulfilled by walmart/i.test(x)) });
     });
     return out;
   };

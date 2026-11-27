@@ -205,7 +205,7 @@ function amzLow(it) {
 function wmSellers(it) {
   const bb = it.buyBox;
   if (!bb?.price) return [];
-  const list = Array.isArray(bb.offers) ? bb.offers.map((o) => ({ seller: o.seller, price: o.price, shipping: o.shipping ?? null, shipNote: o.shipNote ?? null })) : [];
+  const list = Array.isArray(bb.offers) ? bb.offers.map((o) => ({ seller: o.seller, price: o.price, shipping: o.shipping ?? null, shipNote: o.shipNote ?? null, wfs: !!o.wfs })) : [];
   if (bb.seller && !list.some((o) => Math.abs(o.price - bb.price) < 0.005 && String(o.seller).toLowerCase() === String(bb.seller).toLowerCase())) {
     list.unshift({ seller: bb.seller, price: bb.price, shipping: null, shipNote: null });
   }
@@ -591,13 +591,16 @@ function renderPanel() {
     : f.cheaper ? `${fmt(round2m(f.during - f.low))} under your price` : f.linked > 1 ? `lowest of ${f.linked} linked` : "not cheaper than you";
   const fundBadge = wfx?.status === "enrolled" ? `<span class="m-fund">Walmart Funded</span>` : "";
   const sellBody = f.sellers.length
-    ? `<table class="d-sellers"><thead><tr><th class="k">#</th><th>Seller</th><th class="r">Price</th><th class="r">Shipping</th><th class="r">Total</th></tr></thead><tbody>${f.sellers.map((s) =>
-      `<tr class="${s.mine ? "me" : ""}"><td class="k">${s.rank}</td><td title="${esc(s.shipNote || "")}">${esc(s.seller)}${s.isBB ? `<span class="d-tag">Buy box</span>` : ""}${s.mine ? `<span class="d-tag">You</span>` : ""}</td><td class="r">${fmt(s.price)}</td><td class="r sh">${s.shipping === 0 ? "Free" : s.shipping > 0 ? fmt(s.shipping) : "—"}</td><td class="r">${fmt(s.total)}</td></tr>`).join("")}</tbody></table>`
+    ? `<table class="d-sellers"><thead><tr><th class="k">#</th><th>Seller</th><th class="r">Price</th></tr></thead><tbody>${f.sellers.map((s) =>
+      `<tr class="${s.mine ? "me" : ""}"><td class="k">${s.rank}</td><td title="${esc(s.shipNote || "")}">${esc(s.seller)}${s.isBB ? `<span class="d-tag">Buy box</span>` : ""}${s.mine ? `<span class="d-tag">You</span>` : ""}${s.wfs ? `<span class="d-tag wfs" title="Fulfilled by Walmart">WFS</span>` : ""}</td><td class="r">${fmt(s.price)}</td></tr>`).join("")}</tbody></table>`
     : sellersHtml;
+  // the incentive, on one line: badge, your price crossed out, what the customer pays, days left
+  const daysLeft = wfx?.end ? Math.ceil((new Date(wfx.end).getTime() - Date.now()) / 86400000) : null;
+  const leftText = daysLeft == null || Number.isNaN(daysLeft) ? "" : daysLeft > 1 ? `${daysLeft} days left` : daysLeft === 1 ? "1 day left" : daysLeft === 0 ? "ends today" : "ended";
   const incHtml = wfx?.status === "enrolled"
-    ? `<h4>Walmart-funded incentive<span class="m-fund">Active</span></h4><p>${wfAfter(wfx) ? `Customers pay <b>${fmt(wfAfter(wfx))}</b>${wfx.price > 0 ? `, not ${fmt(wfx.price)}` : ""}.` : "Walmart pays part of the price."}${wfx.end ? ` Ends ${shortDate(wfx.end)}.` : ""}</p>`
-    : wfx ? `<h4>Walmart-funded incentive<span class="m-fund dim">Eligible</span></h4><p>Can get one. None active.</p>`
-    : `<h4>Walmart-funded incentive</h4><p class="m-muted">${wfLoaded() ? "None." : keysReady() ? "Not checked yet." : "Needs API keys."}</p>`;
+    ? `<span class="m-fund">Walmart Funded</span>${wfAfter(wfx) ? `${wfx.price > 0 ? `<s>${fmt(wfx.price)}</s>` : ""}<b>${fmt(wfAfter(wfx))}</b>` : ""}<span class="r" title="${wfx.end ? `Ends ${shortDate(wfx.end)}` : ""}">${leftText || "active"}</span>`
+    : wfx ? `<span class="m-fund dim">Walmart Funded</span><span class="r">eligible, not active</span>`
+    : `<span class="m-fund dim">Walmart Funded</span><span class="r">${wfLoaded() ? "none" : keysReady() ? "not checked yet" : "needs API keys"}</span>`;
   p.innerHTML = `
     <div id="mRpNote"></div>
     <div class="d-head">
@@ -1112,7 +1115,7 @@ function bbxExportRows() {
       lowestCompetitorSeller: rival ? rival.seller : null,
       gap: rival && myTotal != null ? round2m(myTotal - rival.total) : null,
       outOfStock: bb?.oos ?? null,
-      sellers: sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, shippingNote: s.shipNote, total: s.total, isMe: s.mine, hasBuyBox: s.isBB })),
+      sellers: sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, shippingNote: s.shipNote, total: s.total, isMe: s.mine, hasBuyBox: s.isBB, wfs: !!s.wfs })),
       screenshot: bb?.shot?.file ?? null,
       screenshotKind: bb?.shot?.kind ?? null,
       walmartFunded: f?.wf ? { status: f.wf.status, priceAfterIncentive: wfAfter(f.wf), offerPrice: f.wf.price ?? null, start: iso(f.wf.start), end: iso(f.wf.end) } : null,
