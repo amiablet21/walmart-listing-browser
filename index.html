@@ -390,7 +390,8 @@
     <div class="r-toolbar">
       <button id="rAddAll" class="primary" title="Bring in every SKU from the Incentive price list">Add all from Incentive list</button>
       <button id="rAdd" title="Add SKUs by typing or pasting them">Add items…</button>
-      <button id="rRefresh" title="Read each item's strategy, minimum, maximum and price from Walmart">Refresh from Walmart</button>
+      <button id="rImport" title="Read a strategy's real settings (min, max, status) from the file Seller Center lets you download">Import from Seller Center…</button>
+      <button id="rRefresh" title="Read each item's current price from Walmart">Refresh prices</button>
       <button id="rLogs" title="Open the folder with this tab's log (repricer-log.jsonl), Walmart's last raw answer (repricer-debug.json) and the backups">Log files</button>
       <span class="m-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -445,6 +446,23 @@
       <div class="set-head"><h2 id="rAddTitle">Add items</h2><p>One SKU per line, exactly as it is in Seller Center.</p></div>
       <div class="r-pad"><textarea id="rAddText" rows="8" spellcheck="false" aria-label="SKUs to add"></textarea></div>
       <div class="set-foot"><button id="rAddCancel" class="set-ghost" type="button">Cancel</button><button id="rAddOk" class="primary" type="button">Add</button></div>
+    </div>
+  </div>
+
+  <!-- Repricer: import a strategy's download from Seller Center -->
+  <div id="rImportModal" class="modal-overlay hidden">
+    <div class="modal set-card r-send-card" role="dialog" aria-labelledby="rImportTitle">
+      <div class="set-head"><h2 id="rImportTitle">Import from Seller Center</h2><p>Walmart's API doesn't report an item's strategy, minimum or maximum, so the app reads them from the file Seller Center lets you download.</p></div>
+      <div class="r-pad">
+        <ol class="r-steps">
+          <li>In Seller Center go to <b>Pricing → Automate pricing</b> and open the strategy.</li>
+          <li><b>Clear the search box</b> so every item is listed, then press <b>Download</b>.</li>
+          <li>Type the strategy's name below and choose the downloaded file.</li>
+        </ol>
+        <label class="r-pick">Strategy name <input id="rImportStrategy" type="text" spellcheck="false" autocomplete="off" /></label>
+        <p id="rImportErr" class="status error"></p>
+      </div>
+      <div class="set-foot"><button id="rImportCancel" class="set-ghost" type="button">Cancel</button><button id="rImportOk" class="primary" type="button">Choose file…</button></div>
     </div>
   </div>
 

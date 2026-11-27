@@ -20,7 +20,7 @@ const rLoad = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || "nu
 let rList = rLoad("rprSkus", []);
 let rEdits = rLoad("rprEdits", {});
 let rSent = rLoad("rprSent", {});
-let rpr = { state: {}, readAt: 0, lastSendAt: 0, gateMs: 600000, test: null, sends: [] };
+let rpr = { state: {}, readAt: 0, lastSendAt: 0, gateMs: 600000, test: null, sends: [], fileAt: 0, fileRows: 0, fileStrategy: "" };
 let rByLower = new Map();
 let rFilter = "all", rSearchText = "";
 let rBusy = "";      // a read in progress, in words
@@ -152,7 +152,8 @@ function renderRepricerTab() {
   document.querySelectorAll("#rFilters .m-chip").forEach((b) => { b.classList.toggle("active", rFilter === b.dataset.f); b.querySelector(".n").textContent = ` ${count[b.dataset.f]}`; });
   const fillable = shown.filter(rEditable).length;
   $("rFillN").textContent = `Apply to ${fillable} row${fillable === 1 ? "" : "s"}`;
-  $("rLast").textContent = rBusy || (rpr.readAt ? `Read from Walmart ${when(rpr.readAt)} · ${count.on} of ${count.all} on a strategy` : "Not read from Walmart yet");
+  $("rLast").textContent = rBusy || (rpr.fileAt ? `${rpr.fileStrategy}: ${rpr.fileRows} items imported ${when(rpr.fileAt)} · ${count.on} of ${count.all} here on a strategy`
+    : rpr.readAt ? `Prices read from Walmart ${when(rpr.readAt)} · no strategy imported yet` : "Nothing read yet");
   $("rRefresh").disabled = !!rBusy || !keysReady() || !rList.length;
   renderRTray();
 }
@@ -162,7 +163,7 @@ function renderRTray() {
   const wait = (rpr.lastSendAt || 0) + (rpr.gateMs || 600000) - Date.now();
   tray.classList.toggle("hidden", !out.length && !bad.length);
   $("rTrayHead").textContent = `${out.length} change${out.length === 1 ? "" : "s"} waiting${bad.length ? ` · ${bad.length} row${bad.length === 1 ? "" : "s"} to fix first` : ""}`;
-  $("rTraySub").textContent = rpr.sendsOff ? "Sending is switched off in this version (see the note above the table)."
+  $("rTraySub").textContent = rpr.sendsOff ? "Import the strategy's download from Seller Center first (see the note above the table)."
     : !keysReady() ? "Add your Walmart API keys first (Market → Scan settings → API keys…)."
     : rFlow ? "An upload is being checked — wait for it to finish."
     : wait > 0 ? `Walmart takes one upload every 10 minutes. Next one in ${Math.floor(wait / 60000)}:${String(Math.floor((wait % 60000) / 1000)).padStart(2, "0")}.`
@@ -174,11 +175,12 @@ function renderRTray() {
   const unfinished = !rFlow && rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear");
   const html = rFlow ? `<span class="m-spin"></span><span>${esc(rFlow.text)}</span>`
     : rResult ? `<span>${rResult.html}</span><button class="mini" id="rResultX" type="button">Dismiss</button>`
-    : rpr.sendsOff ? `<span><b>Read-only for now.</b> Walmart's lookup returns prices but no strategy, minimum or maximum, even for items Seller Center shows on a strategy. So the Strategy / Min / Max shown here are not your real settings, and sending changes is switched off until the app can read them.</span>`
+    : rpr.sendsOff ? `<span><b>Import your strategy first.</b> Walmart's API gives prices but not an item's strategy, minimum or maximum, so the boxes below are empty and sending is off. Import the strategy's download from Seller Center to see the real settings and switch sending on.</span><button class="mini" id="rImportGo" type="button">Import…</button>`
     : rMoved.length ? `<span>A failed test left ${rMoved.length} item${rMoved.length === 1 ? "" : "s"} changed at Walmart (${rMoved.slice(0, 5).map((m) => esc(m.sku)).join(", ")}${rMoved.length > 5 ? "…" : ""}). Their settings from before are saved.</span><button class="mini" id="rRestore" type="button">Put those ${rMoved.length} back</button>`
+    : unfinished && rpr.fileAt ? `<span>The one-item test for <b>${esc(rpr.test.sku)}</b> was sent ${esc(when(rpr.test.at))}. To finish it: in Seller Center clear the search box, <b>Download</b> the strategy again, and import that file here.${rpr.test.note ? ` ${esc(rpr.test.note)}` : ""}</span><button class="mini" id="rImportGo" type="button">Import…</button>`
     : unfinished ? `<span>The one-item test for <b>${esc(rpr.test.sku)}</b> was sent ${esc(when(rpr.test.at))} and hasn't been confirmed yet.${rpr.test.note ? ` ${esc(rpr.test.note)}` : ""}</span><button class="mini" id="rFinish" type="button" ${keysReady() ? "" : "disabled"}>Check it now</button>`
     : "";
-  note.className = "r-notice" + (html ? "" : " hidden") + (rFlow ? " busy" : rResult ? ` ${rResult.kind}` : rpr.sendsOff ? " bad" : rMoved.length ? " bad" : "");
+  note.className = "r-notice" + (html ? "" : " hidden") + (rFlow ? " busy" : rResult ? ` ${rResult.kind}` : rpr.sendsOff ? " info" : rMoved.length ? " bad" : "");
   if (note.dataset.html !== html) { note.innerHTML = html; note.dataset.html = html; }
 }
 setInterval(() => { if (inRepricer()) renderRTray(); }, 1000);
@@ -186,6 +188,7 @@ $("rNotice").addEventListener("click", (e) => {
   if (e.target.id === "rResultX") { rResult = null; renderRTray(); }
   if (e.target.id === "rFinish") rFollow({ test: true, feedId: rpr.test.feedId, skus: [rpr.test.sku], now: true });
   if (e.target.id === "rRestore") rRestore();
+  if (e.target.id === "rImportGo") openRImport();
 });
 
 // ---- editing ---------------------------------------------------------------------------------
@@ -271,6 +274,14 @@ window.api.onRepricerProgress?.(({ done, total, slowed }) => {
   rBusy = `Reading from Walmart: ${done} of ${total} SKUs${slowed ? " · Walmart asked to slow down, so this takes a few minutes" : ""}`;
   if (inRepricer()) $("rLast").textContent = rBusy;
 });
+// A sent change that now shows in Walmart's settings is done: the edit has become the fact.
+function rReconcile() {
+  for (const [k, s] of Object.entries(rSent)) {
+    const c = rChange(s.change.sku);
+    if (!c || (c && !c.invalid && !rSameChange(c, s.change))) { delete rSent[k]; if (!c) delete rEdits[k]; }
+  }
+  rSave();
+}
 async function rRead(skus) {
   if (rBusy) return null;
   rBusy = `Reading from Walmart: 0 of ${skus.length} SKUs`;
@@ -278,18 +289,49 @@ async function rRead(skus) {
   const res = await window.api.repricerRead(skus).catch((e) => ({ ok: false, error: String(e?.message || e) }));
   rBusy = "";
   rSetState(res);
-  // a sent change that now shows at Walmart is done: the edit has become the fact
-  for (const [k, s] of Object.entries(rSent)) {
-    const c = rChange(s.change.sku);
-    if (!c || (c && !c.invalid && !rSameChange(c, s.change))) { delete rSent[k]; if (!c) delete rEdits[k]; }
-  }
-  rSave();
-  if (!res?.ok && res?.error) rResult = { kind: "bad", html: `Couldn't read from Walmart: ${esc(res.error)}` };
+  rReconcile();
+  if (!res?.ok && res?.error) rResult = { kind: "bad", html: `Couldn't read prices from Walmart: ${esc(res.error)}` };
   else if (res?.ok && skus.length >= 5 && res.read === 0) rResult = { kind: "bad", html: `Walmart answered, but with no item for any of the ${skus.length} SKUs asked about. That points at how the app reads the answer, not at your SKUs. Press <b>Log files</b> and send over <b>repricer-debug.json</b>.` };
   renderRepricerTab();
   return res;
 }
 $("rRefresh").addEventListener("click", () => rRead(rList));
+
+// ---- importing a strategy's download from Seller Center ------------------------------------------
+function openRImport() {
+  $("rImportStrategy").value = rpr.fileStrategy || localStorage.getItem("rprStrategy") || "IMRAN BUY BOX 2";
+  $("rImportErr").textContent = "";
+  $("rImportModal").classList.remove("hidden");
+}
+$("rImport").addEventListener("click", openRImport);
+$("rImportCancel").addEventListener("click", () => $("rImportModal").classList.add("hidden"));
+$("rImportModal").addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") $("rImportModal").classList.add("hidden"); });
+$("rImportOk").addEventListener("click", async () => {
+  const strategy = $("rImportStrategy").value.trim();
+  if (!strategy) { $("rImportStrategy").focus(); return; }
+  localStorage.setItem("rprStrategy", strategy);
+  $("rImportOk").disabled = true;
+  try {
+    let res = await window.api.repricerImportFile({ strategy }).catch((e) => ({ ok: false, error: String(e?.message || e) }));
+    if (res?.short) {
+      if (!confirm(`This file has ${res.rows} item${res.rows === 1 ? "" : "s"}; the last import of ${strategy} had ${res.prevRows}.\n\nThat usually means the search box in Seller Center wasn't cleared before downloading. Importing it would treat the other ${res.prevRows - res.rows} as taken off the strategy.${rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear") ? "\n\nIf you DID clear the search box, import it: a one-item test is waiting on this file, and items missing from it is exactly what the test is there to catch." : ""}\n\nImport it anyway?`)) { $("rImportErr").textContent = "Not imported. Clear the search box in Seller Center, download again, and choose that file."; return; }
+      res = await window.api.repricerImportFile({ strategy, force: true, again: true }).catch((e) => ({ ok: false, error: String(e?.message || e) }));
+    }
+    if (res?.canceled) return;
+    if (!res?.ok) { $("rImportErr").textContent = res?.error || "The file couldn't be imported."; return; }
+    const before = rpr.test?.before || null;
+    rSetState(res);
+    rAddSkus(res.skus || []);
+    rReconcile();
+    $("rImportModal").classList.add("hidden");
+    // an import is also how a pending one-item test gets its answer
+    if (rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear")) {
+      const feed = (rpr.sends || []).find((x) => x.feedId === rpr.test.feedId)?.feed || null;
+      rResult = await rJudgeTest(feed ? { ok: true, ...feed } : null, { ok: true }, before);
+    } else rResult = { kind: "ok", html: `Imported ${res.rows} item${res.rows === 1 ? "" : "s"} on <b>${esc(strategy)}</b> from ${esc(res.file)}. Their real minimum and maximum are in the table.` };
+    renderRepricerTab();
+  } finally { $("rImportOk").disabled = false; }
+});
 $("rLogs").addEventListener("click", () => window.api.repricerShowFiles());
 
 // ---- sending -------------------------------------------------------------------------------------
@@ -300,7 +342,9 @@ function openRSend() {
   const test = !rTested();
   $("rSendTitle").textContent = test ? "First, a one-item test" : `Send ${out.length} change${out.length === 1 ? "" : "s"} to Walmart`;
   $("rSendSub").innerHTML = test
-    ? `Before the app sends many changes at once, it sends <b>one</b> and checks the result. It reads every item on this tab first, sends the one change, waits for Walmart to process it (about 5 minutes), then reads everything again and confirms that this item changed and <b>no other item did</b>. Walmart's documentation doesn't say plainly what an upload does to items that aren't in it; this test is how the app finds out safely. A backup of your current settings is saved first.`
+    ? (rpr.fileAt
+      ? `Before the app sends many changes at once, it sends <b>one</b> and checks the result. It sends this one change and waits for Walmart to process it (about 5 minutes). Then you download the strategy from Seller Center again and import it here, and the app confirms that this item changed and <b>no other item did</b>. Walmart's documentation doesn't say plainly what an upload does to items that aren't in it; this test is how the app finds out safely. A backup of your current settings is saved first.`
+      : `Before the app sends many changes at once, it sends <b>one</b> and checks the result. It reads every item on this tab first, sends the one change, waits for Walmart to process it (about 5 minutes), then reads everything again and confirms that this item changed and <b>no other item did</b>. Walmart's documentation doesn't say plainly what an upload does to items that aren't in it; this test is how the app finds out safely. A backup of your current settings is saved first.`)
     : `These go to Walmart as one upload. Walmart applies it afterwards — usually within minutes, and its guide says to allow up to 4 hours for prices to follow. A backup of the current settings is saved first.`;
   $("rSendPickRow").classList.toggle("hidden", !(test && out.length > 1));
   $("rSendPick").innerHTML = out.map((c, k) => `<option value="${k}">${esc(c.sku)}</option>`).join("");
@@ -322,7 +366,7 @@ $("rSendOk").addEventListener("click", async () => {
   const sending = rToSend.slice();
   $("rSendOk").disabled = true;
   try {
-    if (test) {
+    if (test && !rpr.fileAt) {
       // the "before" picture: every item on the tab, read fresh
       $("rSendErr").textContent = "Reading every item's current settings first…";
       const read = await rRead(rList);
@@ -364,6 +408,18 @@ async function rFollow({ test, feedId, skus, now }) {
       if (feed?.ok && /PROCESSED|ERROR/.test(feed.status) && !(feed.processing > 0)) break;
       say(`Walmart is still processing the upload${feed?.ok ? ` (${feed.status.toLowerCase()})` : ""} — checking again in a minute.`);
       await rWait(T.pollMs);
+    }
+    if (rpr.fileAt) {
+      // The settings come from Seller Center's download, so the app can't read them back by itself.
+      rFlow = null;
+      const errs = rFeedErrors(feed, skus);
+      const took = feed?.ok ? ` Walmart's answer: ${esc(feed.status.toLowerCase())}${feed.succeeded != null ? `, ${feed.succeeded} of ${feed.received ?? skus.length} accepted` : ""}.` : " Walmart hasn't confirmed the upload yet.";
+      if (errs.length) rResult = test ? await rJudgeTest(feed, { ok: false }, null) : rJudge(feed, { ok: false }, skus);
+      else rResult = { kind: "info", html: test
+        ? `The test change for <b>${esc(skus[0])}</b> was sent.${took} To finish the test: in Seller Center clear the search box, <b>Download</b> the strategy again, and import that file here. <button class="mini" id="rImportGo" type="button">Import…</button>`
+        : `${skus.length} change${skus.length === 1 ? "" : "s"} sent.${took} They stay marked “Sent · waiting” until your next import from Seller Center shows them.` };
+      renderRepricerTab();
+      return;
     }
     say(test ? "Reading every item again to compare…" : "Reading the changed items back…");
     const before = test ? rpr.test?.before || {} : null;
@@ -417,7 +473,7 @@ async function rJudgeTest(feed, read, before) {
     return { kind: "ok", html: `Test passed: <b>${esc(t.sku)}</b> shows the new settings at Walmart and no other item changed. You can now send many changes at once.` };
   }
   await finish("unclear", `Walmart took the upload${feed?.ok ? ` (${feed.status.toLowerCase()})` : ""} but the item doesn't show the new settings yet.`);
-  return { kind: "info", html: `Walmart took the test upload${feed?.ok ? ` (${esc(feed.status.toLowerCase())})` : ""} and no other item changed, but <b>${esc(t.sku)}</b> doesn't show the new settings yet. Walmart can take a while; use “Check it now” in a few minutes.` };
+  return { kind: "info", html: `Walmart took the test upload${feed?.ok ? ` (${esc(feed.status.toLowerCase())})` : ""} and no other item changed, but <b>${esc(t.sku)}</b> doesn't show the new settings yet. Walmart can take a while; ${rpr.fileAt ? "download the strategy again in a few minutes and import it" : "use “Check it now” in a few minutes"}.` };
 }
 // Items a failed test found changed, with their settings from before it. Kept
 // across restarts until they have been sent back.

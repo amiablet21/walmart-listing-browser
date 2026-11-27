@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("api", {
   repricerGet: () => ipcRenderer.invoke("rpr:get"),
   repricerRead: (skus) => ipcRenderer.invoke("rpr:read", skus),
   repricerSend: (items, opts) => ipcRenderer.invoke("rpr:send", items, opts),
+  repricerImportFile: (opts) => ipcRenderer.invoke("rpr:importFile", opts),
   repricerFeed: (feedId) => ipcRenderer.invoke("rpr:feed", feedId),
   repricerSetTest: (patch) => ipcRenderer.invoke("rpr:setTest", patch),
   repricerShowFiles: () => ipcRenderer.invoke("rpr:showFiles"),
