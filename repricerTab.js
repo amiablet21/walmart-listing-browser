@@ -330,7 +330,7 @@ $("rImportOk").addEventListener("click", async () => {
     if (rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear")) {
       const feed = (rpr.sends || []).find((x) => x.feedId === rpr.test.feedId)?.feed || null;
       rResult = await rJudgeTest(feed ? { ok: true, ...feed } : null, { ok: true }, before);
-    } else rResult = { kind: "ok", html: `Imported ${res.rows} item${res.rows === 1 ? "" : "s"}.` };
+    } else rResult = { kind: "ok", html: `Loaded min and max for ${res.rows} SKU${res.rows === 1 ? "" : "s"} from your file.` };
     renderRepricerTab();
   } finally { $("rImportOk").disabled = false; }
 });
