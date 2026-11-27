@@ -22,7 +22,7 @@ const HOSTS = {
 };
 const SVC_NAME = "Walmart Marketplace";
 const TOKEN_SKEW_MS = 60_000;      // refresh a minute before Walmart expires it
-const SKUS_PER_REQUEST = 20;       // searchCriteria batch size (kept modest)
+const SKUS_PER_REQUEST = 10;       // searchCriteria batch size: Walmart refuses more ("searchValue cannot contain more than 10 items")
 const MAX_RETRIES_429 = 3;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
