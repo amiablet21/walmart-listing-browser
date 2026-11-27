@@ -283,10 +283,12 @@ async function rRead(skus) {
   }
   rSave();
   if (!res?.ok && res?.error) rResult = { kind: "bad", html: `Couldn't read from Walmart: ${esc(res.error)}` };
+  else if (res?.ok && skus.length >= 5 && res.read === 0) rResult = { kind: "bad", html: `Walmart answered, but with no item for any of the ${skus.length} SKUs asked about. That points at how the app reads the answer, not at your SKUs. Press <b>Log files</b> and send over <b>repricer-debug.json</b>.` };
   renderRepricerTab();
   return res;
 }
 $("rRefresh").addEventListener("click", () => rRead(rList));
+$("rLogs").addEventListener("click", () => window.api.repricerShowFiles());
 
 // ---- sending -------------------------------------------------------------------------------------
 let rToSend = [];
