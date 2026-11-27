@@ -1275,12 +1275,19 @@ function refreshIncentives() {
 let rprFile = null;
 const RPR_GATE_MS = 10 * 60 * 1000;
 const rprTiming = () => ({ gateMs: RPR_GATE_MS, ...(globalThis.__wlbTestTiming || {}) }); // shortened only by the automated tests
+// Sending is switched off. On a real account Walmart's Pricing Insights
+// answers with no strategy, min or max for items that Seller Center shows on
+// a strategy, so the tab can't see what it would be changing, and the
+// one-item test has nothing to compare. It stays off until the current
+// settings can be read from somewhere that has them. (The tests turn it on.)
+const RPR_SENDS_ON = false;
+const rprSendsOn = () => RPR_SENDS_ON || !!globalThis.__wlbTestTiming?.allowSend;
 function loadRpr() {
   try { const d = JSON.parse(fs.readFileSync(rprFile, "utf8")); return d && typeof d === "object" ? { state: {}, sends: [], ...d } : { state: {}, sends: [] }; }
   catch { return { state: {}, sends: [] }; }
 }
 function saveRpr(d) { try { fs.writeFileSync(rprFile, JSON.stringify(d)); } catch (e) { console.error("Failed to save repricer state:", e); } return d; }
-const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs,
+const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs, sendsOff: !rprSendsOn(),
   test: d.test || null, sends: (d.sends || []).slice(-10) });
 // One line per thing done with Walmart on this tab (reads, uploads, feed checks), in repricer-log.jsonl.
 function rprLog(entry) {
@@ -1337,6 +1344,7 @@ let rprSending = false;
 // opts.test: this upload is the one-item test. opts.restore: resend a backup
 // after a failed test (the one case where several items may go before a test passed).
 async function rprSend(items, opts = {}) {
+  if (!rprSendsOn()) return { ok: false, error: "Sending is switched off in this version: Walmart's lookup doesn't report your items' current strategy, minimum or maximum." };
   if (rprSending) return { ok: false, error: "An upload is already on its way." };
   const checked = rprCheckItems(items);
   if (checked.error) return { ok: false, error: checked.error };

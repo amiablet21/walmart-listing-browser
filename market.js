@@ -335,7 +335,7 @@ function renderMarket() {
   if (mSelected < 0 || !items[mSelected]) mSelected = rows[0] ?? -1;
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="6" class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
+    tr.innerHTML = `<td colspan="5" class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
     tb.appendChild(tr);
   }
   // rows in first-appearance order, grouped under their Linnworks SKU
@@ -363,7 +363,6 @@ function renderMarket() {
         `<td class="sku"><span class="m-pill lw" title="Linnworks inventory SKU">LW</span>${esc(g.lw)}</td>` +
         `<td class="m-muted">${g.all.length} Walmart SKUs</td>` +
         `<td class="num"></td>` +
-        `<td class="sep m-wf-col">${(() => { const n = facts.filter((x) => x.wf?.status === "enrolled").length; return n ? `<span class="m-pill wf">Funded</span><b>${n}</b>` : ""; })()}</td>` +
         `<td class="sep">${you ? `<span class="m-pill you">You</span><b>${you}</b>` : ""}${lost ? `${you ? " " : ""}<span class="m-pill lost">Lost</span><b>${lost}</b>` : ""}${!you && !lost ? `<span class="m-muted">Not scanned yet</span>` : ""}</td>` +
         `<td class="sep">${amz}</td>`;
       tr.addEventListener("click", (e) => {
@@ -406,7 +405,6 @@ function renderMarket() {
       `<td class="sku">${esc(f.it.sku)}</td>` +
       `<td class="mono">${esc(f.it.itemId)}</td>` +
       `<td class="num"><b>${fmt(f.during)}</b></td>` +
-      `<td class="sep m-wf-col">${wfCell(f.wf)}</td>` +
       `<td class="sep">${wm}</td>` +
       `<td class="sep">${amz}</td>`;
     tr.addEventListener("click", (e) => {
@@ -422,14 +420,14 @@ function renderMarket() {
   const filterCount = { all: allFacts.length, lost: allFacts.filter((f) => f.lost).length, won: allFacts.filter((f) => f.mine).length,
     oos: allFacts.filter((f) => f.it.buyBox?.oos).length, missed: allFacts.filter((f) => f.missed).length,
     wf: allFacts.filter((f) => f.wf?.status === "enrolled").length };
-  // the Walmart-funded column and chip appear once the list has been read
-  $("mTable").classList.toggle("no-wf", !wfLoaded());
+  // the Walmart-funded chip appears once the list has been read
   document.querySelector("#mFilters .m-wf-chip").classList.toggle("hidden", !wfLoaded());
   if (mFilter === "wf" && !wfLoaded()) mFilter = "all";
   document.querySelectorAll("#mFilters .m-chip").forEach((b) => {
     b.classList.toggle("active", mFilter === b.dataset.f);
     b.querySelector(".n").textContent = ` ${filterCount[b.dataset.f]}`;
   });
+  $("mExportLabel").textContent = `Export ${mFilter === "all" && !mSearch ? "all" : FILTER_NAME[mFilter] || "shown"} · ${rows.length}`;
   const missedRows = items.map((_, i) => i).filter((i) => idOf(items[i]) && rowFacts(i).missed);
   $("mMissedBtn").classList.toggle("active", mFilter === "missed");
   $("mMissedBtn").classList.toggle("has-missed", missedRows.length > 0);
@@ -1334,25 +1332,30 @@ $("mRetryBtn").addEventListener("click", () => {
 });
 $("mSearch").addEventListener("keydown", (e) => e.stopPropagation());
 
-function marketRows() {
-  return items.map((_, i) => i).filter((i) => idOf(items[i])).map((i) => {
+// The rows shown (the filter chip and the search in effect), as a sheet.
+const FILTER_NAME = { all: "all", lost: "losing", won: "winning", wf: "walmart-funded", oos: "out-of-stock", missed: "not-read" };
+function marketRows(indices) {
+  return indices.map((i) => {
     const f = rowFacts(i);
-    const gap = f.low != null && f.during > 0 ? Math.round((f.low - f.during) * 100) / 100 : "";
-    const a = apiOf(f.it) || {};
-    const r = raiseFor(f);
-    return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "", f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || (f.lost ? "another seller" : "")) : "",
-      f.wmLow ?? "", f.sellers.length || "", f.low ?? "", amzList(f.it).map((a) => a.asin || "typed").join(" "), gap, f.bb?.at ? new Date(f.bb.at).toLocaleString() : "",
-      a.winRate ?? "", a.competitorPrice ?? "", a.suggestedPrice ?? "", lwOf(f.it) || "",
-      r?.nextSeller ?? "", r?.next ?? "", r?.ok ? r.target : ""];
+    const rival = f.sellers.find((s) => !s.mine) || null;
+    const gap = f.me && f.bb && !f.mine ? Math.round((f.me.total - (f.sellers.find((s) => s.isBB)?.total ?? f.bb.price)) * 100) / 100 : "";
+    return [f.it.sku, f.it.itemId, f.during > 0 ? f.during : "",
+      f.bb ? (f.mine ? "Winning" : f.lost ? "Losing" : "") : f.it.buyBox?.oos ? "Out of stock" : "",
+      f.bb ? f.bb.price : "", f.bb ? (f.mine ? myStore : f.bb.seller || "") : "",
+      f.me ? f.me.total : "", f.rank ?? "", f.sellers.length || "", gap,
+      rival ? rival.seller : "", rival ? rival.total : "",
+      f.wf?.status === "enrolled" ? "Funded" : f.wf ? "Eligible" : "",
+      f.low ?? "", f.bb?.at ? new Date(f.bb.at).toLocaleString() : "", f.it.note || ""];
   });
 }
 $("mExportBtn").addEventListener("click", async () => {
-  const rows = marketRows();
-  if (!rows.length) { alert("Nothing to export yet."); return; }
-  const head = ["SKU", "Item ID", "Our Price", "Walmart Buy Box", "Buy Box Seller", "Walmart Lowest", "Walmart Sellers", "Amazon Buy Box", "Amazon Listings", "Gap vs Amazon", "Checked",
-    "Win Rate %", "Competitor Price", "Suggested Price", "Linnworks SKU", "Next Seller", "Next Seller Price", "Raise To"];
-  const res = await window.api.exportSheet({ head, rows, name: "market", widths: [26, 14, 12, 16, 22, 14, 14, 16, 30, 14, 20, 12, 14, 14, 26, 24, 16, 12] });
-  finishExport(res, rows.length);
+  const shown = items.map((_, i) => i).filter((i) => idOf(items[i]) && rowMatches(i));
+  if (!shown.length) { alert("No rows are shown to export."); return; }
+  const head = ["SKU", "Item ID", "Our Price", "Buy Box", "Buy Box Price", "Buy Box Seller", "My Listed Price", "My Rank", "Sellers", "Above Buy Box By",
+    "Lowest Other Seller", "Lowest Other Price", "Walmart-funded", "Amazon Buy Box", "Checked", "Notes"];
+  const name = `market-${mFilter === "all" && !mSearch ? "all" : FILTER_NAME[mFilter] || "shown"}`;
+  const res = await window.api.exportSheet({ head, rows: marketRows(shown), name, widths: [30, 14, 12, 12, 14, 24, 14, 9, 9, 16, 24, 16, 15, 14, 20, 30] });
+  finishExport(res, shown.length);
 });
 
 // ---- end-of-scan pop-up ------------------------------------------------------------------------

@@ -601,7 +601,7 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-toolbar { position: relative; }
 /* The Market toolbar shows only the search box (and the scan progress line). The other
    controls stay in the page so market.js keeps working, but are not shown. */
-.m-toolbar > :not(.m-search):not(#mProgress):not(#mScanBtn):not(#mScanOverBtn):not(#mBbxBtn):not(#mFilters) { display: none !important; }
+.m-toolbar > :not(.m-search):not(#mProgress):not(#mScanBtn):not(#mScanOverBtn):not(#mBbxBtn):not(#mFilters):not(#mExportBtn) { display: none !important; }
 .m-filters { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 4px; }
 .m-toolbar .m-filters .m-chip { padding: 5px 11px; }
 .m-toolbar .m-filters .m-chip .n { font-weight: 500; opacity: .75; }
@@ -648,7 +648,6 @@ body.market-mode #market { display: flex; flex: 1 1 auto; flex-direction: column
 .m-pill.wf.dim { background: #F0F3F4; color: #5E7882; }
 #mTable td.sep .m-pill.wf + b { margin-left: 2px; }
 #mTable td.sep s { color: #918D7C; font-size: 12px; margin-left: 6px; }
-#mTable.no-wf .m-wf-col { display: none; }
 .m-toolbar .m-filters .m-chip[data-f="wf"].active { background: #E4F1F6; color: #1F5E78; }
 .m-toolbar .m-filters .m-chip.m-wf-chip.hidden { display: none; }
 .m-wf-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding: 9px 12px; border-radius: 10px; background: #F1F7FA; border: 1px solid #D5E6EE; font-size: 12.5px; color: #1F4A5C; }
