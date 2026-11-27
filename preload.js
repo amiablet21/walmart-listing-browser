@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld("api", {
   bbxPickFolder: () => ipcRenderer.invoke("bbx:pickFolder"),
   bbxOpenShot: (file) => ipcRenderer.invoke("bbx:openShot", file),
   bbxShowShot: (file) => ipcRenderer.invoke("bbx:showShot", file),
+  bbxDiag: (file) => ipcRenderer.invoke("bbx:diag", file),
   bbxOpenExportFolder: () => ipcRenderer.invoke("bbx:openExportFolder"),
   importLinnworks: () => ipcRenderer.invoke("market:importLinnworks"),
   onApiProgress: (cb) => ipcRenderer.on("api:progress", (_e, p) => cb(p)),

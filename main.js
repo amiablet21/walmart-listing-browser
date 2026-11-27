@@ -1,7 +1,7 @@
 // Walmart Listing Browser — Electron main process.
 // Keeps a local list of { sku, itemId } rows and loads the live walmart.com
 // listing for the selected row into a docked browser pane on the right.
-const { app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard, session, safeStorage } = require("electron");
+const { nativeImage, app, BrowserWindow, WebContentsView, ipcMain, shell, dialog, Menu, clipboard, session, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { buildRepricerBuffer, DEFAULT_STRATEGY } = require("./repricer");
@@ -1546,6 +1546,12 @@ async function saveShot(w, itemId, scanId, kind) {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${String(itemId).replace(/\D/g, "")}.png`);
     fs.writeFileSync(file, got.png);
+    if (got.blank) { // nothing was drawn: keep what the page reported, and the whole view, beside the picture
+      try {
+        fs.writeFileSync(file.replace(/\.png$/, ".blank-debug.json"), JSON.stringify({ app: app.getVersion(), at: new Date().toISOString(), ...got.debug }, null, 1));
+        if (got.fullPng) fs.writeFileSync(file.replace(/\.png$/, ".whole-view.png"), got.fullPng);
+      } catch { /* the picture itself is saved */ }
+    }
     return { file, kind: got.kind === "buybox" ? "buybox" : "sellers", how: got.how, scanId: id, at: Date.now() };
   } catch (e) { console.error("Failed to save a screenshot:", e); return null; }
 }
@@ -1981,6 +1987,18 @@ app.whenReady().then(() => {
   ipcMain.handle("bbx:writeExport", (_e, payload) => writeBuyBoxExport(payload));
   ipcMain.handle("bbx:pickFolder", () => pickExportFolder());
   ipcMain.handle("bbx:openShot", (_e, file) => { const f = shotPath(file); if (f) shell.openPath(f); return !!f; });
+  // Diagnostics for one listing: the app and system, and whatever the scan kept beside its picture.
+  ipcMain.handle("bbx:diag", (_e, file) => {
+    const out = { app: app.getVersion(), platform: process.platform, arch: process.arch, system: require("os").release(), electron: process.versions.electron };
+    const f = shotPath(file);
+    if (f) {
+      const read = (ext) => { try { return JSON.parse(fs.readFileSync(f.replace(/\.png$/i, ext), "utf8")); } catch { return null; } };
+      try { out.picture = { file: path.basename(f), bytes: fs.statSync(f).size, size: nativeImage.createFromPath(f).getSize() }; } catch { /* unreadable */ }
+      out.blankDebug = read(".blank-debug.json");
+      out.panelDebug = read(".debug.json");
+    }
+    return out;
+  });
   ipcMain.handle("bbx:showShot", (_e, file) => { const f = shotPath(file); if (f) shell.showItemInFolder(f); return !!f; });
   ipcMain.handle("bbx:openExportFolder", () => { const d = publicBbx().exportFolder; try { fs.mkdirSync(d, { recursive: true }); } catch { /* shown as is */ } return shell.openPath(d); });
   ipcMain.handle("api:getSettings", () => publicApiSettings());

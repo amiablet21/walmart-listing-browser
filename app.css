@@ -1092,3 +1092,4 @@ body.market-mode #market { background: #F4F6FB; color: #101936; font-size: 13.5p
 #market .d-tag.wfs { color: #6B5300; background: #FFF1C2; border-radius: 5px; padding: 1px 6px; }
 #market .d-two { margin-top: 0; }
 #market .m-li .s .m-st { font-size: 11.5px; padding: 1px 7px; }
+#market #mPanel button.d-ic.done { background: #E4F6EC; border-color: #B7E3CB; color: #17794F; }
