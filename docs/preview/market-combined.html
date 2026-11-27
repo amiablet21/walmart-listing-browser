@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Market + Repricer in one tab</title>
+<style>
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-Regular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-SemiBold.otf") format("opentype"); font-weight: 600 700; }
+@font-face { font-family: "Geist Mono"; src: url("../../fonts/GeistMono-Regular.otf") format("opentype"); }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 30px 36px 40px; background: #6f6e69; font: 13px/1.45 "Geist", system-ui, sans-serif; color: #1C1B16; width: 1760px; }
+.tag { color: #fff; font-weight: 600; font-size: 15px; margin: 0 0 3px; }
+.why { color: #E9E4D7; font-size: 12.5px; margin: 0 0 12px; }
+.win { background: #FAF9F5; border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); overflow: hidden; }
+.tabs { display: flex; align-items: center; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #E9E4D7; }
+.tabs b { margin-right: 14px; font-size: 14px; }
+.tab { padding: 6px 12px; border-radius: 8px; font-weight: 600; color: #6E6B5C; } .tab.on { background: #E6E8F3; color: #3D4A85; }
+.tabs .right { margin-left: auto; font-size: 12px; color: #6E6B5C; }
+.bar { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid #E9E4D7; }
+.btn { font-weight: 600; border-radius: 8px; padding: 7px 12px; border: 1px solid #D9D2C1; background: #fff; white-space: nowrap; }
+.btn.p { background: #4C5B9E; border-color: #4C5B9E; color: #fff; } .btn.small { padding: 4px 9px; font-size: 12px; }
+.search { width: 210px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 12px; background: #fff; color: #918D7C; }
+.chip { display: inline-flex; gap: 6px; padding: 5px 11px; border-radius: 999px; background: #F4F1E9; font-size: 12px; font-weight: 600; color: #45433A; }
+.chip i { font-style: normal; font-weight: 500; opacity: .75; } .chip.on { background: #FBEBD3; color: #8A4B12; }
+.body { display: grid; grid-template-columns: 1fr 390px; }
+.left { padding: 14px 16px 16px; }
+table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; }
+th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; font-weight: 600; padding: 9px 10px; background: #F4F1E9; white-space: nowrap; }
+th.grp { background: #ECEEF7; color: #3D4A85; } th.grp2 { background: #F4F1E9; }
+tr.over th { padding: 6px 10px 0; font-size: 10px; border-bottom: 0; }
+td { padding: 8px 10px; border-top: 1px solid #F0EDE6; white-space: nowrap; }
+td.rp { background: #FAFBFE; }
+td.sku { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; }
+td.edge { box-shadow: inset 3px 0 0 #4F7A3A; } td.edge.l { box-shadow: inset 3px 0 0 #C28A2B; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.sel td { background: #EEF0F8; }
+tr.chg td.rp { background: #FFFBEA; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.pill.you { background: #E3EFDD; color: #3F6A2F; } .pill.lost { background: #FBEBD3; color: #8A4B12; } .pill.bb { background: #E6E8F3; color: #3D4A85; }
+.pill.wf { background: #E4F1F6; color: #1F5E78; border: 1px solid #BFDCE8; margin-left: 8px; font-family: "Geist", sans-serif; }
+.pill.min { background: #FCEDEA; color: #8A2A1E; margin-left: 6px; }
+.in { display: inline-flex; justify-content: flex-end; width: 74px; border: 1px solid #D9D2C1; border-radius: 7px; background: #fff; padding: 4px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.in.c { border-color: #C9A227; background: #FFFBEA; }
+.st { display: inline-flex; width: 132px; border: 1px solid #D9D2C1; border-radius: 7px; background: #fff; padding: 4px 8px; font-weight: 600; font-size: 12px; }
+.st.none { color: #918D7C; font-weight: 500; }
+.was { display: block; font-size: 11px; color: #6E6B5C; }
+.muted { color: #6E6B5C; font-size: 12px; }
+.tray { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 12px; background: #FFFBEA; border: 1px solid #EBD98A; }
+.tray .t { flex: 1 1 auto; } .tray b { display: block; font-size: 13.5px; } .tray span { font-size: 12.5px; color: #6B5A1E; }
+.side { border-left: 1px solid #E9E4D7; padding: 16px; }
+.card { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+.card .head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 14px; } .card .head .g { flex: 1 1 auto; }
+.icon { width: 28px; height: 28px; border-radius: 8px; border: 1px solid #E9E4D7; display: inline-flex; align-items: center; justify-content: center; color: #45433A; }
+.verdict { margin: 0 14px 12px; padding: 11px 13px; border-radius: 10px; background: #FDF4E4; border: 1px solid #F3DDB6; } .verdict b { color: #8A4B12; font-size: 14px; display: block; } .verdict span { color: #6B4A1E; font-size: 12.5px; }
+.rpc { margin: 0 14px 14px; padding: 11px 13px; border-radius: 10px; background: #F6F7FC; border: 1px solid #DDE1F2; }
+.rpc h5 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #3D4A85; display: flex; align-items: center; gap: 6px; }
+.kv { display: grid; grid-template-columns: 108px 1fr; gap: 7px 8px; align-items: center; font-size: 12.5px; } .kv span { color: #6E6B5C; }
+.hint { margin-top: 9px; font-size: 12px; color: #33407A; }
+.srow { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid #F0EDE6; } .srow .n { flex: 1 1 auto; font-weight: 500; } .srow .rk { width: 14px; color: #918D7C; font-size: 11.5px; } .srow b { font-variant-numeric: tabular-nums; }
+.srow.me { background: #F5FAF2; } .srow.me .n { font-weight: 700; }
+.chd { padding: 9px 14px; background: #F3F6FC; border-top: 1px solid #E3E8F3; font-weight: 600; }
+.notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 26px; }
+.facts { background: #fff; border-radius: 14px; padding: 16px 18px; } .facts h4 { margin: 0 0 8px; font-size: 13.5px; } .facts ul { margin: 0; padding-left: 18px; color: #45433A; } .facts li { margin: 5px 0; }
+</style>
+</head>
+<body>
+
+<p class="tag">One Market tab: live market and repricer together</p>
+<p class="why">Each row shows what's happening on Walmart and your repricer settings side by side. Edit Min / Max where you see the problem; changes collect at the bottom until you send them. The Repricer tab goes away.</p>
+<div class="win">
+  <div class="tabs"><b>Walmart Listing Browser</b><span class="tab">Incentive price list</span><span class="tab on">Market</span><span class="right">Last scan 6:29 PM · 197 listings · next scan 9:29 PM · IMRAN BUY BOX 2 imported 10:43 PM</span></div>
+  <div class="bar"><span class="btn p">Run buy box check</span><span class="search">Search SKU, seller…</span>
+    <span class="chip">All <i>231</i></span><span class="chip on">Losing <i>79</i></span><span class="chip">Winning <i>144</i></span><span class="chip">At min price <i>39</i></span><span class="chip">No strategy <i>33</i></span><span class="chip">Walmart-funded <i>11</i></span><span class="chip">Changed <i>2</i></span>
+    <span style="margin-left:auto;display:flex;gap:8px"><span class="btn">Import from Seller Center</span><span class="btn">Export losing · 79</span><span class="btn">Settings</span></span></div>
+  <div class="body">
+    <div class="left">
+      <table>
+        <tr class="over"><th></th><th></th><th class="grp" colspan="3">Repricer — editable</th><th class="grp2" colspan="2">Walmart right now</th></tr>
+        <tr><th>SKU</th><th class="num">Incentive price</th><th class="grp">Strategy</th><th class="grp num">Min</th><th class="grp num">Max</th><th class="num">Your price</th><th>Buy box</th></tr>
+        <tr class="sel chg"><td class="sku edge l">X133-64GB-GRAY-1<span class="pill wf">Funded ›</span></td><td class="num"><b>$134.99</b></td><td class="rp"><span class="st">IMRAN BUY BOX 2</span></td><td class="num rp"><span class="in c">127.00</span><span class="was">was 129.99</span></td><td class="num rp"><span class="in">134.99</span></td><td class="num"><b>$134.99</b><span class="pill min">at min</span></td><td><span class="pill lost">Lost</span> <b>$129.90</b> <span class="muted">Lifeline786 · #3 of 7</span></td></tr>
+        <tr><td class="sku edge l">SM-X133-64GB-GREY</td><td class="num"><b>$134.99</b></td><td class="rp"><span class="st">IMRAN BUY BOX 2</span></td><td class="num rp"><span class="in">120.99</span></td><td class="num rp"><span class="in">134.99</span></td><td class="num"><b>$120.99</b><span class="pill min">at min</span></td><td><span class="pill lost">Lost</span> <b>$129.00</b> <span class="muted">The Sahara Global · #2 of 2</span></td></tr>
+        <tr class="chg"><td class="sku edge l">X135-64GB-GRAY-LTE</td><td class="num"><b>$156.69</b></td><td class="rp"><span class="st" style="border-color:#C9A227;background:#FFFBEA">IMRAN BUY BOX 2</span><span class="was">was none</span></td><td class="num rp"><span class="in c">134.00</span></td><td class="num rp"><span class="in c">156.69</span></td><td class="num"><b>$146.69</b></td><td><span class="pill lost">Lost</span> <b>$134.99</b> <span class="muted">The Sahara Global</span></td></tr>
+        <tr><td class="sku edge l">X230-128GB-SILVER-GLOBAL</td><td class="num"><b>$249.99</b></td><td class="rp"><span class="st">IMRAN BUY BOX 2</span></td><td class="num rp"><span class="in">235.00</span></td><td class="num rp"><span class="in">249.99</span></td><td class="num"><b>$249.99</b></td><td><span class="pill lost">Lost</span> <b>$239.00</b> <span class="muted">Spice Mobile</span></td></tr>
+        <tr><td class="sku edge l">S26-ULTRA-512GB-BLUE-US<span class="pill wf">Funded ›</span></td><td class="num"><b>$1,289.99</b></td><td class="rp"><span class="st none">No strategy</span></td><td class="num rp"><span class="in"></span></td><td class="num rp"><span class="in"></span></td><td class="num"><b>$1,250.00</b></td><td><span class="pill lost">Lost</span> <b>$1,229.99</b> <span class="muted">CELLSTOREUSA · #2 of 2</span></td></tr>
+      </table>
+      <div class="tray"><div class="t"><b>2 changes waiting</b><span>1 minimum lowered · 1 item put on IMRAN BUY BOX 2. Nothing is sent until you review and confirm.</span></div><span class="btn">Discard</span><span class="btn p">Review and send…</span></div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <div class="head"><div class="g"><b style="font-family:'Geist Mono',monospace;font-size:15px">X133-64GB-GRAY-1</b><div class="muted">Item 19132403534 · read 11:22 PM</div></div><span class="icon">◉</span><span class="icon">↗</span><span class="icon">↻</span></div>
+        <div class="verdict"><b>Losing the buy box by $5.09</b><span>Lifeline786 holds it at $129.90. You are #3 of 7 at $134.99.</span></div>
+        <div class="rpc">
+          <h5>Repricer <span class="pill min" style="margin:0">at min price</span></h5>
+          <div class="kv"><span>Strategy</span><b>IMRAN BUY BOX 2</b><span>Min · Max</span><b>$129.99 · $134.99</b><span>Incentive price</span><b>$134.99</b></div>
+          <div class="hint">The buy box is $0.09 under your min, so the repricer can't follow it. A min of <b>$129.90</b> or lower would let it match.</div>
+        </div>
+        <div class="chd">Walmart · 7 sellers</div>
+        <div class="srow"><span class="rk">1</span><span class="n">Lifeline786</span><span class="pill bb">Buy box</span><b>$129.90</b></div>
+        <div class="srow"><span class="rk">2</span><span class="n">Elec Store SM</span><b>$130.00</b></div>
+        <div class="srow me"><span class="rk">3</span><span class="n">HotDeals</span><span class="pill you">You</span><b>$134.99</b></div>
+        <div class="srow"><span class="rk">4</span><span class="n">Virtual Depot</span><b>$136.94</b></div>
+        <div class="srow"><span class="rk">5</span><span class="n muted">3 more sellers…</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="facts"><h4>What moves</h4><ul><li>Strategy, Min and Max become three editable columns on the Market table.</li><li>Import from Seller Center and the Send tray move here.</li><li>The Repricer tab is removed.</li></ul></div>
+  <div class="facts"><h4>What's new because they're together</h4><ul><li>An "at min" tag when your price is sitting on your minimum.</li><li>An "At min price" filter: the listings where the repricer has run out of room.</li><li>In the panel, how far the buy box is under your min, and the min that would let the repricer match it.</li></ul></div>
+  <div class="facts"><h4>What gives</h4><ul><li>Item ID leaves the table (it stays in the panel) to make room.</li><li>The Amazon column leaves the table too; Amazon stays in the panel.</li><li>The six strategy items that aren't on your Incentive list get rows here, so nothing on the strategy is hidden.</li></ul></div>
+</div>
+
+</body>
+</html>
