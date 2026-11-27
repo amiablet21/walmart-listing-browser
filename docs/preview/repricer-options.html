@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Repricer control — options</title>
+<style>
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-Regular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-SemiBold.otf") format("opentype"); font-weight: 600 700; }
+@font-face { font-family: "Geist Mono"; src: url("../../fonts/GeistMono-Regular.otf") format("opentype"); }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 30px 36px 40px; background: #6f6e69; font: 13px/1.45 "Geist", system-ui, sans-serif; color: #1C1B16; width: 1560px; }
+.tag { color: #fff; font-weight: 600; font-size: 15px; margin: 0 0 3px; }
+.why { color: #E9E4D7; font-size: 12.5px; margin: 0 0 12px; }
+.win { background: #FAF9F5; border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); overflow: hidden; }
+.tabs { display: flex; align-items: center; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #E9E4D7; }
+.tabs b { margin-right: 14px; font-size: 14px; }
+.tab { padding: 6px 12px; border-radius: 8px; font-weight: 600; color: #6E6B5C; } .tab.on { background: #E6E8F3; color: #3D4A85; }
+.tabs .right { margin-left: auto; font-size: 12px; color: #6E6B5C; }
+.bar { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid #E9E4D7; }
+.btn { font-weight: 600; border-radius: 8px; padding: 7px 12px; border: 1px solid #D9D2C1; background: #fff; white-space: nowrap; }
+.btn.p { background: #4C5B9E; border-color: #4C5B9E; color: #fff; } .btn.small { padding: 4px 9px; font-size: 12px; }
+.search { width: 230px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 12px; background: #fff; color: #918D7C; }
+.chip { display: inline-flex; gap: 6px; padding: 5px 11px; border-radius: 999px; background: #F4F1E9; font-size: 12px; font-weight: 600; color: #45433A; }
+.chip i { font-style: normal; font-weight: 500; opacity: .75; } .chip.on { background: #E6E8F3; color: #3D4A85; }
+table { width: calc(100% - 32px); margin: 14px 16px 0; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; }
+th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; font-weight: 600; padding: 9px 12px; background: #F4F1E9; white-space: nowrap; }
+td { padding: 9px 12px; border-top: 1px solid #F0EDE6; white-space: nowrap; }
+td.sku { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.pill.you { background: #E3EFDD; color: #3F6A2F; } .pill.lost { background: #FBEBD3; color: #8A4B12; } .pill.wf { background: #E4F1F6; color: #1F5E78; }
+.pill.wait { background: #FFF3C9; color: #7A5A00; } .pill.off { background: #F0EDE6; color: #6E6B5C; }
+.sel, .in { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #D9D2C1; border-radius: 7px; background: #fff; padding: 4px 8px; font-weight: 600; }
+.sel { min-width: 150px; } .sel::after { content: "▾"; color: #918D7C; font-size: 10px; }
+.in { width: 86px; justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.in.changed, .sel.changed { border-color: #C9A227; background: #FFFBEA; }
+tr.changed td:first-child { box-shadow: inset 3px 0 0 #C9A227; }
+.muted { color: #6E6B5C; font-size: 12px; }
+.send { display: flex; align-items: center; gap: 12px; margin: 14px 16px 16px; padding: 12px 14px; border-radius: 12px; background: #FFFBEA; border: 1px solid #EBD98A; }
+.send .t { flex: 1 1 auto; } .send b { display: block; font-size: 13.5px; } .send span { font-size: 12.5px; color: #6B5A1E; }
+.cols { display: grid; grid-template-columns: 1fr 430px; gap: 30px; align-items: start; margin-top: 30px; }
+.panel { padding: 16px 18px; }
+.card { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 14px; margin-top: 12px; }
+.card h4 { margin: 0 0 10px; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 9px 10px; align-items: center; }
+.kv span { color: #6E6B5C; font-size: 12.5px; }
+.verdict { padding: 12px 14px; border-radius: 12px; background: #FDF4E4; border: 1px solid #F3DDB6; } .verdict b { color: #8A4B12; font-size: 15px; display: block; } .verdict span { color: #6B4A1E; font-size: 12.5px; }
+.facts { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 14px 16px; }
+.facts h4 { margin: 0 0 8px; font-size: 13.5px; } .facts li { margin: 5px 0; } .facts ul { margin: 0; padding-left: 18px; color: #45433A; }
+</style>
+</head>
+<body>
+
+<p class="tag">A · A Repricer tab</p>
+<p class="why">The third tab. Bring in everything from the Incentive list in one click, add more items, then change strategy, min and max in the table. Edits wait in a tray and go to Walmart together as one upload.</p>
+<div class="win">
+  <div class="tabs"><b>Walmart Listing Browser</b><span class="tab">Incentive price list</span><span class="tab">Market</span><span class="tab on">Repricer</span><span class="right">Read from Walmart 6:29 PM · 197 items on a strategy</span></div>
+  <div class="bar"><span class="btn p">Add all from Incentive list</span><span class="btn">Add items…</span><span class="btn">Refresh from Walmart</span><span class="search">Search SKU…</span>
+    <span class="chip on">All <i>225</i></span><span class="chip">On a strategy <i>197</i></span><span class="chip">No strategy <i>28</i></span><span class="chip">Losing <i>80</i></span><span class="chip">Walmart-funded <i>31</i></span><span class="chip">At min price <i>12</i></span></div>
+  <table>
+    <tr><th>SKU</th><th>Strategy</th><th class="num">Min</th><th class="num">Max</th><th class="num">Price now</th><th>Buy box</th><th>Incentive</th><th>Repricer</th></tr>
+    <tr><td class="sku">X133-64GB-SILVER-1</td><td><span class="sel">IMRAN BUY BOX 2</span></td><td class="num"><span class="in">129.99</span></td><td class="num"><span class="in">139.99</span></td><td class="num"><b>$139.99</b></td><td><span class="pill you">You</span> $139.99</td><td class="muted">—</td><td><span class="pill you">Active</span></td></tr>
+    <tr class="changed"><td class="sku">X133-64GB-GRAY-1</td><td><span class="sel">IMRAN BUY BOX 2</span></td><td class="num"><span class="in changed">127.00</span> <span class="muted">was 129.99</span></td><td class="num"><span class="in">134.99</span></td><td class="num"><b>$131.49</b></td><td><span class="pill lost">Lost</span> $129.90 <span class="muted">Lifeline786</span></td><td><span class="pill wf">Funded</span></td><td><span class="pill wait">At min price</span></td></tr>
+    <tr class="changed"><td class="sku">X135-64GB-GRAY-LTE</td><td><span class="sel changed">IMRAN BUY BOX 2</span> <span class="muted">was none</span></td><td class="num"><span class="in changed">134.00</span></td><td class="num"><span class="in changed">156.69</span></td><td class="num"><b>$156.69</b></td><td><span class="pill lost">Lost</span> $134.99 <span class="muted">The Sahara Global</span></td><td class="muted">—</td><td><span class="pill off">Not on a strategy</span></td></tr>
+    <tr class="changed"><td class="sku">S26-ULTRA-512GB-BLUE-1</td><td><span class="sel changed">No strategy</span> <span class="muted">was IMRAN BUY BOX 2</span></td><td class="num"><span class="in">1,076.00</span></td><td class="num"><span class="in">1,159.99</span></td><td class="num"><b>$1,159.99</b></td><td><span class="pill you">You</span> $1,076.89</td><td><span class="pill wf">Funded</span></td><td><span class="pill you">Active</span></td></tr>
+  </table>
+  <div class="send"><div class="t"><b>3 changes waiting</b><span>1 minimum lowered · 1 item added to IMRAN BUY BOX 2 · 1 item taken off its strategy. Walmart accepts one upload every 10 minutes; prices follow within 15 minutes to 4 hours.</span></div><span class="btn">Review</span><span class="btn">Discard</span><span class="btn p">Send to Walmart</span></div>
+</div>
+
+<div class="cols">
+  <div>
+    <p class="tag">What the API allows, and how fast</p>
+    <p class="why">From Walmart's developer docs. None of this is tested with your account yet.</p>
+    <div class="facts">
+      <h4>Possible</h4>
+      <ul>
+        <li>Put items on a strategy, move them to another, or take them off.</li>
+        <li>Set each item's minimum and maximum price (minimum at least $0.01).</li>
+        <li>Read each item's strategy, min, max, price now and repricer status.</li>
+        <li>See which items have a Walmart-funded incentive (released today).</li>
+        <li>Create a strategy or change its rule: match or beat, by $ or %, pause it, how it treats promotions. Up to 200 strategies.</li>
+      </ul>
+      <h4 style="margin-top:14px">Not fast — it is an upload, not a live dial</h4>
+      <ul>
+        <li>One upload every 10 minutes; up to 10,000 items in it (Walmart suggests 1,000).</li>
+        <li>Wait 5 minutes before checking that an upload took.</li>
+        <li>Prices then follow; Walmart's seller guide says allow up to 4 hours.</li>
+        <li>Reading every item back is throttled too, so a refresh takes a few minutes.</li>
+      </ul>
+      <h4 style="margin-top:14px">Not in the documentation</h4>
+      <ul>
+        <li>No way to list your strategies or delete one. The app would learn their names from your items.</li>
+        <li>No stated way to change only the min or max; the app would resend the item with its strategy.</li>
+        <li>What the repricer status values are.</li>
+      </ul>
+    </div>
+  </div>
+  <div>
+    <p class="tag">B · In the row's panel</p>
+    <p class="why">No new tab. A Repricer card on the Market row you already have open.</p>
+    <div class="win panel">
+      <b style="font-family:'Geist Mono',monospace;font-size:15px">X133-64GB-GRAY-1</b>
+      <div class="muted">Item 19132403534 · read 6:31 PM</div>
+      <div class="verdict" style="margin-top:12px"><b>Losing the buy box by $1.59</b><span>Lifeline786 holds it at $129.90. You are #4 of 7 at $131.49.</span></div>
+      <div class="card">
+        <h4>Repricer <span class="pill wait">At min price</span> <span class="pill wf">Funded</span></h4>
+        <div class="kv">
+          <span>Strategy</span><span class="sel">IMRAN BUY BOX 2</span>
+          <span>Minimum</span><span><span class="in changed">127.00</span> <span class="muted">was 129.99</span></span>
+          <span>Maximum</span><span class="in">134.99</span>
+          <span>Price now</span><b>$131.49</b>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px"><span class="btn p small">Add to changes (3)</span><span class="btn small">Take off strategy</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
