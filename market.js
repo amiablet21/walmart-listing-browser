@@ -602,9 +602,9 @@ function renderPanel() {
     <div id="mRpNote"></div>
     <div class="d-head">
       <div class="d-title"><h2>${esc(it.sku || "(no SKU)")}${fundBadge}</h2><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · read ${when(it.buyBox.at)}` : ""}</div></div>
-      <button type="button" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}">Screenshot</button>
+      <button type="button" class="d-ic" aria-label="See the screenshot" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
       <button type="button" id="mOpenWm" title="Open the Walmart listing">Open on Walmart</button>
-      <button type="button" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Read this listing again now">Re-check</button>
+      <button type="button" class="d-ic" aria-label="Re-check this listing" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Read this listing again now"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
     </div>
     ${groupLine}
     <div class="m-card d-hero">

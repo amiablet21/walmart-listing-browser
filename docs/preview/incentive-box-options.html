@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Incentive box options</title>
+<style>
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-Regular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-SemiBold.otf") format("opentype"); font-weight: 600 700; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 30px 34px 36px; background: #F4F6FB; font: 13.5px/1.45 "Geist", system-ui, sans-serif; color: #101936; width: 1500px; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; align-items: start; }
+.lab { font-weight: 600; font-size: 15px; margin: 0 0 10px; }
+.card { background: #fff; border: 1px solid #E3E8F2; border-radius: 14px; padding: 18px 20px; }
+.num { font-variant-numeric: tabular-nums; }
+.mut { color: #6B7693; }
+.fund { display: inline-block; font-weight: 600; font-size: 11px; color: #2450D8; background: #E9EFFF; border-radius: 6px; padding: 2px 7px; }
+.top { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12px; color: #6B7693; }
+.top .r { margin-left: auto; font-weight: 400; }
+
+/* A: big price */
+.a .big { display: flex; align-items: baseline; gap: 10px; margin-top: 10px; }
+.a .big b { font-size: 30px; letter-spacing: -.02em; } .a .big s { color: #9AA3BA; font-size: 16px; }
+.a .off { margin-left: auto; font-weight: 600; font-size: 13px; color: #17794F; background: #E4F6EC; border-radius: 8px; padding: 4px 9px; align-self: center; }
+
+/* B: who pays what, as one bar */
+.b .bar { display: flex; height: 34px; border-radius: 9px; overflow: hidden; margin-top: 14px; font-weight: 600; font-size: 13px; }
+.b .bar div { display: flex; align-items: center; justify-content: center; }
+.b .bar .c { background: #2450D8; color: #fff; flex: 125 1 0; } .b .bar .w { background: #FFC220; color: #3A2D00; flex: 28 1 0; }
+.b .key { display: flex; margin-top: 8px; font-size: 12px; color: #6B7693; } .b .key span:last-child { margin-left: auto; }
+
+/* C: two tiles */
+.c .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.c .t { border-radius: 11px; padding: 11px 13px; background: #F0F4FF; } .c .t.w { background: #FFF6D9; }
+.c .t span { display: block; font-size: 12px; font-weight: 600; color: #47527A; } .c .t.w span { color: #6B5300; } .c .t b { font-size: 21px; }
+.c .days { margin-top: 12px; } .c .track { height: 6px; border-radius: 6px; background: #E9EDF5; overflow: hidden; } .c .track i { display: block; height: 100%; width: 68%; background: #2450D8; }
+.c .days div:last-child { display: flex; font-size: 12px; color: #6B7693; margin-top: 5px; } .c .days span:last-child { margin-left: auto; }
+
+/* D: one line */
+.d { display: flex; align-items: center; gap: 10px; padding: 14px 18px; }
+.d s { color: #9AA3BA; } .d b { font-size: 17px; } .d .r { margin-left: auto; font-size: 12px; color: #6B7693; }
+.note { margin-top: 10px; font-size: 12.5px; color: #6B7693; }
+</style>
+</head>
+<body>
+<div class="grid">
+  <div><p class="lab">A · Big price</p>
+    <div class="card a"><div class="top"><span class="fund">Walmart-funded</span><span class="r">ends Dec 3</span></div>
+      <div class="big"><b class="num">$124.99</b><s class="num">$134.99</s><span class="off num">−$10.00</span></div></div>
+    <p class="note">What the customer pays, your price crossed out, how much Walmart takes off.</p></div>
+
+  <div><p class="lab">B · Who pays what</p>
+    <div class="card b"><div class="top"><span class="fund">Walmart-funded</span><span class="r">ends Dec 3</span></div>
+      <div class="bar"><div class="c num">$124.99</div><div class="w num">$10</div></div>
+      <div class="key"><span>Customer pays</span><span>Walmart pays</span></div></div>
+    <p class="note">One bar: blue is the customer, yellow is Walmart.</p></div>
+
+  <div><p class="lab">C · Two tiles + days left</p>
+    <div class="card c"><div class="top"><span class="fund">Walmart-funded</span></div>
+      <div class="two"><div class="t"><span>Customer pays</span><b class="num">$124.99</b></div><div class="t w"><span>Walmart pays</span><b class="num">$10.00</b></div></div>
+      <div class="days"><div class="track"><i></i></div><div><span>Nov 20</span><span>6 days left · Dec 3</span></div></div></div>
+    <p class="note">Two numbers and a bar that fills as the incentive runs out.</p></div>
+
+  <div><p class="lab">D · One line</p>
+    <div class="card d"><span class="fund">Funded</span><s class="num">$134.99</s><b class="num">$124.99</b><span class="r">6 days left</span></div>
+    <p class="note">Smallest. Just the badge, the two prices and the days left.</p></div>
+</div>
+</body>
+</html>
