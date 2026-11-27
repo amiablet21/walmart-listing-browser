@@ -332,9 +332,9 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
         Retry missed
       </button>
-      <button id="mExportBtn" class="m-right" title="Export this table to .xlsx or .csv">
+<button id="mExportBtn" class="m-right" title="Export the rows shown (the filter and search in effect) to .xlsx or .csv">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
-        Export market sheet
+        <span id="mExportLabel">Export</span>
       </button>
       <!-- scan progress: a thin line along the toolbar's bottom edge, so the table never moves -->
       <div id="mProgress" class="m-progress hidden" role="progressbar" aria-label="Scan progress"><div id="mProgBar" class="m-prog-bar"></div></div>
@@ -352,7 +352,6 @@
               <th>SKU</th>
               <th>Item ID</th>
               <th class="num">Our price</th>
-              <th class="sep m-wf-col" title="Listings with a Walmart-funded incentive, from the Walmart API">Walmart-funded</th>
               <th class="sep">Walmart buy box</th>
               <th class="sep">Amazon buy box</th>
             </tr>

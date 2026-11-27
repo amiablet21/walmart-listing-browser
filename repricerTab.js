@@ -162,21 +162,23 @@ function renderRTray() {
   const wait = (rpr.lastSendAt || 0) + (rpr.gateMs || 600000) - Date.now();
   tray.classList.toggle("hidden", !out.length && !bad.length);
   $("rTrayHead").textContent = `${out.length} change${out.length === 1 ? "" : "s"} waiting${bad.length ? ` · ${bad.length} row${bad.length === 1 ? "" : "s"} to fix first` : ""}`;
-  $("rTraySub").textContent = !keysReady() ? "Add your Walmart API keys first (Market → Scan settings → API keys…)."
+  $("rTraySub").textContent = rpr.sendsOff ? "Sending is switched off in this version (see the note above the table)."
+    : !keysReady() ? "Add your Walmart API keys first (Market → Scan settings → API keys…)."
     : rFlow ? "An upload is being checked — wait for it to finish."
     : wait > 0 ? `Walmart takes one upload every 10 minutes. Next one in ${Math.floor(wait / 60000)}:${String(Math.floor((wait % 60000) / 1000)).padStart(2, "0")}.`
     : !rTested() ? "The first upload is a one-item test: one change goes out, and the app checks that only that item changed."
     : "Nothing is sent until you review and confirm.";
-  $("rSend").disabled = !out.length || !keysReady() || !!rFlow || wait > 0;
+  $("rSend").disabled = !out.length || !keysReady() || !!rFlow || wait > 0 || !!rpr.sendsOff;
   $("rSend").textContent = rTested() ? "Review and send…" : "Start the one-item test…";
   // the notice above the table: an upload in progress, its outcome, or an unfinished test
   const unfinished = !rFlow && rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear");
   const html = rFlow ? `<span class="m-spin"></span><span>${esc(rFlow.text)}</span>`
     : rResult ? `<span>${rResult.html}</span><button class="mini" id="rResultX" type="button">Dismiss</button>`
+    : rpr.sendsOff ? `<span><b>Read-only for now.</b> Walmart's lookup returns prices but no strategy, minimum or maximum, even for items Seller Center shows on a strategy. So the Strategy / Min / Max shown here are not your real settings, and sending changes is switched off until the app can read them.</span>`
     : rMoved.length ? `<span>A failed test left ${rMoved.length} item${rMoved.length === 1 ? "" : "s"} changed at Walmart (${rMoved.slice(0, 5).map((m) => esc(m.sku)).join(", ")}${rMoved.length > 5 ? "…" : ""}). Their settings from before are saved.</span><button class="mini" id="rRestore" type="button">Put those ${rMoved.length} back</button>`
     : unfinished ? `<span>The one-item test for <b>${esc(rpr.test.sku)}</b> was sent ${esc(when(rpr.test.at))} and hasn't been confirmed yet.${rpr.test.note ? ` ${esc(rpr.test.note)}` : ""}</span><button class="mini" id="rFinish" type="button" ${keysReady() ? "" : "disabled"}>Check it now</button>`
     : "";
-  note.className = "r-notice" + (html ? "" : " hidden") + (rFlow ? " busy" : rResult ? ` ${rResult.kind}` : rMoved.length ? " bad" : "");
+  note.className = "r-notice" + (html ? "" : " hidden") + (rFlow ? " busy" : rResult ? ` ${rResult.kind}` : rpr.sendsOff ? " bad" : rMoved.length ? " bad" : "");
   if (note.dataset.html !== html) { note.innerHTML = html; note.dataset.html = html; }
 }
 setInterval(() => { if (inRepricer()) renderRTray(); }, 1000);
