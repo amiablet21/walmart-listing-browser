@@ -382,8 +382,8 @@ function renderMarket() {
         ? `<b title="Your price with shipping, against the buy box seller's">${gap > 0 ? "+" : "−"}${fmt(Math.abs(gap))}</b>`
         : `<b title="Buy box price">${fmt(f.bb.price)}</b>`;
       const r = raiseFor(f);
-      sub = f.mine ? `Buy Box: You${r?.ok ? ` · <span class="m-up" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">${fmt(r.gap)} less than next price</span>` : ""}`
-        : f.bb.seller ? `Buy Box: ${esc(f.bb.seller)}` : "Buy Box: not read";
+      sub = f.mine ? `Buy Box: <span class="m-st w">${esc(f.bb.seller || myStore)}</span>${r?.ok ? ` · <span class="m-up" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">${fmt(r.gap)} less than next price</span>` : ""}`
+        : f.bb.seller ? `Buy Box: <span class="m-st l">${esc(f.bb.seller)}</span>` : "Buy Box: not read";
       if (f.oos) st += `<span class="m-st n">Out of stock</span>`;
     } else if (f.it.buyBox?.oos) { st = `<span class="m-st n">Out of stock</span>`; sub = "No price on the listing"; }
     else if (f.it.buyBox?.robot) { st = `<span class="m-st n">Not read</span>`; sub = "Robot check — open the listing once to pass it"; }
