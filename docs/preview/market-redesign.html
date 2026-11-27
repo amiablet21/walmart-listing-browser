@@ -78,6 +78,37 @@ body { margin: 0; padding: 30px 36px 44px; background: #6f6e69; font: 13px/1.45 
 .b h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8B887C; font-weight: 600; }
 .b .s { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #F3F1EC; } .b .s .n { flex: 1 1 auto; } .b .s .k { width: 16px; color: #B9B6AB; } .b .s.me { font-weight: 600; } .b .s .t { color: #8B887C; font-size: 12px; }
 .b .inc { border: 1px solid #D5E6EE; background: #F4F9FB; border-radius: 12px; padding: 14px 16px; } .b .inc b { color: #1F5E78; } .b .inc p { margin: 6px 0 0; color: #3A5B68; font-size: 12.5px; }
+
+/* ---------- the app's own colours ---------- */
+body { color: #1C1B16; }
+.win { background: #FAF9F5; }
+.top { background: #fff; border-bottom-color: #E9E4D7; padding: 12px 18px; gap: 10px; }
+.nav { gap: 6px; color: #6E6B5C; } .nav span { padding: 6px 12px; border-radius: 8px; } .nav .on { background: #E6E8F3; color: #3D4A85; box-shadow: none; }
+.top .r, .muted { color: #6E6B5C; }
+.btn { border-color: #D9D2C1; border-radius: 8px; } .btn.ghost { border-color: #D9D2C1; padding: 8px 14px; color: #1C1B16; }
+.top .r .btn:last-child, .btn.dark { background: #4C5B9E; border-color: #4C5B9E; color: #fff; }
+.a .sum { padding: 18px 18px 4px; }
+.a .seg, .b .lh { gap: 8px; border-bottom: 0; padding: 12px 18px; align-items: center; }
+.a .seg span, .b .lh span { padding: 5px 11px; border-radius: 999px; background: #F4F1E9; font-size: 12px; color: #45433A; }
+.a .seg .on, .b .lh .on { background: #FBEBD3; color: #8A4B12; box-shadow: none; }
+.a .seg .srch { background: #fff; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 12px; width: 210px; color: #918D7C; }
+.a .rows { margin: 0 18px 14px; background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; }
+.a .row { border-bottom-color: #F0EDE6; padding: 16px 18px; box-shadow: inset 3px 0 0 #C28A2B; } .a .row.sel { background: #EEF0F8; }
+.a .dot { display: none; } .a .who .sub { margin-left: 0 !important; color: #6E6B5C; }
+.a .fund { background: #E4F1F6; color: #1F5E78; border: 1px solid #BFDCE8; border-radius: 999px; padding: 2px 8px; }
+.line .track { background: #E9E4D7; } .line .range, .line .tick { background: #4C5B9E; }
+.line .you { background: #4C5B9E; box-shadow: 0 0 0 1px #4C5B9E; } .line .bb { border-top-color: #C28A2B; } .line .lbl { color: #6E6B5C; }
+.a .say.lose b, .b .li .gap b { color: #8A4B12; } .b .li .gap.g b { color: #3F6A2F; }
+.a .min { border-color: #D9D2C1; background: #fff; } .a .min.c, .b .edit .f b.c { border-color: #C9A227; background: #FFFBEA; box-shadow: none; }
+.a .foot { margin: 0 18px 18px; border-radius: 12px; background: #FFFBEA; border: 1px solid #EBD98A; color: #1C1B16; }
+.a .foot .t span { color: #6B5A1E; } .a .foot .btn { background: #4C5B9E; border-color: #4C5B9E; color: #fff; } .a .foot .btn.ghost { background: #fff; border-color: #D9D2C1; color: #1C1B16; }
+.b .list { border-right-color: #E9E4D7; background: #fff; } .b .li { border-bottom-color: #F0EDE6; } .b .li.sel { background: #EEF0F8; box-shadow: inset 3px 0 0 #4C5B9E; }
+.b .verd { background: #FDF4E4; border: 1px solid #F3DDB6; border-radius: 10px; padding: 12px 14px; color: #8A4B12; font-size: 17px; } .b .verd small { color: #6B4A1E; }
+.b .lineBox { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; margin: 14px 0; padding: 34px 26px 30px; }
+.b .edit { background: #F6F7FC; border-color: #DDE1F2; } .b .edit .f span, .b h4 { color: #3D4A85; } .b .edit .f b { background: #fff; border-color: #D9D2C1; } .b .edit .f b.ro { background: none; }
+.b .two > div:first-child { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 12px 14px; }
+.b .s { border-bottom-color: #F0EDE6; } .b .s.me { background: #F5FAF2; margin: 0 -14px; padding: 7px 14px; }
+.b .inc { background: #E4F1F6; border-color: #BFDCE8; }
 </style>
 </head>
 <body>
@@ -90,6 +121,7 @@ body { margin: 0; padding: 30px 36px 44px; background: #6f6e69; font: 13px/1.45 
   <div class="sum"><span class="big num">79<small>losing</small></span><span class="big num">144<small>winning</small></span><span class="big num">39<small>stuck at your min</small></span><span class="big num">11<small>Walmart-funded</small></span></div>
   <div class="seg"><span class="on">Losing<i>79</i></span><span>Stuck at min<i>39</i></span><span>Winning<i>144</i></span><span>No strategy<i>33</i></span><span>Funded<i>11</i></span><span>All<i>231</i></span><span class="srch muted">Search…</span></div>
 
+  <div class="rows">
   <div class="row sel">
     <div class="who"><b class="mono"><span class="dot"></span>X133-64GB-GRAY-1</b><span class="fund">Funded</span><div class="sub" style="margin-left:16px">Lifeline786 has the buy box · you're #3 of 7</div></div>
     <div class="line"><div class="track"></div><div class="range" style="left:22%;width:56%"></div>
@@ -128,6 +160,7 @@ body { margin: 0; padding: 30px 36px 44px; background: #6f6e69; font: 13px/1.45 
       <div class="you" style="left:55%"></div><div class="lbl" style="left:55%">you $1,250.00</div></div>
     <div class="say lose"><b>$20.01 above the buy box</b><div class="sub">Inside your range — repricer hasn't moved</div></div>
     <div class="act"><span class="min num"><span>min</span>1,199.00</span><span class="btn sm" style="visibility:hidden">Match</span></div>
+  </div>
   </div>
   <div class="foot"><div class="t"><b>1 change ready</b><span>X133-64GB-GRAY-1 min $129.99 → $129.90</span></div><span class="btn ghost">Discard</span><span class="btn">Push to Walmart</span></div>
 </div>
