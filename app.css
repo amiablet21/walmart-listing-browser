@@ -1090,3 +1090,4 @@ body.market-mode #market { background: #F4F6FB; color: #101936; font-size: 13.5p
 #market .d-inc b { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
 #market .d-inc .r { margin-left: auto; font-size: 12px; color: #6B7693; white-space: nowrap; }
 #market .d-tag.wfs { color: #6B5300; background: #FFF1C2; border-radius: 5px; padding: 1px 6px; }
+#market .d-two { margin-top: 0; }
