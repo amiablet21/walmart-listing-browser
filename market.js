@@ -606,6 +606,7 @@ function renderPanel() {
     <div class="d-head">
       <div class="d-title"><h2>${esc(it.sku || "(no SKU)")}${fundBadge}</h2><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · read ${when(it.buyBox.at)}` : ""}</div></div>
       <button type="button" class="d-ic" aria-label="See the screenshot" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button type="button" class="d-ic" id="mDiag" aria-label="Copy diagnostics for this listing" title="Copy diagnostics for this listing (to send when something looks wrong)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-5 9a3 3 0 0 0 2.6 4.5h8.8A3 3 0 0 0 19 17l-5-9V3"/><path d="M7.5 15h9"/></svg></button>
       <button type="button" id="mOpenWm" title="Open the Walmart listing">Open on Walmart</button>
       <button type="button" class="d-ic" aria-label="Re-check this listing" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Read this listing again now"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
     </div>
@@ -656,6 +657,20 @@ function renderPanel() {
     if (!(await window.api.showPageSnapshot(it.itemId))) alert("No page snapshot is saved for this item. Re-check it to take one.");
   });
   p.querySelector("#mShotEye")?.addEventListener("click", () => { if (shot) openShotModal(it, shot); });
+  p.querySelector("#mDiag")?.addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    const bb = it.buyBox || null;
+    const sys = await window.api.bbxDiag(shot?.file || "").catch(() => null);
+    const report = { sku: it.sku, itemId: it.itemId, myStore, system: sys,
+      scan: bb && { at: bb.at ? new Date(bb.at).toISOString() : null, price: bb.price ?? null, seller: bb.seller ?? null, others: bb.others ?? null, offersWhy: bb.offersWhy ?? null,
+        oos: !!bb.oos, failed: !!bb.failed, robot: !!bb.robot, notFound: !!bb.notFound, source: bb.source ?? null, shot: bb.shot ? { kind: bb.shot.kind, how: bb.shot.how, at: bb.shot.at } : null },
+      sellers: f.sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, wfs: !!s.wfs, buyBox: s.isBB, me: s.mine, note: s.shipNote })),
+      status: f.mine ? "winning" : f.lost ? "losing" : "unknown", incentive: f.wf || null,
+      repricer: rpOn() && it.sku ? { state: rState(String(it.sku).trim()), edit: rEdits[rKey(it.sku)] || null, sent: rSent[rKey(it.sku)] || null, importedAt: rpr.fileAt || null } : null };
+    const text = "Walmart Listing Browser diagnostics\n" + JSON.stringify(report, null, 1);
+    try { await navigator.clipboard.writeText(text); b.classList.add("done"); b.title = "Copied. Paste it into your message."; setTimeout(() => b.classList.remove("done"), 1600); }
+    catch { alert(text.slice(0, 3000)); }
+  });
   p.querySelector("#mOpenWm")?.addEventListener("click", () => window.api.openExternal(it.itemId));
   p.querySelector("#mRaiseRules")?.addEventListener("click", openRaiseModal);
   p.querySelector("#mRaiseCopy")?.addEventListener("click", (e) => {
