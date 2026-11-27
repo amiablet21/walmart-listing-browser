@@ -415,10 +415,10 @@ async function rFollow({ test, feedId, skus, now }) {
       // The settings come from Seller Center's download, so the app can't read them back by itself.
       rFlow = null;
       const errs = rFeedErrors(feed, skus);
-      const took = feed?.ok ? ` Walmart's answer: ${esc(feed.status.toLowerCase())}${feed.succeeded != null ? `, ${feed.succeeded} of ${feed.received ?? skus.length} accepted` : ""}.` : " Walmart hasn't confirmed the upload yet.";
+      const took = feed?.ok ? ` Walmart: ${esc(feed.status.toLowerCase())}${feed.succeeded != null ? `, ${feed.succeeded} of ${feed.received ?? skus.length} accepted` : ""}.` : " Walmart hasn't answered yet.";
       if (test) {
         rResult = errs.length ? await rJudgeTest(feed, { ok: false }, null)
-          : { kind: "info", html: `Test sent. Download the strategy again and import it. <button class="mini" id="rImportGo" type="button">Import</button>` };
+          : { kind: "info", html: `Test sent.${took} Download the strategy again and import it. <button class="mini" id="rImportGo" type="button">Import</button>` };
       } else {
         // the test has passed, so what Walmart reports as accepted becomes the current settings
         const res = await window.api.repricerApplyFeed(feedId).catch(() => null);
