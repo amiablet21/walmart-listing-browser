@@ -109,6 +109,11 @@ body { color: #1C1B16; }
 .b .two > div:first-child { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 12px 14px; }
 .b .s { border-bottom-color: #F0EDE6; } .b .s.me { background: #F5FAF2; margin: 0 -14px; padding: 7px 14px; }
 .b .inc { background: #E4F1F6; border-color: #BFDCE8; }
+.b .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
+.b .stats > div { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 12px 16px; }
+.b .stats span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; font-weight: 600; }
+.b .stats b { display: block; font-size: 22px; margin-top: 2px; } .b .stats i { font-style: normal; font-size: 12px; color: #6E6B5C; }
+em.fund { font-style: normal; font-family: "Geist", sans-serif; font-size: 11px; font-weight: 600; background: #E4F1F6; color: #1F5E78; border: 1px solid #BFDCE8; border-radius: 999px; padding: 2px 8px; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -173,23 +178,19 @@ body { color: #1C1B16; }
   <div class="cols">
     <div class="list">
       <div class="lh"><span class="on">Losing<i>79</i></span><span>Stuck<i>39</i></span><span>Winning<i>144</i></span><span>Funded<i>11</i></span><span>All<i>231</i></span></div>
-      <div class="li sel"><div class="g"><b class="mono">X133-64GB-GRAY-1</b><span>Lifeline786 · #3 of 7 · funded</span></div><div class="gap"><b class="num">+$5.09</b><span>stuck at min</span></div></div>
+      <div class="li sel"><div class="g"><b class="mono">X133-64GB-GRAY-1 <em class="fund">Funded</em></b><span>Lifeline786 · #3 of 7</span></div><div class="gap"><b class="num">+$5.09</b><span>stuck at min</span></div></div>
       <div class="li"><div class="g"><b class="mono">SM-X133-64GB-GREY</b><span>The Sahara Global · #2 of 2</span></div><div class="gap g"><b class="num">−$8.01</b><span>cheaper, still losing</span></div></div>
       <div class="li"><div class="g"><b class="mono">X135-64GB-GRAY-LTE</b><span>The Sahara Global</span></div><div class="gap"><b class="num">+$11.70</b><span>no strategy</span></div></div>
       <div class="li"><div class="g"><b class="mono">X135-128GB-GRAY-GLOBAL-1</b><span>Techmate Intl. · #2 of 2</span></div><div class="gap"><b class="num">+$10.01</b><span>in range</span></div></div>
       <div class="li"><div class="g"><b class="mono">X230-128GB-SILVER-GLOBAL</b><span>Spice Mobile</span></div><div class="gap"><b class="num">+$10.99</b><span>in range</span></div></div>
       <div class="li"><div class="g"><b class="mono">X230-128GB-GRAY-GLOBAL-1</b><span>Lifeline786 · #2 of 5</span></div><div class="gap"><b class="num">+$49.99</b><span>stuck at min</span></div></div>
-      <div class="li"><div class="g"><b class="mono">S26-ULTRA-512GB-BLUE-US</b><span>CELLSTOREUSA · #2 of 2 · funded</span></div><div class="gap"><b class="num">+$20.01</b><span>in range</span></div></div>
+      <div class="li"><div class="g"><b class="mono">S26-ULTRA-512GB-BLUE-US <em class="fund">Funded</em></b><span>CELLSTOREUSA · #2 of 2</span></div><div class="gap"><b class="num">+$20.01</b><span>in range</span></div></div>
     </div>
     <div class="det">
       <div class="head"><div class="g"><h2 class="mono">X133-64GB-GRAY-1</h2><div class="sub">Item 19132403534 · scanned 11:22 PM · IMRAN BUY BOX 2</div></div><span class="btn sm">Screenshot</span><span class="btn sm">Open on Walmart</span><span class="btn sm">Re-check</span></div>
       <div class="verd">Losing by $5.09<small>Lifeline786 holds the buy box at $129.90. Your repricer can't follow: that's 9¢ under your minimum.</small></div>
-      <div class="lineBox"><div class="line"><div class="track"></div><div class="range" style="left:16%;width:68%"></div>
-        <div class="tick" style="left:16%"></div><div class="lbl b" style="left:16%">your min<b class="num">$129.99</b></div>
-        <div class="tick" style="left:84%"></div><div class="lbl b" style="left:84%">your max<b class="num">$134.99</b></div>
-        <div class="bb" style="left:14.5%"></div><div class="lbl" style="left:14.5%">buy box <b class="num" style="display:inline">$129.90</b></div>
-        <div class="you" style="left:84%"></div><div class="lbl" style="left:84%">you <b class="num" style="display:inline">$134.99</b></div></div></div>
-      <div class="edit"><div class="f"><span>Min</span><b class="c num">129.90</b></div><div class="f"><span>Max</span><b class="num">134.99</b></div><div class="f"><span>Incentive price</span><b class="ro num">$134.99</b></div><div class="sp"></div><span class="btn ghost">was $129.99</span><span class="btn dark">Push to Walmart</span></div>
+      <div class="stats"><div><span>Buy box</span><b class="num">$129.90</b><i>Lifeline786</i></div><div><span>Your price</span><b class="num">$134.99</b><i>#3 of 7</i></div><div><span>Incentive price</span><b class="num">$134.99</b><i>from your Incentive list</i></div></div>
+      <div class="edit"><div class="f"><span>Strategy</span><b class="num" style="min-width:190px">IMRAN BUY BOX 2</b></div><div class="f"><span>Min</span><b class="c num">129.90</b></div><div class="f"><span>Max</span><b class="num">134.99</b></div><span class="btn sm" style="align-self:flex-end;margin-bottom:5px">Match buy box</span><div class="sp"></div><span class="muted">min was $129.99</span><span class="btn dark">Push to Walmart</span></div>
       <div class="two">
         <div><h4>Sellers · 7</h4>
           <div class="s"><span class="k">1</span><span class="n">Lifeline786 <span class="t">· buy box</span></span><b class="num">$129.90</b></div>
