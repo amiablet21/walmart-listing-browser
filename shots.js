@@ -140,8 +140,9 @@ async function grabViaDebugger(v, rect) {
   } catch { return null; }
   finally { if (mine) { try { dbg.detach(); } catch { /* already detached */ } } }
 }
+let viaDebugger = VIA_DEBUGGER; // flipped for one retry when a picture comes out blank
 async function grab(v, rect) {
-  if (VIA_DEBUGGER && rect) {
+  if (viaDebugger && rect) {
     const img = await grabViaDebugger(v, rect);
     if (img) return img;
   }
@@ -232,8 +233,61 @@ async function captureStitched(v, kind, g) {
   return slices.length ? stack(slices) : null;
 }
 
-// → { png: Buffer, kind, how: "single" | "tall" | "stitched" } or null.
+// A picture that is almost all white: nothing was drawn where the list should be.
+function mostlyBlank(png) {
+  try {
+    const p = pixels(nativeImage.createFromBuffer(png));
+    const step = Math.max(1, Math.floor(Math.sqrt((p.w * p.h) / 40000)));
+    let seen = 0, ink = 0;
+    for (let y = 0; y < p.h; y += step) for (let x = 0; x < p.w; x += step) {
+      const i = (y * p.w + x) * 4;
+      seen++;
+      if (p.data[i] < 235 || p.data[i + 1] < 235 || p.data[i + 2] < 235) ink++;
+    }
+    return seen > 0 && ink / seen < 0.015;
+  } catch { return false; }
+}
+// What the page says about the thing being photographed (kept with a blank picture, for fixing the reader).
+const DIAG_SCRIPT = `(() => {
+  const el = document.querySelector("[data-wlb-panel]") || document.querySelector('[role="dialog"]');
+  const chain = [];
+  for (let e = el; e && e !== document.documentElement && chain.length < 8; e = e.parentElement) {
+    const c = getComputedStyle(e), r = e.getBoundingClientRect();
+    chain.push({ tag: e.tagName, role: e.getAttribute("role"), testid: e.getAttribute("data-testid"), opacity: c.opacity, visibility: c.visibility, display: c.display, transform: c.transform, position: c.position, bg: c.backgroundColor, rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)] });
+  }
+  return { found: !!el, text: el ? (el.innerText || "").replace(/\\s+/g, " ").slice(0, 300) : null, chain,
+    animations: document.getAnimations ? document.getAnimations().length : null, visibility: document.visibilityState, focus: document.hasFocus(),
+    dpr: window.devicePixelRatio, vw: window.innerWidth, vh: window.innerHeight, scrollY: window.scrollY, url: location.href };
+})()`;
+// Bring every running animation to its end (a panel sliding or fading in that never got its frames).
+const SETTLE_SCRIPT = `(() => {
+  if (!document.getElementById("wlb-noanim")) { const s = document.createElement("style"); s.id = "wlb-noanim"; s.textContent = "*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important}"; document.head.appendChild(s); }
+  for (const a of document.getAnimations ? document.getAnimations() : []) { try { a.finish(); } catch (e) {} }
+  return true;
+})()`;
+
+// → { png: Buffer, kind, how } or null. A blank picture is retried with the
+// page's animations finished, then with the other way of taking it; if it is
+// still blank it comes back marked { blank, debug, fullPng } so the caller can
+// keep the evidence.
 async function captureShot(v, kind) {
+  const first = await captureOnce(v, kind);
+  if (!first || !mostlyBlank(first.png)) return first;
+  const diag = await run(v, DIAG_SCRIPT);
+  await run(v, SETTLE_SCRIPT);
+  await wait(600);
+  const second = await captureOnce(v, kind);
+  if (second && !mostlyBlank(second.png)) return { ...second, how: second.how + "+settled" };
+  viaDebugger = !viaDebugger;
+  let third = null;
+  try { third = await captureOnce(v, kind); } finally { viaDebugger = !viaDebugger; }
+  if (third && !mostlyBlank(third.png)) return { ...third, how: third.how + "+other" };
+  let fullPng = null;
+  try { const img = await v.webContents.capturePage(); if (img && !img.isEmpty()) fullPng = img.toPNG(); } catch { /* view gone */ }
+  return { ...(second || first), blank: true, fullPng,
+    debug: { platform: process.platform, viaDebugger, kind, how: (second || first).how, before: diag, after: await run(v, DIAG_SCRIPT), geometry: await run(v, GEOM_SCRIPT(kind)) } };
+}
+async function captureOnce(v, kind) {
   try {
     if (!v || v.webContents.isDestroyed()) return null;
     // The page must be still before it is measured. Walmart scrolls smoothly,

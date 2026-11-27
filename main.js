@@ -1546,6 +1546,12 @@ async function saveShot(w, itemId, scanId, kind) {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${String(itemId).replace(/\D/g, "")}.png`);
     fs.writeFileSync(file, got.png);
+    if (got.blank) { // nothing was drawn: keep what the page reported, and the whole view, beside the picture
+      try {
+        fs.writeFileSync(file.replace(/\.png$/, ".blank-debug.json"), JSON.stringify({ app: app.getVersion(), at: new Date().toISOString(), ...got.debug }, null, 1));
+        if (got.fullPng) fs.writeFileSync(file.replace(/\.png$/, ".whole-view.png"), got.fullPng);
+      } catch { /* the picture itself is saved */ }
+    }
     return { file, kind: got.kind === "buybox" ? "buybox" : "sellers", how: got.how, scanId: id, at: Date.now() };
   } catch (e) { console.error("Failed to save a screenshot:", e); return null; }
 }
