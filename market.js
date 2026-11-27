@@ -599,6 +599,7 @@ function renderPanel() {
     : wfx ? `<h4>Walmart-funded incentive<span class="m-fund dim">Eligible</span></h4><p>Can get one. None active.</p>`
     : `<h4>Walmart-funded incentive</h4><p class="m-muted">${wfLoaded() ? "None." : keysReady() ? "Not checked yet." : "Needs API keys."}</p>`;
   p.innerHTML = `
+    <div id="mRpNote"></div>
     <div class="d-head">
       <div class="d-title"><h2>${esc(it.sku || "(no SKU)")}${fundBadge}</h2><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · read ${when(it.buyBox.at)}` : ""}</div></div>
       <button type="button" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}">Screenshot</button>
@@ -760,7 +761,7 @@ function renderRpFoot() {
   if (!el || !rpOn()) return;
   const sku = rpSku();
   let html;
-  if (!sku || !rpr.fileAt || !rEditable(sku)) html = rpNoteHtml();
+  if (!sku || !rpr.fileAt || !rEditable(sku)) html = "";
   else {
     const k = rKey(sku), b = rBase(sku), c = rChange(sku), sent = rSent[k], v = rVal(sku);
     const f = rowFacts(mSelected);
@@ -789,9 +790,11 @@ function renderRpFoot() {
       : c ? `${short} · <button type="button" class="linkish" id="mRpUndo">Undo</button>`
       : "";
     const under = [line, why ? esc(why) : ""].filter(Boolean).join(" · ");
-    html = `${tip ? `<div class="d-tip">${tip}</div>` : ""}<button type="button" class="primary wide" id="mRpPush" ${off ? "disabled" : ""}>${label}</button>${under ? `<div class="d-foot">${under}</div>` : ""}${rpNoteHtml()}`;
+    html = `${tip ? `<div class="d-tip">${tip}</div>` : ""}<button type="button" class="primary wide" id="mRpPush" ${off ? "disabled" : ""}>${label}</button>${under ? `<div class="d-foot">${under}</div>` : ""}`;
   }
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+  const note = $("mRpNote"), nh = rpNoteHtml();
+  if (note && note.dataset.html !== nh) { note.innerHTML = nh; note.dataset.html = nh; }
 }
 $("mPanel").addEventListener("click", (e) => {
   const id = e.target.id;

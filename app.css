@@ -1081,3 +1081,4 @@ body.market-mode #market { background: #F4F6FB; color: #101936; font-size: 13.5p
   #market .d-hero > div:nth-child(4) { border-left: 0; }
   #market .d-hero > div:nth-child(n + 4) { border-top: 1px solid #EEF1F7; }
 }
+#market #mRpNote .d-note { margin: 0 0 16px; align-items: center; }
