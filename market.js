@@ -9,14 +9,14 @@
 //   manual: the price was typed by hand and is never overwritten by a scan.
 
 // ---- tab switching -----------------------------------------------------------
-let appTab = localStorage.getItem("appTab") === "market" ? "market" : "sheet";
+let appTab = ["market", "repricer"].includes(localStorage.getItem("appTab")) ? localStorage.getItem("appTab") : "sheet";
 const inMarket = () => appTab === "market";
 
 // The sheet's own docking must stay quiet while the Market tab is up: the
 // native Walmart pane would otherwise paint over the market table.
 const baseDockListing = dockListing;
 dockListing = function () {
-  if (inMarket()) { window.api.hideListing(); return; }
+  if (appTab !== "sheet") { window.api.hideListing(); return; }
   baseDockListing();
 };
 const baseRender = render;
@@ -26,13 +26,18 @@ render = function () {
 };
 
 function setTab(t) {
-  appTab = t === "market" ? "market" : "sheet";
+  appTab = ["market", "repricer"].includes(t) ? t : "sheet";
   localStorage.setItem("appTab", appTab);
   document.body.classList.toggle("market-mode", inMarket());
+  document.body.classList.toggle("repricer-mode", appTab === "repricer");
   document.querySelectorAll(".app-tabs .app-tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === appTab));
   if (inMarket()) {
     window.api.hideListing();
     renderMarket();
+  } else if (appTab === "repricer") {
+    window.api.hideListing();
+    hideAmazonPage();
+    if (typeof renderRepricerTab === "function") renderRepricerTab(); // (its script loads after this one)
   } else {
     hideAmazonPage();
     dockListing();

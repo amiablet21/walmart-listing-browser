@@ -17,6 +17,14 @@ contextBridge.exposeInMainWorld("api", {
   // Walmart Marketplace API (Market tab scan)
   marketInsights: (skus) => ipcRenderer.invoke("market:insights", skus),
   // buy box check: settings, screenshots, results file
+  // Repricer tab: read and change repricer settings through the Walmart API
+  repricerGet: () => ipcRenderer.invoke("rpr:get"),
+  repricerRead: (skus) => ipcRenderer.invoke("rpr:read", skus),
+  repricerSend: (items, opts) => ipcRenderer.invoke("rpr:send", items, opts),
+  repricerFeed: (feedId) => ipcRenderer.invoke("rpr:feed", feedId),
+  repricerSetTest: (patch) => ipcRenderer.invoke("rpr:setTest", patch),
+  repricerShowFiles: () => ipcRenderer.invoke("rpr:showFiles"),
+  onRepricerProgress: (cb) => ipcRenderer.on("rpr:progress", (_e, p) => cb(p)),
   // Walmart-funded incentives (the Market tab's label)
   incentivesGet: () => ipcRenderer.invoke("inc:get"),
   incentivesRefresh: () => ipcRenderer.invoke("inc:refresh"),
