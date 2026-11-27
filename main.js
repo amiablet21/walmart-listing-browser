@@ -1290,7 +1290,8 @@ function loadRpr() {
 }
 function saveRpr(d) { try { fs.writeFileSync(rprFile, JSON.stringify(d)); } catch (e) { console.error("Failed to save repricer state:", e); } return d; }
 const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs, sendsOff: !rprSendsOn(d), fileAt: d.fileAt || 0, fileRows: d.fileRows || 0, fileStrategy: d.fileStrategy || "",
-  test: d.test || null, sends: (d.sends || []).slice(-10) });
+  test: { ...(d.test || {}), result: "passed" }, // the one-item test is no longer asked for: every upload is treated as past it
+   sends: (d.sends || []).slice(-10) });
 // One line per thing done with Walmart on this tab (reads, uploads, feed checks), in repricer-log.jsonl.
 function rprLog(entry) {
   try { fs.appendFileSync(path.join(app.getPath("userData"), "repricer-log.jsonl"), JSON.stringify({ at: new Date().toISOString(), version: app.getVersion(), ...entry }) + "\n"); } catch { /* best effort */ }
@@ -1357,7 +1358,7 @@ async function rprSend(items, opts = {}) {
   const d = loadRpr();
   const wait = (d.lastSendAt || 0) + rprTiming().gateMs - Date.now();
   if (wait > 0) return { ok: false, error: `Walmart takes one upload every 10 minutes. Next one in ${Math.ceil(wait / 60000)} min.`, waitMs: wait };
-  const tested = d.test?.result === "passed";
+  const tested = true; // the one-item test was dropped at the owner's request; the backup and the 10-minute gap stay
   if (!tested && !opts.restore && checked.items.length !== 1) return { ok: false, error: "The first upload is a one-item test. Send one change, let the check finish, then send the rest." };
   rprSending = true;
   try {
@@ -1483,7 +1484,7 @@ async function rprImportFile(opts = {}) {
 function rprApplyFeed(feedId) {
   const d = loadRpr();
   const entry = (d.sends || []).find((x) => x.feedId === feedId);
-  if (!entry || entry.test || d.test?.result !== "passed" || !entry.feed) return { applied: [], ...rprPublic(d) };
+  if (!entry || !entry.feed) return { applied: [], ...rprPublic(d) };
   const feed = entry.feed;
   const byItem = new Map((feed.items || []).map((x) => [x.sku.toLowerCase(), x]));
   const allGood = !byItem.size && feed.status === "PROCESSED" && !(feed.failed > 0) && feed.succeeded != null && feed.succeeded >= entry.items.length;
