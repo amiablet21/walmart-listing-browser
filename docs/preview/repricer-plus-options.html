@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Repricer tab — incentive price, market scan, funded badge</title>
+<style>
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-Regular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-SemiBold.otf") format("opentype"); font-weight: 600 700; }
+@font-face { font-family: "Geist Mono"; src: url("../../fonts/GeistMono-Regular.otf") format("opentype"); }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 30px 36px 40px; background: #6f6e69; font: 13px/1.45 "Geist", system-ui, sans-serif; color: #1C1B16; width: 1640px; }
+.tag { color: #fff; font-weight: 600; font-size: 15px; margin: 0 0 3px; }
+.why { color: #E9E4D7; font-size: 12.5px; margin: 0 0 12px; }
+.win { background: #FAF9F5; border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); overflow: hidden; }
+.tabs { display: flex; align-items: center; gap: 6px; padding: 12px 16px; background: #fff; border-bottom: 1px solid #E9E4D7; }
+.tabs b { margin-right: 14px; font-size: 14px; }
+.tab { padding: 6px 12px; border-radius: 8px; font-weight: 600; color: #6E6B5C; } .tab.on { background: #E6E8F3; color: #3D4A85; }
+.tabs .right { margin-left: auto; font-size: 12px; color: #6E6B5C; }
+.bar { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid #E9E4D7; }
+.btn { font-weight: 600; border-radius: 8px; padding: 7px 12px; border: 1px solid #D9D2C1; background: #fff; white-space: nowrap; }
+.btn.p { background: #4C5B9E; border-color: #4C5B9E; color: #fff; } .btn.small { padding: 4px 9px; font-size: 12px; }
+.search { width: 220px; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 12px; background: #fff; color: #918D7C; }
+.chip { display: inline-flex; gap: 6px; padding: 5px 11px; border-radius: 999px; background: #F4F1E9; font-size: 12px; font-weight: 600; color: #45433A; }
+.chip i { font-style: normal; font-weight: 500; opacity: .75; } .chip.on { background: #E6E8F3; color: #3D4A85; }
+.body { display: grid; grid-template-columns: 1fr 400px; }
+table { width: calc(100% - 32px); margin: 14px 16px 16px; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; }
+th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; font-weight: 600; padding: 9px 10px; background: #F4F1E9; white-space: nowrap; }
+th small { display: block; text-transform: none; letter-spacing: 0; font-weight: 500; color: #918D7C; font-size: 10.5px; }
+td { padding: 8px 10px; border-top: 1px solid #F0EDE6; white-space: nowrap; }
+td.sku { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12.5px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.sel td { background: #EEF0F8; } tr.sel td:first-child { box-shadow: inset 3px 0 0 #4C5B9E; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.pill.you { background: #E3EFDD; color: #3F6A2F; } .pill.lost { background: #FBEBD3; color: #8A4B12; }
+.pill.wf { background: #E4F1F6; color: #1F5E78; cursor: pointer; border: 1px solid #BFDCE8; margin-left: 8px; font-family: "Geist", sans-serif; }
+.pill.bb { background: #E6E8F3; color: #3D4A85; }
+.in { display: inline-flex; justify-content: flex-end; width: 78px; border: 1px solid #D9D2C1; border-radius: 7px; background: #fff; padding: 4px 8px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sel-in { display: inline-flex; width: 150px; border: 1px solid #D9D2C1; border-radius: 7px; background: #fff; padding: 4px 8px; font-weight: 600; }
+.inc { color: #1C1B16; font-weight: 600; } .inc.warn { color: #A4551B; }
+.note { display: block; font-size: 11px; color: #A4551B; font-weight: 500; }
+.muted { color: #6E6B5C; font-size: 12px; }
+.side { border-left: 1px solid #E9E4D7; padding: 16px; background: #FAF9F5; }
+.card { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+.card .head { padding: 12px 14px; }
+.verdict { margin: 0 14px 14px; padding: 11px 13px; border-radius: 10px; background: #FDF4E4; border: 1px solid #F3DDB6; } .verdict b { color: #8A4B12; font-size: 14px; display: block; } .verdict span { color: #6B4A1E; font-size: 12.5px; }
+.srow { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid #F0EDE6; } .srow .n { flex: 1 1 auto; font-weight: 500; } .srow .rk { width: 14px; color: #918D7C; font-size: 11.5px; } .srow b { font-variant-numeric: tabular-nums; }
+.srow.me { background: #F5FAF2; } .srow.me .n { font-weight: 700; }
+.two { display: grid; grid-template-columns: 1fr 520px; gap: 30px; margin-top: 30px; align-items: start; }
+.pop { background: #fff; border-radius: 16px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); overflow: hidden; }
+.pop .ph { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid #F0EDE6; }
+.pop .ph b { font-size: 16px; flex: 1 1 auto; } .pop .ph .x { color: #918D7C; font-size: 20px; }
+.pop .pb { padding: 16px 20px; }
+.big3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.big3 div { background: #FAF9F5; border-radius: 10px; padding: 10px 12px; } .big3 span { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; } .big3 b { font-size: 18px; }
+.big3 div.hi { background: #E4F1F6; } .big3 div.hi b { color: #1F5E78; }
+.kv { display: grid; grid-template-columns: 150px 1fr; gap: 7px 10px; font-size: 12.5px; } .kv span { color: #6E6B5C; }
+.facts { background: #fff; border-radius: 14px; padding: 16px 18px; } .facts h4 { margin: 0 0 8px; font-size: 13.5px; } .facts ul { margin: 0; padding-left: 18px; color: #45433A; } .facts li { margin: 5px 0; }
+</style>
+</head>
+<body>
+
+<p class="tag">Repricer tab with the three additions</p>
+<p class="why">1) an "Incentive price" column from the Incentive page next to Max · 2) the Market scan in a panel on the right when you click a row · 3) a clickable Funded badge</p>
+<div class="win">
+  <div class="tabs"><b>Walmart Listing Browser</b><span class="tab">Incentive price list</span><span class="tab">Market</span><span class="tab on">Repricer</span><span class="right">IMRAN BUY BOX 2: 198 items imported 10:43 PM · last market scan 6:29 PM</span></div>
+  <div class="bar"><span class="search">Search SKU or strategy…</span><span class="chip on">All <i>231</i></span><span class="chip">On a strategy <i>198</i></span><span class="chip">No strategy <i>33</i></span><span class="chip">Losing <i>79</i></span><span class="chip">Walmart-funded <i>11</i></span><span class="chip">Max ≠ incentive <i>14</i></span>
+    <span style="margin-left:auto;display:flex;gap:8px"><span class="btn">Add items</span><span class="btn">Refresh prices</span><span class="btn p">Import from Seller Center</span></span></div>
+  <div class="body">
+    <table>
+      <tr><th>SKU</th><th>Strategy</th><th class="num">Min</th><th class="num">Max</th><th class="num">Incentive price<small>from the Incentive page</small></th><th class="num">Price now</th><th>Buy box<small>from the last market scan</small></th></tr>
+      <tr><td class="sku">X133-64GB-SILVER-1</td><td><span class="sel-in">IMRAN BUY BOX 2</span></td><td class="num"><span class="in">129.99</span></td><td class="num"><span class="in">139.99</span></td><td class="num inc">$139.99</td><td class="num"><b>$139.99</b></td><td><span class="pill you">You</span> $139.99 <span class="muted">#1 of 4</span></td></tr>
+      <tr class="sel"><td class="sku">X133-64GB-GRAY-1<span class="pill wf">Funded ›</span></td><td><span class="sel-in">IMRAN BUY BOX 2</span></td><td class="num"><span class="in">129.99</span></td><td class="num"><span class="in">134.99</span></td><td class="num inc">$134.99</td><td class="num"><b>$134.99</b></td><td><span class="pill lost">Lost</span> $129.90 <span class="muted">Lifeline786 · #3 of 7</span></td></tr>
+      <tr><td class="sku">X133-128GB-GRAY</td><td><span class="sel-in">IMRAN BUY BOX 2</span></td><td class="num"><span class="in">209.00</span></td><td class="num"><span class="in">229.99</span><span class="note">above incentive</span></td><td class="num inc warn">$219.99</td><td class="num"><b>$199.00</b></td><td><span class="pill you">You</span> $199.00</td></tr>
+      <tr><td class="sku">S26-ULTRA-512GB-BLUE-1<span class="pill wf">Funded ›</span></td><td><span class="sel-in">IMRAN BUY BOX 2</span></td><td class="num"><span class="in">1,076.00</span></td><td class="num"><span class="in">1,159.99</span></td><td class="num inc">$1,159.99</td><td class="num"><b>$1,159.99</b></td><td><span class="pill you">You</span> $1,076.89 <span class="muted">#1 of 3</span></td></tr>
+      <tr><td class="sku">X135-64GB-GRAY-LTE</td><td><span class="sel-in" style="color:#918D7C;font-weight:500">No strategy</span></td><td class="num"><span class="in"></span></td><td class="num"><span class="in"></span></td><td class="num inc">$156.69</td><td class="num"><b>$146.69</b></td><td><span class="pill lost">Lost</span> $134.99 <span class="muted">The Sahara Global</span></td></tr>
+    </table>
+    <div class="side">
+      <div class="card">
+        <div class="head"><b style="font-family:'Geist Mono',monospace;font-size:15px">X133-64GB-GRAY-1</b><div class="muted">Market scan · read Nov 26, 11:22 PM</div></div>
+        <div class="verdict"><b>Losing the buy box by $5.09</b><span>Lifeline786 holds it at $129.90. You are #3 of 7 at $134.99. Your min is $129.99, so the repricer can't reach it.</span></div>
+        <div class="srow"><span class="rk">1</span><span class="n">Lifeline786</span><span class="pill bb">Buy box</span><b>$129.90</b></div>
+        <div class="srow"><span class="rk">2</span><span class="n">Elec Store SM</span><b>$130.00</b></div>
+        <div class="srow me"><span class="rk">3</span><span class="n">HotDeals</span><span class="pill you">You</span><b>$134.99</b></div>
+        <div class="srow"><span class="rk">4</span><span class="n">Virtual Depot</span><b>$136.94</b></div>
+        <div class="srow"><span class="rk">5</span><span class="n muted">3 more sellers…</span></div>
+      </div>
+      <span class="btn small">See the screenshot</span> <span class="btn small">Re-check this listing</span>
+    </div>
+  </div>
+</div>
+
+<div class="two">
+  <div>
+    <p class="tag">What each part is built from</p>
+    <p class="why">So you know what's certain and what depends on Walmart.</p>
+    <div class="facts">
+      <h4>Incentive price column</h4>
+      <ul><li>The "During Incentive" price from your Incentive page, for the same SKU. Always available.</li><li>A small flag when your repricer Max is above it, plus a filter chip for those rows.</li></ul>
+      <h4 style="margin-top:14px">Market scan panel</h4>
+      <ul><li>The same sellers list, rank and verdict the Market tab shows, from the last scan. Nothing new is read.</li><li>One extra line the Market tab can't say: whether your Min is what's stopping the repricer from reaching the buy box.</li></ul>
+      <h4 style="margin-top:14px">Funded badge and pop-up</h4>
+      <ul><li>Which items are funded, their status and current price: certain (already working, 11 items).</li><li>"Customer pays", "Walmart covers", and the dates: only if Walmart sends them. Its docs disagree on this, and I haven't seen your account's answer yet.</li></ul>
+    </div>
+  </div>
+  <div>
+    <p class="tag">The pop-up when you click a Funded badge</p>
+    <p class="why">Example numbers. The three boxes appear only if Walmart reports them.</p>
+    <div class="pop">
+      <div class="ph"><span class="pill wf" style="margin:0;cursor:default">Walmart-funded</span><b style="font-family:'Geist Mono',monospace;font-size:14px">X133-64GB-GRAY-1</b><span class="x">×</span></div>
+      <div class="pb">
+        <div class="big3"><div><span>Your price</span><b>$134.99</b></div><div class="hi"><span>Customer pays</span><b>$131.49</b></div><div class="hi"><span>Walmart covers</span><b>$3.50</b></div></div>
+        <div class="kv">
+          <span>Status</span><b>In effect (enrolled automatically)</b>
+          <span>Running</span><b>Nov 20 – Dec 3</b>
+          <span>You are paid</span><b>Your full $134.99 per unit</b>
+          <span>Repricer on this item</span><b>IMRAN BUY BOX 2 · max $134.99</b>
+          <span>Incentive price (your sheet)</span><b>$134.99</b>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
