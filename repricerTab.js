@@ -113,7 +113,7 @@ function rHint(sku, tr) {
   was(".w-err", c?.invalid || "");
 }
 function renderRepricerTab() {
-  if (!inRepricer()) return;
+  if (!inRepricer()) { rpSync(); return; } // the Market tab shows the same settings, one listing at a time
   const tb = $("rTbody");
   tb.innerHTML = "";
   const shown = rRowsShown();
@@ -182,6 +182,7 @@ function renderRTray() {
     : "";
   note.className = "r-notice" + (html ? "" : " hidden") + (rFlow ? " busy" : rResult ? ` ${rResult.kind}` : rpr.sendsOff ? " info" : rMoved.length ? " bad" : "");
   if (note.dataset.html !== html) { note.innerHTML = html; note.dataset.html = html; }
+  if (!inRepricer()) rpSync();
 }
 setInterval(() => { if (inRepricer()) renderRTray(); }, 1000);
 $("rNotice").addEventListener("click", (e) => {
@@ -273,7 +274,7 @@ $("rFillGo").addEventListener("click", () => {
 // ---- reading from Walmart ----------------------------------------------------------------------
 window.api.onRepricerProgress?.(({ done, total, slowed }) => {
   rBusy = `Reading from Walmart: ${done} of ${total} SKUs${slowed ? " · Walmart asked to slow down, so this takes a few minutes" : ""}`;
-  if (inRepricer()) $("rLast").textContent = rBusy;
+  if (inRepricer()) $("rLast").textContent = rBusy; else rpSync();
 });
 // A sent change that now shows in Walmart's settings is done: the edit has become the fact.
 function rReconcile() {
@@ -396,7 +397,7 @@ async function rFollow({ test, feedId, skus, now }) {
   if (rFlow) return;
   const T = rTiming();
   rFlow = { test, feedId, skus, text: "" };
-  const say = (t) => { if (rFlow) rFlow.text = t; if (inRepricer()) renderRTray(); };
+  const say = (t) => { if (rFlow) rFlow.text = t; renderRTray(); };
   let feed = null;
   try {
     if (!now) {
@@ -522,5 +523,5 @@ window.addEventListener("keydown", (e) => {
 // ---- start -------------------------------------------------------------------------------------------
 (async () => {
   try { rSetState(await window.api.repricerGet()); } catch { /* nothing stored */ }
-  if (inRepricer()) renderRepricerTab();
+  if (inRepricer()) renderRepricerTab(); else if (inMarket()) renderMarket();
 })();
