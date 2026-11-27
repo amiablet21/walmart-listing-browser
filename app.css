@@ -512,7 +512,17 @@ body.repricer-mode #repricer { display: flex; flex: 1 1 auto; flex-direction: co
 .r-notice.bad { background: #FCEDEA; border-color: #F0C9C2; color: #8A2A1E; }
 .r-notice.busy { background: #EEF1FA; border-color: #D5DBF0; color: #33407A; }
 .r-notice.hidden, .r-tray.hidden, .r-pick.hidden { display: none; }
-.r-fill { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #45433A; }
+.r-toolbar .m-search input { width: 240px; }
+.r-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.r-toolbar .r-actions button { display: inline-flex; align-items: center; gap: 7px; }
+.r-toolbar .r-actions button.r-icon { padding: 7px 9px; color: #6E6B5C; }
+.r-fill { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: #45433A; padding: 9px 14px; border-radius: 12px; background: #fff; border: 1px solid #E9E4D7; }
+.r-fill > b { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; font-weight: 600; }
+.r-fill-sep { width: 1px; height: 18px; background: #E9E4D7; }
+.r-fill #rFillGo { margin-left: auto; }
+.r-add-all { display: block; width: 100%; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 9px; border: 1px solid #4C5B9E; background: #4C5B9E; color: #fff; padding: 9px 12px; }
+.r-add-all:hover { background: #3D4A85; }
+.r-or { margin: 12px 0 6px; font-size: 12px; color: #6E6B5C; }
 .r-fill label { display: inline-flex; align-items: center; gap: 6px; }
 .r-fill input[type="text"] { font: inherit; font-size: 12.5px; border: 1px solid #D9D2C1; border-radius: 7px; padding: 5px 8px; background: #fff; width: 170px; }
 .r-fill input.r-pct { width: 46px; text-align: right; }

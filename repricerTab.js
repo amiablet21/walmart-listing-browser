@@ -224,6 +224,7 @@ function rAddSkus(skus) {
   return added;
 }
 $("rAddAll").addEventListener("click", () => {
+  $("rAddModal").classList.add("hidden");
   const n = rAddSkus(items.map((it) => it.sku).filter((s) => String(s ?? "").trim()));
   rResult = { kind: "info", html: n ? `Added ${n} SKU${n === 1 ? "" : "s"} from the Incentive price list.${keysReady() ? "" : " Add your Walmart API keys (Market → Scan settings) to read their repricer settings."}` : "Every SKU on the Incentive price list is already here." };
   renderRTray();

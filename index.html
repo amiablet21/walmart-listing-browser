@@ -388,11 +388,6 @@
       </div>
     </div>
     <div class="r-toolbar">
-      <button id="rAddAll" class="primary" title="Bring in every SKU from the Incentive price list">Add all from Incentive list</button>
-      <button id="rAdd" title="Add SKUs by typing or pasting them">Add items…</button>
-      <button id="rImport" title="Read a strategy's real settings (min, max, status) from the file Seller Center lets you download">Import from Seller Center…</button>
-      <button id="rRefresh" title="Read each item's current price from Walmart">Refresh prices</button>
-      <button id="rLogs" title="Open the folder with this tab's log (repricer-log.jsonl), Walmart's last raw answer (repricer-debug.json) and the backups">Log files</button>
       <span class="m-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="rSearch" type="search" placeholder="Search SKU or strategy…" aria-label="Search the repricer table" />
@@ -404,13 +399,29 @@
         <button class="m-chip" data-f="wf">Walmart-funded<span class="n"></span></button>
         <button class="m-chip" data-f="changed">Changed<span class="n"></span></button>
       </span>
+      <span class="r-actions">
+        <button id="rAdd" title="Add SKUs: everything on the Incentive price list, or your own list">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add items
+        </button>
+        <button id="rRefresh" title="Read each item's current price from Walmart">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>Refresh prices
+        </button>
+        <button id="rImport" class="primary" title="Read a strategy's real settings (min, max, status) from the file Seller Center lets you download">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>Import from Seller Center
+        </button>
+        <button id="rLogs" class="r-icon" title="Log files: this tab's log, Walmart's last raw answer and the backups" aria-label="Log files">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
+        </button>
+      </span>
     </div>
     <div class="r-body">
       <div id="rNotice" class="r-notice hidden"></div>
       <div class="r-fill">
-        <span>Fill the rows shown:</span>
+        <b>Bulk edit</b>
         <label>Strategy <input id="rFillStrategy" type="text" list="rStrategies" placeholder="leave as is" /></label>
+        <span class="r-fill-sep"></span>
         <label class="r-check"><input id="rFillMax" type="checkbox" /> Max = Incentive price</label>
+        <span class="r-fill-sep"></span>
         <label>Min = Max − <input id="rFillPct" type="text" inputmode="decimal" placeholder="—" class="r-pct" /> %</label>
         <button id="rFillGo" type="button"><span id="rFillN">Apply</span></button>
       </div>
@@ -443,9 +454,13 @@
   <!-- Repricer: add SKUs by hand -->
   <div id="rAddModal" class="modal-overlay hidden">
     <div class="modal set-card" role="dialog" aria-labelledby="rAddTitle">
-      <div class="set-head"><h2 id="rAddTitle">Add items</h2><p>One SKU per line, exactly as it is in Seller Center.</p></div>
-      <div class="r-pad"><textarea id="rAddText" rows="8" spellcheck="false" aria-label="SKUs to add"></textarea></div>
-      <div class="set-foot"><button id="rAddCancel" class="set-ghost" type="button">Cancel</button><button id="rAddOk" class="primary" type="button">Add</button></div>
+      <div class="set-head"><h2 id="rAddTitle">Add items</h2><p>Bring in everything from your Incentive price list, or paste your own SKUs.</p></div>
+      <div class="r-pad">
+        <button id="rAddAll" class="r-add-all" type="button">Add every SKU from the Incentive price list</button>
+        <div class="r-or">or paste SKUs, one per line, exactly as they are in Seller Center</div>
+        <textarea id="rAddText" rows="7" spellcheck="false" aria-label="SKUs to add"></textarea>
+      </div>
+      <div class="set-foot"><button id="rAddCancel" class="set-ghost" type="button">Cancel</button><button id="rAddOk" class="primary" type="button">Add pasted SKUs</button></div>
     </div>
   </div>
 
