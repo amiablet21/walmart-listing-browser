@@ -1282,6 +1282,10 @@ function loadRpr() {
 function saveRpr(d) { try { fs.writeFileSync(rprFile, JSON.stringify(d)); } catch (e) { console.error("Failed to save repricer state:", e); } return d; }
 const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs,
   test: d.test || null, sends: (d.sends || []).slice(-10) });
+// One line per thing done with Walmart on this tab (reads, uploads, feed checks), in repricer-log.jsonl.
+function rprLog(entry) {
+  try { fs.appendFileSync(path.join(app.getPath("userData"), "repricer-log.jsonl"), JSON.stringify({ at: new Date().toISOString(), version: app.getVersion(), ...entry }) + "\n"); } catch { /* best effort */ }
+}
 let rprReading = null;
 // Read the SKUs' settings from Walmart and merge them into what is stored.
 function rprRead(skus) {
@@ -1290,9 +1294,12 @@ function rprRead(skus) {
     try {
       const list = [...new Set((Array.isArray(skus) ? skus : []).map((x) => String(x ?? "").trim()).filter(Boolean))].slice(0, 5000);
       if (!list.length) return { ok: false, error: "No SKUs to read." };
-      const { bySku, missing } = await makeClient().repricerState(list, (done, total, slowed) => {
+      const { bySku, missing, raw, requests } = await makeClient().repricerState(list, (done, total, slowed) => {
         try { win?.webContents.send("rpr:progress", { done, total, slowed }); } catch { /* window gone */ }
       });
+      // what was asked and the first thing Walmart answered, for checking the reader against the real thing
+      try { fs.writeFileSync(path.join(app.getPath("userData"), "repricer-debug.json"), JSON.stringify({ at: new Date().toISOString(), version: app.getVersion(), asked: list.length, found: Object.keys(bySku).length, missing: missing.length, requests, first: raw }, null, 2)); } catch { /* best effort */ }
+      rprLog({ read: true, asked: list.length, found: Object.keys(bySku).length, missing: missing.length, requests });
       const d = loadRpr();
       const at = Date.now();
       for (const [sku, v] of Object.entries(bySku)) d.state[sku] = { ...v, at };
@@ -1301,6 +1308,7 @@ function rprRead(skus) {
       saveRpr(d);
       return { ok: true, read: Object.keys(bySku).length, missing, ...rprPublic(d) };
     } catch (e) {
+      rprLog({ read: true, error: e.message || String(e), status: e.status || 0 });
       return { ok: false, error: e.message || String(e), ...rprPublic() };
     } finally { rprReading = null; }
   })();
@@ -1353,6 +1361,7 @@ async function rprSend(items, opts = {}) {
     try { res = await makeClient().sendRepricerFeed(checked.items); }
     catch (e) {
       const entry = { at: Date.now(), items: checked.items, error: e.message || String(e), status: e.status || 0 };
+      rprLog({ sent: false, items: checked.items, error: entry.error, status: entry.status });
       d.sends = [...(d.sends || []), entry].slice(-50);
       if (e.status === 429) d.lastSendAt = Date.now(); // Walmart counted it: wait the full interval
       saveRpr(d);
@@ -1363,7 +1372,7 @@ async function rprSend(items, opts = {}) {
     d.sends = [...(d.sends || []), entry].slice(-50);
     if (opts.test) d.test = { result: "sent", at: entry.at, feedId: res.feedId, sku: checked.items[0].sku, sent: checked.items[0], before: d.state, backup };
     saveRpr(d);
-    try { fs.appendFileSync(path.join(app.getPath("userData"), "repricer-log.jsonl"), JSON.stringify({ ...entry, before: undefined }) + "\n"); } catch { /* best effort */ }
+    rprLog({ sent: true, ...entry, at: undefined, before: undefined });
     return { ok: true, feedId: res.feedId, ...rprPublic(d) };
   } finally { rprSending = false; }
 }
@@ -1373,8 +1382,9 @@ async function rprFeed(feedId) {
     const d = loadRpr();
     const entry = (d.sends || []).find((x) => x.feedId === feedId);
     if (entry) { entry.feed = { ...st, at: Date.now() }; saveRpr(d); }
+    rprLog({ feed: feedId, ...st });
     return { ok: true, ...st };
-  } catch (e) { return { ok: false, error: e.message || String(e), status: e.status || 0 }; }
+  } catch (e) { rprLog({ feed: feedId, error: e.message || String(e), status: e.status || 0 }); return { ok: false, error: e.message || String(e), status: e.status || 0 }; }
 }
 // The window reports how the one-item test came out (it does the comparing).
 function rprSetTest(patch) {
@@ -1843,7 +1853,7 @@ app.whenReady().then(() => {
   ipcMain.handle("rpr:send", (_e, items, opts) => rprSend(items, { test: !!opts?.test, restore: !!opts?.restore }));
   ipcMain.handle("rpr:feed", (_e, feedId) => rprFeed(feedId));
   ipcMain.handle("rpr:setTest", (_e, patch) => rprSetTest(patch));
-  ipcMain.handle("rpr:showFiles", () => shell.openPath(app.getPath("userData")));
+  ipcMain.handle("rpr:showFiles", () => { const f = path.join(app.getPath("userData"), "repricer-debug.json"); if (fs.existsSync(f)) shell.showItemInFolder(f); else shell.openPath(app.getPath("userData")); return true; });
   ipcMain.handle("inc:get", () => ({ ...loadIncentives(), running: !!incRunning }));
   ipcMain.handle("inc:refresh", () => refreshIncentives());
   ipcMain.handle("bbx:get", () => ({ settings: publicBbx() }));

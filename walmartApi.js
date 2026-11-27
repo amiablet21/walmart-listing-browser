@@ -140,7 +140,7 @@ class WalmartClient {
   async testConnection() {
     await this.getToken(true);
     const body = await this.call("POST", "/v3/price/getPricingInsights", { pageNumber: 0 });
-    return { ok: true, host: this.host, items: num(body?.pageContext?.totalCount) };
+    return { ok: true, host: this.host, items: insightsOf(body).total };
   }
 
   // Pricing Insights for the given SKUs → { bySku: { SKU: insight }, missing: [SKU] }.
@@ -157,12 +157,12 @@ class WalmartClient {
           pageNumber: page,
           searchCriteria: { searchField: "SKU", searchValue: batch },
         });
-        const list = Array.isArray(body?.pricingInsightsResponseList) ? body.pricingInsightsResponseList : [];
-        for (const row of list) {
+        const got = insightsOf(body);
+        for (const row of got.list) {
           const sku = String(row?.sku ?? "").trim();
           if (sku) bySku[sku] = normalizeInsight(row);
         }
-        pages = Number(body?.pageContext?.totalPages) || 1;
+        pages = got.pages;
       }
       done += batch.length;
       if (typeof onProgress === "function") onProgress(done, wanted.length);
@@ -178,7 +178,7 @@ class WalmartClient {
   async repricerState(skus, onProgress) {
     const wanted = [...new Set((skus || []).map((s) => String(s ?? "").trim()).filter(Boolean))];
     const bySku = {};
-    let done = 0, pace = 0, requests = 0;
+    let done = 0, pace = 0, requests = 0, raw = null;
     for (let i = 0; i < wanted.length; i += SKUS_PER_REQUEST) {
       const batch = wanted.slice(i, i + SKUS_PER_REQUEST);
       for (let page = 0, pages = 1; page < pages && page < 50; page++) {
@@ -193,20 +193,23 @@ class WalmartClient {
             await sleep(this.insightsPaceMs);
           }
         }
-        const list = Array.isArray(body?.pricingInsightsResponseList) ? body.pricingInsightsResponseList : [];
-        for (const row of list) {
-          const sku = String(row?.sku ?? "").trim();
-          if (!sku) continue;
+        const got = insightsOf(body);
+        if (!raw) raw = { request: { pageNumber: page, searchCriteria: { searchField: "SKU", searchValue: batch } }, response: trimInsights(body), rowsFound: got.list.length };
+        for (const row of got.list) {
+          const back = String(row?.sku ?? "").trim();
+          if (!back) continue;
+          // filed under the SKU as it was asked for (Walmart may answer in another letter case)
+          const sku = batch.find((k) => k.toLowerCase() === back.toLowerCase()) || back;
           const n = normalizeInsight(row);
           bySku[sku] = { sku, strategy: n.repricerStrategy ? String(n.repricerStrategy).trim() : "", min: n.repricerMin, max: n.repricerMax, price: n.currentPrice,
             status: n.repricerStatus ?? null, buyBoxPrice: n.buyBoxPrice, inventory: n.inventory, name: n.itemName };
         }
-        pages = Number(body?.pageContext?.totalPages) || 1;
+        pages = got.pages;
       }
       done += batch.length;
       if (typeof onProgress === "function") onProgress(done, wanted.length, false);
     }
-    return { bySku, missing: wanted.filter((s) => !bySku[s]) };
+    return { bySku, missing: wanted.filter((s) => !bySku[s]), raw, requests };
   }
 
   // Put items on a strategy (with min and max), or take them off one.
@@ -361,6 +364,25 @@ function trimBody(body) {
   try {
     const copy = JSON.parse(JSON.stringify(body ?? null));
     for (const k of ["items", "incentives", "incentiveItems"]) if (Array.isArray(copy?.[k])) copy[k] = copy[k].slice(0, 5);
+    return copy;
+  } catch { return null; }
+}
+
+// The rows of a Pricing Insights answer. Walmart's API reference puts
+// pricingInsightsResponseList and pageContext at the top level; its guide's
+// sample wraps both in a "data" object. Either is read.
+function insightsOf(body) {
+  const b = body && typeof body === "object" ? body : {};
+  const at = [b, b.data, b.payload, b.data?.data].find((x) => x && Array.isArray(x.pricingInsightsResponseList)) || b.data || b;
+  const list = Array.isArray(at?.pricingInsightsResponseList) ? at.pricingInsightsResponseList : [];
+  const pc = at?.pageContext ?? b.pageContext ?? {};
+  return { list, pages: Number(pc.totalPages) || 1, total: num(pc.totalCount) };
+}
+// An answer cut down to its shape and first rows, for the debug file.
+function trimInsights(body) {
+  try {
+    const copy = JSON.parse(JSON.stringify(body ?? null));
+    for (const holder of [copy, copy?.data, copy?.payload]) if (Array.isArray(holder?.pricingInsightsResponseList)) holder.pricingInsightsResponseList = holder.pricingInsightsResponseList.slice(0, 3);
     return copy;
   } catch { return null; }
 }
