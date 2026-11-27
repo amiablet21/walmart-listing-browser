@@ -1275,19 +1275,19 @@ function refreshIncentives() {
 let rprFile = null;
 const RPR_GATE_MS = 10 * 60 * 1000;
 const rprTiming = () => ({ gateMs: RPR_GATE_MS, ...(globalThis.__wlbTestTiming || {}) }); // shortened only by the automated tests
-// Sending is switched off. On a real account Walmart's Pricing Insights
-// answers with no strategy, min or max for items that Seller Center shows on
-// a strategy, so the tab can't see what it would be changing, and the
-// one-item test has nothing to compare. It stays off until the current
-// settings can be read from somewhere that has them. (The tests turn it on.)
-const RPR_SENDS_ON = false;
-const rprSendsOn = () => RPR_SENDS_ON || !!globalThis.__wlbTestTiming?.allowSend;
+// Where the settings come from. On a real account Walmart's Pricing Insights
+// answers with a price but no strategy, min or max, even for items Seller
+// Center shows on a strategy. So the real settings come from Seller Center's
+// own download of a strategy's items (rprImportFile), and sending stays off
+// until one has been imported: without it the tab can't see what it would be
+// changing. (The automated tests can turn sending on without a file.)
+const rprSendsOn = (d = loadRpr()) => !!d.fileAt || !!globalThis.__wlbTestTiming?.allowSend;
 function loadRpr() {
   try { const d = JSON.parse(fs.readFileSync(rprFile, "utf8")); return d && typeof d === "object" ? { state: {}, sends: [], ...d } : { state: {}, sends: [] }; }
   catch { return { state: {}, sends: [] }; }
 }
 function saveRpr(d) { try { fs.writeFileSync(rprFile, JSON.stringify(d)); } catch (e) { console.error("Failed to save repricer state:", e); } return d; }
-const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs, sendsOff: !rprSendsOn(),
+const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs, sendsOff: !rprSendsOn(d), fileAt: d.fileAt || 0, fileRows: d.fileRows || 0, fileStrategy: d.fileStrategy || "",
   test: d.test || null, sends: (d.sends || []).slice(-10) });
 // One line per thing done with Walmart on this tab (reads, uploads, feed checks), in repricer-log.jsonl.
 function rprLog(entry) {
@@ -1309,8 +1309,12 @@ function rprRead(skus) {
       rprLog({ read: true, asked: list.length, found: Object.keys(bySku).length, missing: missing.length, requests });
       const d = loadRpr();
       const at = Date.now();
-      for (const [sku, v] of Object.entries(bySku)) d.state[sku] = { ...v, at };
-      for (const sku of missing) d.state[sku] = { sku, missing: true, at };
+      for (const [sku, v] of Object.entries(bySku)) {
+        // settings that came from a Seller Center download stay: the API only adds the price
+        const had = d.state[sku];
+        d.state[sku] = had?.fromFile ? { ...had, price: v.price ?? had.price, buyBoxPrice: v.buyBoxPrice, inventory: v.inventory ?? had.inventory, name: v.name ?? had.name, at } : { ...v, at };
+      }
+      for (const sku of missing) if (!d.state[sku]?.fromFile) d.state[sku] = { sku, missing: true, at };
       d.readAt = at;
       saveRpr(d);
       return { ok: true, read: Object.keys(bySku).length, missing, ...rprPublic(d) };
@@ -1344,7 +1348,7 @@ let rprSending = false;
 // opts.test: this upload is the one-item test. opts.restore: resend a backup
 // after a failed test (the one case where several items may go before a test passed).
 async function rprSend(items, opts = {}) {
-  if (!rprSendsOn()) return { ok: false, error: "Sending is switched off in this version: Walmart's lookup doesn't report your items' current strategy, minimum or maximum." };
+  if (!rprSendsOn()) return { ok: false, error: "Import the strategy's download from Seller Center first, so the app knows the current settings." };
   if (rprSending) return { ok: false, error: "An upload is already on its way." };
   const checked = rprCheckItems(items);
   if (checked.error) return { ok: false, error: checked.error };
@@ -1394,6 +1398,109 @@ async function rprFeed(feedId) {
     return { ok: true, ...st };
   } catch (e) { rprLog({ feed: feedId, error: e.message || String(e), status: e.status || 0 }); return { ok: false, error: e.message || String(e), status: e.status || 0 }; }
 }
+// Seller Center's download of one strategy's items ("Manage_Strategy_Items":
+// Item name, SKU, Current price, Repricer status, Current min price, Current
+// max price, Inventory, Item ID …). The file doesn't name the strategy, so
+// the name is given with it. Every row becomes that SKU's settings; an item
+// that was on this strategy at the last import and isn't in the file any more
+// is taken to be off it. Columns are found by their headers.
+let rprPickedFile = null;
+const moneyIn = (v) => { const m = String(v ?? "").replace(/,/g, "").match(/-?\d+(?:\.\d+)?/); return m ? Number(m[0]) : null; };
+async function rprImportFile(opts = {}) {
+  const strategy = String(opts.strategy ?? "").trim();
+  if (!strategy) return { ok: false, error: "Type the strategy's name first." };
+  let file = globalThis.__wlbTestTiming?.importFile || null; // the tests name a file instead of opening the picker
+  if (opts.again && rprPickedFile) file = rprPickedFile;     // confirming a file already picked
+  if (!file) {
+    const pick = await dialog.showOpenDialog(win, {
+      title: `The download of "${strategy}" from Seller Center`,
+      filters: [{ name: "Spreadsheets", extensions: ["xlsx", "csv"] }, { name: "All files", extensions: ["*"] }],
+      properties: ["openFile"],
+    });
+    if (pick.canceled || !pick.filePaths[0]) return { canceled: true };
+    file = pick.filePaths[0];
+  }
+  let rows;
+  try {
+    if (file.toLowerCase().endsWith(".csv")) rows = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "").replace(/\r/g, "").split("\n").filter((l) => l.trim()).map(splitCsvLine);
+    else {
+      const ExcelJS = require("exceljs");
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.readFile(file);
+      const ws = wb.worksheets.find((w) => /data/i.test(w.name)) || wb.worksheets[0];
+      rows = [];
+      ws.eachRow((row) => { const vals = []; for (let c = 1; c <= Math.min(ws.columnCount || 30, 60); c++) vals.push(cellText(row.getCell(c))); rows.push(vals); });
+    }
+  } catch (e) { return { ok: false, error: `That file couldn't be read: ${e.message || e}` }; }
+  const hi = rows.findIndex((r) => r.some((c) => /^\s*sku\s*$/i.test(String(c ?? ""))));
+  if (hi < 0) return { ok: false, error: "That file has no SKU column. Use the Download button on the strategy's page in Seller Center." };
+  const head = rows[hi].map((h) => String(h ?? "").trim().toLowerCase());
+  const col = (...res) => head.findIndex((h) => res.some((re) => re.test(h)));
+  const cSku = col(/^sku$/), cMin = col(/^current min/, /^min(imum)? price/), cMax = col(/^current max/, /^max(imum)? price/);
+  const cPrice = col(/^current price$/), cStatus = col(/^repricer status$/), cId = col(/^item id$/), cInv = col(/^inventory$/), cName = col(/^item name$/), cPromo = col(/^promotion status$/);
+  if (cMin < 0 || cMax < 0) return { ok: false, error: "That file has no “Current min price” / “Current max price” columns. Use the Download button on the strategy's page in Seller Center." };
+  const at = Date.now();
+  const found = [];
+  for (const r of rows.slice(hi + 1)) {
+    const sku = String(r[cSku] ?? "").trim();
+    if (!sku) continue;
+    found.push({ sku, strategy, min: moneyIn(r[cMin]), max: moneyIn(r[cMax]), price: cPrice >= 0 ? moneyIn(r[cPrice]) : null,
+      status: cStatus >= 0 ? String(r[cStatus] ?? "").trim() || null : null, itemId: cId >= 0 ? String(r[cId] ?? "").trim() : "",
+      inventory: cInv >= 0 ? moneyIn(r[cInv]) : null, name: cName >= 0 ? String(r[cName] ?? "").trim() || null : null,
+      promo: cPromo >= 0 ? String(r[cPromo] ?? "").trim() || null : null, fromFile: true, at });
+  }
+  if (!found.length) return { ok: false, error: "That file has the right columns but no items in it." };
+  const d = loadRpr();
+  const prevRows = d.fileStrategy && d.fileStrategy.toLowerCase() === strategy.toLowerCase() ? d.fileRows || 0 : 0;
+  // A file much shorter than the last one for this strategy is usually a
+  // download taken with the search box still filled in. Importing it would
+  // read every missing item as "taken off the strategy", so it needs a yes.
+  rprPickedFile = file;
+  if (!opts.force && prevRows >= 4 && found.length < prevRows * 0.5) return { ok: false, short: true, rows: found.length, prevRows, file: path.basename(file) };
+  const inFile = new Set(found.map((x) => x.sku.toLowerCase()));
+  // an item this strategy held at the last import and no longer does
+  for (const [sku, v] of Object.entries(d.state)) {
+    if (v?.fromFile && String(v.strategy || "").toLowerCase() === strategy.toLowerCase() && !inFile.has(sku.toLowerCase())) d.state[sku] = { ...v, strategy: "", min: null, max: null, status: null, at };
+  }
+  const keyOf = new Map(Object.keys(d.state).map((k) => [k.toLowerCase(), k]));
+  for (const x of found) {
+    const k = keyOf.get(x.sku.toLowerCase()) || x.sku;
+    d.state[k] = { ...(d.state[k] || {}), ...x, sku: k, missing: undefined };
+  }
+  d.fileAt = at; d.fileRows = found.length; d.fileStrategy = strategy; d.readAt = d.readAt || at;
+  saveRpr(d);
+  rprLog({ imported: true, strategy, rows: found.length, file: path.basename(file) });
+  return { ok: true, rows: found.length, prevRows, skus: found.map((x) => x.sku), file: path.basename(file), ...rprPublic(d) };
+}
+
+// Once the one-item test has passed, Walmart's own answer to an upload is
+// taken at its word: an item it reports as accepted gets the sent settings
+// as its current ones, so no new download is needed to see them. (Before the
+// test has passed nothing is assumed; the test itself is judged from a fresh
+// download.) An item Walmart rejected, or doesn't mention, is left as it was.
+function rprApplyFeed(feedId) {
+  const d = loadRpr();
+  const entry = (d.sends || []).find((x) => x.feedId === feedId);
+  if (!entry || entry.test || d.test?.result !== "passed" || !entry.feed) return { applied: [], ...rprPublic(d) };
+  const feed = entry.feed;
+  const byItem = new Map((feed.items || []).map((x) => [x.sku.toLowerCase(), x]));
+  const allGood = !byItem.size && feed.status === "PROCESSED" && !(feed.failed > 0) && feed.succeeded != null && feed.succeeded >= entry.items.length;
+  const keyOf = new Map(Object.keys(d.state).map((k) => [k.toLowerCase(), k]));
+  const applied = [], at = Date.now();
+  for (const it of entry.items) {
+    const st = byItem.get(it.sku.toLowerCase());
+    if (!(st ? st.ok : allGood)) continue;
+    const k = keyOf.get(it.sku.toLowerCase()) || it.sku;
+    const prev = d.state[k] || { sku: k };
+    d.state[k] = it.strategy
+      ? { ...prev, strategy: it.strategy, min: it.min, max: it.max, fromFile: true, confirmedBy: "feed", missing: undefined, at }
+      : { ...prev, strategy: "", min: null, max: null, status: null, fromFile: true, confirmedBy: "feed", at };
+    applied.push(it.sku);
+  }
+  if (applied.length) { saveRpr(d); rprLog({ appliedFromFeed: feedId, skus: applied.length }); }
+  return { applied, ...rprPublic(d) };
+}
+
 // The window reports how the one-item test came out (it does the comparing).
 function rprSetTest(patch) {
   const d = loadRpr();
@@ -1859,6 +1966,8 @@ app.whenReady().then(() => {
   ipcMain.handle("rpr:get", () => rprPublic());
   ipcMain.handle("rpr:read", (_e, skus) => rprRead(skus));
   ipcMain.handle("rpr:send", (_e, items, opts) => rprSend(items, { test: !!opts?.test, restore: !!opts?.restore }));
+  ipcMain.handle("rpr:importFile", (_e, opts) => rprImportFile(opts || {}));
+  ipcMain.handle("rpr:applyFeed", (_e, feedId) => rprApplyFeed(String(feedId ?? "")));
   ipcMain.handle("rpr:feed", (_e, feedId) => rprFeed(feedId));
   ipcMain.handle("rpr:setTest", (_e, patch) => rprSetTest(patch));
   ipcMain.handle("rpr:showFiles", () => { const f = path.join(app.getPath("userData"), "repricer-debug.json"); if (fs.existsSync(f)) shell.showItemInFolder(f); else shell.openPath(app.getPath("userData")); return true; });
