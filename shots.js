@@ -116,7 +116,35 @@ function clip(r, vw, vh) {
   const w = Math.min(vw, Math.ceil(r.x + r.w)) - x, h = Math.min(vh, Math.ceil(r.y + r.h)) - y;
   return w > 0 && h > 0 ? { x, y, width: w, height: h } : null;
 }
+// On macOS the off-screen view's own surface comes back blank (a white strip
+// with only the page's floating button on it), so the picture is asked of the
+// page's renderer instead, through the debugger. Other systems keep
+// capturePage, which is known to work there. WLB_CDP_SHOTS=1 forces this path.
+const VIA_DEBUGGER = process.platform === "darwin" || process.env.WLB_CDP_SHOTS === "1";
+async function grabViaDebugger(v, rect) {
+  const dbg = v.webContents.debugger;
+  const mine = !dbg.isAttached();
+  try {
+    if (mine) dbg.attach("1.3");
+    // the debugger's rectangle is measured from the top of the document, not of the view
+    const at = (await run(v, "({ x: window.scrollX, y: window.scrollY })")) || { x: 0, y: 0 };
+    const res = await Promise.race([
+      dbg.sendCommand("Page.captureScreenshot", { format: "png", clip: { x: rect.x + at.x, y: rect.y + at.y, width: rect.width, height: rect.height, scale: 1 } }),
+      wait(8000).then(() => null),
+    ]);
+    if (!res?.data) return null;
+    const buf = Buffer.from(res.data, "base64");
+    const px = nativeImage.createFromBuffer(buf).getSize().width; // real pixels: 2x on a Retina screen
+    const img = nativeImage.createFromBuffer(buf, { scaleFactor: Math.max(1, Math.round((px / Math.max(1, rect.width)) * 100) / 100) });
+    return img && !img.isEmpty() ? img : null;
+  } catch { return null; }
+  finally { if (mine) { try { dbg.detach(); } catch { /* already detached */ } } }
+}
 async function grab(v, rect) {
+  if (VIA_DEBUGGER && rect) {
+    const img = await grabViaDebugger(v, rect);
+    if (img) return img;
+  }
   const img = await v.webContents.capturePage(rect || undefined);
   return img && !img.isEmpty() ? img : null;
 }
