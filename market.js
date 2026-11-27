@@ -390,7 +390,7 @@ function renderMarket() {
     else if (f.it.buyBox?.noBuyBox) sub = "No buy box reported";
     else if (f.it.buyBox?.failed) { st = `<span class="m-st n">Not read</span>`; sub = "Couldn't read the page"; }
     else sub = "Not scanned yet";
-    const fund = f.wf?.status === "enrolled" ? `<span class="m-fund" title="A Walmart-funded incentive is in effect">Funded</span>` : "";
+    const fund = f.wf?.status === "enrolled" ? `<span class="m-fund" title="A Walmart-funded incentive is in effect">Walmart Funded</span>` : "";
     tr.innerHTML = `<td><div class="m-li"><div class="g"><div class="t"><b>${esc(f.it.sku || f.it.itemId)}</b>${fund}</div><div class="s">${sub}</div></div><div class="e">${st}${val}</div></div></td>`;
     tr.addEventListener("click", (e) => {
       mSelected = i;
@@ -589,7 +589,7 @@ function renderPanel() {
     : { k: "none", h: verdict.head, s: verdict.sub };
   const amzNote = !f.linked ? "no listing linked" : f.low == null ? "not read yet"
     : f.cheaper ? `${fmt(round2m(f.during - f.low))} under your price` : f.linked > 1 ? `lowest of ${f.linked} linked` : "not cheaper than you";
-  const fundBadge = wfx?.status === "enrolled" ? `<span class="m-fund">Funded</span>` : "";
+  const fundBadge = wfx?.status === "enrolled" ? `<span class="m-fund">Walmart Funded</span>` : "";
   const sellBody = f.sellers.length
     ? `<table class="d-sellers"><thead><tr><th class="k">#</th><th>Seller</th><th class="r">Price</th><th class="r">Shipping</th><th class="r">Total</th></tr></thead><tbody>${f.sellers.map((s) =>
       `<tr class="${s.mine ? "me" : ""}"><td class="k">${s.rank}</td><td title="${esc(s.shipNote || "")}">${esc(s.seller)}${s.isBB ? `<span class="d-tag">Buy box</span>` : ""}${s.mine ? `<span class="d-tag">You</span>` : ""}</td><td class="r">${fmt(s.price)}</td><td class="r sh">${s.shipping === 0 ? "Free" : s.shipping > 0 ? fmt(s.shipping) : "—"}</td><td class="r">${fmt(s.total)}</td></tr>`).join("")}</tbody></table>`
