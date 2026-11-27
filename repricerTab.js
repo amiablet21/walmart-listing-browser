@@ -414,10 +414,22 @@ async function rFollow({ test, feedId, skus, now }) {
       rFlow = null;
       const errs = rFeedErrors(feed, skus);
       const took = feed?.ok ? ` Walmart's answer: ${esc(feed.status.toLowerCase())}${feed.succeeded != null ? `, ${feed.succeeded} of ${feed.received ?? skus.length} accepted` : ""}.` : " Walmart hasn't confirmed the upload yet.";
-      if (errs.length) rResult = test ? await rJudgeTest(feed, { ok: false }, null) : rJudge(feed, { ok: false }, skus);
-      else rResult = { kind: "info", html: test
-        ? `The test change for <b>${esc(skus[0])}</b> was sent.${took} To finish the test: in Seller Center clear the search box, <b>Download</b> the strategy again, and import that file here. <button class="mini" id="rImportGo" type="button">Import…</button>`
-        : `${skus.length} change${skus.length === 1 ? "" : "s"} sent.${took} They stay marked “Sent · waiting” until your next import from Seller Center shows them.` };
+      if (test) {
+        rResult = errs.length ? await rJudgeTest(feed, { ok: false }, null)
+          : { kind: "info", html: `The test change for <b>${esc(skus[0])}</b> was sent.${took} To finish the test: in Seller Center clear the search box, <b>Download</b> the strategy again, and import that file here. <button class="mini" id="rImportGo" type="button">Import…</button>` };
+      } else {
+        // the test has passed, so what Walmart reports as accepted becomes the current settings
+        const res = await window.api.repricerApplyFeed(feedId).catch(() => null);
+        if (res) rSetState(res);
+        rReconcile();
+        for (const x of errs) { delete rSent[rKey(x.sku)]; } // a rejected change goes back to "waiting to be sent"
+        rSave();
+        const done = (res?.applied || []).length, waiting = skus.filter((k) => rSent[rKey(k)]).length;
+        rResult = errs.length
+          ? { kind: "bad", html: `${done} of ${skus.length} accepted by Walmart. Rejected: ${errs.slice(0, 4).map((x) => `<b>${esc(x.sku)}</b> — ${esc(x.error || x.state)}`).join("; ")}${errs.length > 4 ? "…" : ""}. The rejected rows still show your edit.` }
+          : waiting ? { kind: "info", html: `${skus.length} change${skus.length === 1 ? "" : "s"} sent.${took} ${done} confirmed so far; the rest are marked “Sent · waiting”. Import a fresh download from Seller Center to settle them.` }
+          : { kind: "ok", html: `Done: Walmart accepted all ${skus.length} change${skus.length === 1 ? "" : "s"}. They now show as your current settings.` };
+      }
       renderRepricerTab();
       return;
     }

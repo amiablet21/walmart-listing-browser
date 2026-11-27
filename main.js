@@ -1473,6 +1473,34 @@ async function rprImportFile(opts = {}) {
   return { ok: true, rows: found.length, prevRows, skus: found.map((x) => x.sku), file: path.basename(file), ...rprPublic(d) };
 }
 
+// Once the one-item test has passed, Walmart's own answer to an upload is
+// taken at its word: an item it reports as accepted gets the sent settings
+// as its current ones, so no new download is needed to see them. (Before the
+// test has passed nothing is assumed; the test itself is judged from a fresh
+// download.) An item Walmart rejected, or doesn't mention, is left as it was.
+function rprApplyFeed(feedId) {
+  const d = loadRpr();
+  const entry = (d.sends || []).find((x) => x.feedId === feedId);
+  if (!entry || entry.test || d.test?.result !== "passed" || !entry.feed) return { applied: [], ...rprPublic(d) };
+  const feed = entry.feed;
+  const byItem = new Map((feed.items || []).map((x) => [x.sku.toLowerCase(), x]));
+  const allGood = !byItem.size && feed.status === "PROCESSED" && !(feed.failed > 0) && feed.succeeded != null && feed.succeeded >= entry.items.length;
+  const keyOf = new Map(Object.keys(d.state).map((k) => [k.toLowerCase(), k]));
+  const applied = [], at = Date.now();
+  for (const it of entry.items) {
+    const st = byItem.get(it.sku.toLowerCase());
+    if (!(st ? st.ok : allGood)) continue;
+    const k = keyOf.get(it.sku.toLowerCase()) || it.sku;
+    const prev = d.state[k] || { sku: k };
+    d.state[k] = it.strategy
+      ? { ...prev, strategy: it.strategy, min: it.min, max: it.max, fromFile: true, confirmedBy: "feed", missing: undefined, at }
+      : { ...prev, strategy: "", min: null, max: null, status: null, fromFile: true, confirmedBy: "feed", at };
+    applied.push(it.sku);
+  }
+  if (applied.length) { saveRpr(d); rprLog({ appliedFromFeed: feedId, skus: applied.length }); }
+  return { applied, ...rprPublic(d) };
+}
+
 // The window reports how the one-item test came out (it does the comparing).
 function rprSetTest(patch) {
   const d = loadRpr();
@@ -1939,6 +1967,7 @@ app.whenReady().then(() => {
   ipcMain.handle("rpr:read", (_e, skus) => rprRead(skus));
   ipcMain.handle("rpr:send", (_e, items, opts) => rprSend(items, { test: !!opts?.test, restore: !!opts?.restore }));
   ipcMain.handle("rpr:importFile", (_e, opts) => rprImportFile(opts || {}));
+  ipcMain.handle("rpr:applyFeed", (_e, feedId) => rprApplyFeed(String(feedId ?? "")));
   ipcMain.handle("rpr:feed", (_e, feedId) => rprFeed(feedId));
   ipcMain.handle("rpr:setTest", (_e, patch) => rprSetTest(patch));
   ipcMain.handle("rpr:showFiles", () => { const f = path.join(app.getPath("userData"), "repricer-debug.json"); if (fs.existsSync(f)) shell.showItemInFolder(f); else shell.openPath(app.getPath("userData")); return true; });
