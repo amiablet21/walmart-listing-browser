@@ -8,6 +8,8 @@
 //   POST /v3/token                      → access token (cached until expiry)
 //   POST /v3/price/getPricingInsights   → per-SKU buy box / competitor / repricer data
 //   GET  /v3/price/incentives           → items with a price incentive (Walmart-funded, reduced referral fee)
+//   POST /v3/repricerFeeds              → put items on / take them off a repricer strategy, with min and max
+//   GET  /v3/feeds/{feedId}             → what became of such an upload
 //
 // Every call carries the Basic auth header plus WM_SEC.ACCESS_TOKEN, a fresh
 // WM_QOS.CORRELATION_ID GUID, and WM_SVC.NAME, as the API reference requires.
@@ -59,6 +61,7 @@ class WalmartClient {
     this.tokenExpires = 0;
     this.incentivePaceMs = 21_000;   // 3 requests a minute, with a little room
     this.incentiveRetryMs = 30_000;  // after a 429
+    this.insightsPaceMs = 31_000;    // Pricing Insights, once Walmart has asked to slow down
     if (!this.clientId || !this.clientSecret) {
       throw new WalmartApiError("Add your Walmart Client ID and Client Secret first.", 0);
     }
@@ -168,6 +171,62 @@ class WalmartClient {
     return { bySku, missing };
   }
 
+  // Each SKU's repricer settings as Walmart has them now → { bySku, missing }.
+  // Same Pricing Insights call as above, but paced for its rate limit: it
+  // starts without waiting and, the first time Walmart answers 429, switches
+  // to one request every half minute for the rest of the read.
+  async repricerState(skus, onProgress) {
+    const wanted = [...new Set((skus || []).map((s) => String(s ?? "").trim()).filter(Boolean))];
+    const bySku = {};
+    let done = 0, pace = 0, requests = 0;
+    for (let i = 0; i < wanted.length; i += SKUS_PER_REQUEST) {
+      const batch = wanted.slice(i, i + SKUS_PER_REQUEST);
+      for (let page = 0, pages = 1; page < pages && page < 50; page++) {
+        if (pace && requests > 0) await sleep(pace);
+        let body = null;
+        for (let attempt = 0; ; attempt++) {
+          try { requests++; body = await this.call("POST", "/v3/price/getPricingInsights", { pageNumber: page, searchCriteria: { searchField: "SKU", searchValue: batch } }, { retry429: false }); break; }
+          catch (e) {
+            if (e.status !== 429 || attempt >= 5) throw e;
+            pace = this.insightsPaceMs;
+            if (typeof onProgress === "function") onProgress(done, wanted.length, true);
+            await sleep(this.insightsPaceMs);
+          }
+        }
+        const list = Array.isArray(body?.pricingInsightsResponseList) ? body.pricingInsightsResponseList : [];
+        for (const row of list) {
+          const sku = String(row?.sku ?? "").trim();
+          if (!sku) continue;
+          const n = normalizeInsight(row);
+          bySku[sku] = { sku, strategy: n.repricerStrategy ? String(n.repricerStrategy).trim() : "", min: n.repricerMin, max: n.repricerMax, price: n.currentPrice,
+            status: n.repricerStatus ?? null, buyBoxPrice: n.buyBoxPrice, inventory: n.inventory, name: n.itemName };
+        }
+        pages = Number(body?.pageContext?.totalPages) || 1;
+      }
+      done += batch.length;
+      if (typeof onProgress === "function") onProgress(done, wanted.length, false);
+    }
+    return { bySku, missing: wanted.filter((s) => !bySku[s]) };
+  }
+
+  // Put items on a strategy (with min and max), or take them off one.
+  //   items: [{ sku, strategy, min, max }] — an empty strategy takes the item off
+  // Walmart takes this as an upload ("feed") it works through afterwards, and
+  // answers with a feed ID to ask about later. At most one a 10 minutes.
+  async sendRepricerFeed(items) {
+    const body = repricerFeedBody(items);
+    const res = await this.call("POST", "/v3/repricerFeeds", body, { retry429: false });
+    const feedId = res?.feedId ?? res?.feedID ?? res?.payload?.feedId ?? null;
+    if (!feedId) throw new WalmartApiError("Walmart accepted the upload but gave no feed ID to follow it with.", 200, res);
+    return { feedId: String(feedId), sent: body.Item.length };
+  }
+
+  // What became of an upload → { status, received, succeeded, failed, processing, items: [{ sku, ok, error }] }.
+  async feedStatus(feedId) {
+    const body = await this.call("GET", `/v3/feeds/${encodeURIComponent(feedId)}?includeDetails=true&limit=1000&offset=0`, null, { retry429: false });
+    return normalizeFeedStatus(body);
+  }
+
   // Items with a Walmart-funded incentive → { items: [incentive], raw: [first page of each status] }.
   //
   //   GET /v3/price/incentives?incentiveType=WALMART_FUNDED&incentiveStatus=ENROLLED|ELIGIBLE&limit=200&offset=N
@@ -208,6 +267,42 @@ class WalmartClient {
     }
     return { items, raw };
   }
+}
+
+// ---- repricer feed ---------------------------------------------------------------
+// The upload's body, exactly as Walmart's reference gives it. An item with a
+// strategy carries its min and max; an item being taken off a strategy carries
+// only its SKU ("To unassign, omit this field", says the reference of
+// repricerStrategy).
+function repricerFeedBody(items) {
+  const Item = [];
+  for (const it of items || []) {
+    const sku = String(it?.sku ?? "").trim();
+    if (!sku) continue;
+    const strategy = String(it?.strategy ?? "").trim();
+    if (!strategy) { Item.push({ Strategy: { sku } }); continue; }
+    Item.push({ Strategy: { sku, repricerStrategy: strategy, minimumSellerAllowedPrice: Number(it.min), maximumSellerAllowedPrice: Number(it.max) } });
+  }
+  return {
+    ItemFeedHeader: { processMode: "REPLACE", subset: "EXTERNAL", mart: "WALMART_US", sellingChannel: "repricerstrategy", version: "1.1", locale: "en" },
+    Item,
+  };
+}
+function normalizeFeedStatus(body) {
+  const b = body && typeof body === "object" ? body : {};
+  const raw = b.itemDetails?.itemIngestionStatus ?? b.itemDetails ?? b.items ?? [];
+  const items = (Array.isArray(raw) ? raw : []).map((r) => {
+    const errs = r?.ingestionErrors?.ingestionError ?? r?.ingestionErrors ?? r?.errors ?? [];
+    const first = (Array.isArray(errs) ? errs : [errs]).filter(Boolean)[0];
+    const state = String(r?.ingestionStatus ?? r?.status ?? "").toUpperCase();
+    return { sku: String(r?.sku ?? r?.skuId ?? "").trim(), state, ok: state === "SUCCESS",
+      error: first ? String(first.description ?? first.info ?? first.code ?? first).slice(0, 300) : null };
+  }).filter((x) => x.sku);
+  return {
+    status: String(b.feedStatus ?? b.status ?? "").toUpperCase() || "UNKNOWN",
+    received: num(b.itemsReceived), succeeded: num(b.itemsSucceeded), failed: num(b.itemsFailed), processing: num(b.itemsProcessing),
+    items,
+  };
 }
 
 // ---- price incentives ----------------------------------------------------------
@@ -295,4 +390,4 @@ function normalizeInsight(r) {
   };
 }
 
-module.exports = { WalmartClient, WalmartApiError, normalizeInsight, normalizeIncentive, incentiveList, HOSTS };
+module.exports = { WalmartClient, WalmartApiError, normalizeInsight, normalizeIncentive, incentiveList, repricerFeedBody, normalizeFeedStatus, HOSTS };

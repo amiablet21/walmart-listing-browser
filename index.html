@@ -26,6 +26,7 @@
       <nav class="app-tabs" role="tablist" aria-label="Sections">
         <button class="app-tab active" role="tab" data-tab="sheet">Incentive price list</button>
         <button class="app-tab" role="tab" data-tab="market">Market</button>
+        <button class="app-tab" role="tab" data-tab="repricer">Repricer</button>
       </nav>
       <span id="count" class="badge neutral"></span>
     </div>
@@ -284,6 +285,7 @@
         <nav class="app-tabs" role="tablist" aria-label="Sections">
           <button class="app-tab" role="tab" data-tab="sheet">Incentive price list</button>
           <button class="app-tab active" role="tab" data-tab="market">Market</button>
+          <button class="app-tab" role="tab" data-tab="repricer">Repricer</button>
         </nav>
         <span id="mLastScan" class="m-last"></span>
       </div>
@@ -362,6 +364,102 @@
       <aside id="mPanel" class="m-panel"></aside>
     </div>
   </section>
+
+  <!-- REPRICER: put items on a Walmart repricer strategy and change their min / max through the API.
+       Hidden until its tab is picked (body.repricer-mode). -->
+  <section id="repricer" aria-label="Repricer">
+    <div class="m-head">
+      <div class="brand app-head">
+        <div class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            <g transform="rotate(-12 12 12)">
+              <polygon points="5,12 10,7.8 19,7.8 19,16.2 10,16.2" fill="#fff" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+              <circle cx="9.8" cy="12" r="1.1" fill="var(--accent, #4C5B9E)"/>
+            </g>
+          </svg>
+        </div>
+        <span class="m-title">Walmart Listing Browser</span>
+        <button class="version" title="Check for updates">v—</button>
+        <nav class="app-tabs" role="tablist" aria-label="Sections">
+          <button class="app-tab" role="tab" data-tab="sheet">Incentive price list</button>
+          <button class="app-tab" role="tab" data-tab="market">Market</button>
+          <button class="app-tab active" role="tab" data-tab="repricer">Repricer</button>
+        </nav>
+        <span id="rLast" class="m-last"></span>
+      </div>
+    </div>
+    <div class="r-toolbar">
+      <button id="rAddAll" class="primary" title="Bring in every SKU from the Incentive price list">Add all from Incentive list</button>
+      <button id="rAdd" title="Add SKUs by typing or pasting them">Add items…</button>
+      <button id="rRefresh" title="Read each item's strategy, minimum, maximum and price from Walmart">Refresh from Walmart</button>
+      <span class="m-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="rSearch" type="search" placeholder="Search SKU or strategy…" aria-label="Search the repricer table" />
+      </span>
+      <span id="rFilters" class="m-filters" role="group" aria-label="Show">
+        <button class="m-chip" data-f="all">All<span class="n"></span></button>
+        <button class="m-chip" data-f="on">On a strategy<span class="n"></span></button>
+        <button class="m-chip" data-f="off">No strategy<span class="n"></span></button>
+        <button class="m-chip" data-f="wf">Walmart-funded<span class="n"></span></button>
+        <button class="m-chip" data-f="changed">Changed<span class="n"></span></button>
+      </span>
+    </div>
+    <div class="r-body">
+      <div id="rNotice" class="r-notice hidden"></div>
+      <div class="r-fill">
+        <span>Fill the rows shown:</span>
+        <label>Strategy <input id="rFillStrategy" type="text" list="rStrategies" placeholder="leave as is" /></label>
+        <label class="r-check"><input id="rFillMax" type="checkbox" /> Max = Incentive price</label>
+        <label>Min = Max − <input id="rFillPct" type="text" inputmode="decimal" placeholder="—" class="r-pct" /> %</label>
+        <button id="rFillGo" type="button"><span id="rFillN">Apply</span></button>
+      </div>
+      <div class="m-table-wrap r-table-wrap">
+        <table id="rTable">
+          <thead>
+            <tr>
+              <th>SKU</th>
+              <th>Strategy</th>
+              <th class="num">Min</th>
+              <th class="num">Max</th>
+              <th class="num">Price now</th>
+              <th class="sep">Buy box</th>
+              <th class="sep">Incentive</th>
+              <th class="sep">Repricer</th>
+            </tr>
+          </thead>
+          <tbody id="rTbody"></tbody>
+        </table>
+      </div>
+      <div id="rTray" class="r-tray hidden">
+        <div class="r-tray-text"><b id="rTrayHead"></b><span id="rTraySub"></span></div>
+        <button id="rDiscard" type="button">Discard</button>
+        <button id="rSend" class="primary" type="button">Review and send…</button>
+      </div>
+    </div>
+    <datalist id="rStrategies"></datalist>
+  </section>
+
+  <!-- Repricer: add SKUs by hand -->
+  <div id="rAddModal" class="modal-overlay hidden">
+    <div class="modal set-card" role="dialog" aria-labelledby="rAddTitle">
+      <div class="set-head"><h2 id="rAddTitle">Add items</h2><p>One SKU per line, exactly as it is in Seller Center.</p></div>
+      <div class="r-pad"><textarea id="rAddText" rows="8" spellcheck="false" aria-label="SKUs to add"></textarea></div>
+      <div class="set-foot"><button id="rAddCancel" class="set-ghost" type="button">Cancel</button><button id="rAddOk" class="primary" type="button">Add</button></div>
+    </div>
+  </div>
+
+  <!-- Repricer: review what will be sent to Walmart -->
+  <div id="rSendModal" class="modal-overlay hidden">
+    <div class="modal set-card r-send-card" role="dialog" aria-labelledby="rSendTitle">
+      <div class="set-head"><h2 id="rSendTitle">Send to Walmart</h2><p id="rSendSub"></p></div>
+      <div class="r-pad">
+        <label id="rSendPickRow" class="r-pick hidden">Which change should be the test? <select id="rSendPick"></select></label>
+        <div id="rSendList" class="r-chg-list"></div>
+        <p id="rSendErr" class="status error"></p>
+      </div>
+      <div class="set-foot"><button id="rSendCancel" class="set-ghost" type="button">Cancel</button><button id="rSendOk" class="primary" type="button">Send</button></div>
+    </div>
+  </div>
 
   <!-- Walmart seller API keys (Market scan) -->
   <div id="apiModal" class="modal-overlay hidden">
@@ -552,5 +650,6 @@
 
   <script src="renderer.js"></script>
   <script src="market.js"></script>
+  <script src="repricerTab.js"></script>
 </body>
 </html>

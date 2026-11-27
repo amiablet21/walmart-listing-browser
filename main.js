@@ -1261,6 +1261,133 @@ function refreshIncentives() {
   return incRunning;
 }
 
+// ---- Repricer tab: read and change repricer settings through the API ---------
+// The only part of the app that changes anything at Walmart, so the rules are
+// enforced here, where a slip in the window's code can't get past them:
+//   - an upload goes out only from an explicit send, never by itself
+//   - every item is checked (SKU, a strategy with min ≥ $0.01 and min ≤ max, or no strategy)
+//   - at most one upload every 10 minutes (Walmart's own limit)
+//   - until a one-item test has passed, an upload may carry one item only
+//   - what Walmart held before is saved first (repricer-backups/), and every
+//     upload is written to repricer-log.json with Walmart's answer
+// State lives in userData/repricer.json: { state: { SKU: settings }, readAt,
+// lastSendAt, test: { … }, sends: [ … ] }.
+let rprFile = null;
+const RPR_GATE_MS = 10 * 60 * 1000;
+const rprTiming = () => ({ gateMs: RPR_GATE_MS, ...(globalThis.__wlbTestTiming || {}) }); // shortened only by the automated tests
+function loadRpr() {
+  try { const d = JSON.parse(fs.readFileSync(rprFile, "utf8")); return d && typeof d === "object" ? { state: {}, sends: [], ...d } : { state: {}, sends: [] }; }
+  catch { return { state: {}, sends: [] }; }
+}
+function saveRpr(d) { try { fs.writeFileSync(rprFile, JSON.stringify(d)); } catch (e) { console.error("Failed to save repricer state:", e); } return d; }
+const rprPublic = (d = loadRpr()) => ({ state: d.state || {}, readAt: d.readAt || 0, lastSendAt: d.lastSendAt || 0, gateMs: rprTiming().gateMs,
+  test: d.test || null, sends: (d.sends || []).slice(-10) });
+let rprReading = null;
+// Read the SKUs' settings from Walmart and merge them into what is stored.
+function rprRead(skus) {
+  if (rprReading) return rprReading;
+  rprReading = (async () => {
+    try {
+      const list = [...new Set((Array.isArray(skus) ? skus : []).map((x) => String(x ?? "").trim()).filter(Boolean))].slice(0, 5000);
+      if (!list.length) return { ok: false, error: "No SKUs to read." };
+      const { bySku, missing } = await makeClient().repricerState(list, (done, total, slowed) => {
+        try { win?.webContents.send("rpr:progress", { done, total, slowed }); } catch { /* window gone */ }
+      });
+      const d = loadRpr();
+      const at = Date.now();
+      for (const [sku, v] of Object.entries(bySku)) d.state[sku] = { ...v, at };
+      for (const sku of missing) d.state[sku] = { sku, missing: true, at };
+      d.readAt = at;
+      saveRpr(d);
+      return { ok: true, read: Object.keys(bySku).length, missing, ...rprPublic(d) };
+    } catch (e) {
+      return { ok: false, error: e.message || String(e), ...rprPublic() };
+    } finally { rprReading = null; }
+  })();
+  return rprReading;
+}
+function rprCheckItems(items) {
+  const out = [], seen = new Set();
+  for (const it of Array.isArray(items) ? items : []) {
+    const sku = String(it?.sku ?? "").trim();
+    if (!sku) return { error: "A change has no SKU." };
+    if (seen.has(sku.toLowerCase())) return { error: `${sku} is in the upload twice.` };
+    seen.add(sku.toLowerCase());
+    const strategy = String(it?.strategy ?? "").trim();
+    if (!strategy) { out.push({ sku, strategy: "" }); continue; }
+    const min = Math.round(Number(it.min) * 100) / 100, max = Math.round(Number(it.max) * 100) / 100;
+    if (!(min >= 0.01)) return { error: `${sku}: the minimum price must be at least $0.01.` };
+    if (!(max >= min)) return { error: `${sku}: the maximum price must not be below the minimum.` };
+    if (strategy.length > 200) return { error: `${sku}: the strategy name is too long.` };
+    out.push({ sku, strategy, min, max });
+  }
+  if (!out.length) return { error: "There is nothing to send." };
+  if (out.length > 1000) return { error: "Send at most 1,000 items at a time (Walmart's recommendation)." };
+  return { items: out };
+}
+let rprSending = false;
+// opts.test: this upload is the one-item test. opts.restore: resend a backup
+// after a failed test (the one case where several items may go before a test passed).
+async function rprSend(items, opts = {}) {
+  if (rprSending) return { ok: false, error: "An upload is already on its way." };
+  const checked = rprCheckItems(items);
+  if (checked.error) return { ok: false, error: checked.error };
+  const d = loadRpr();
+  const wait = (d.lastSendAt || 0) + rprTiming().gateMs - Date.now();
+  if (wait > 0) return { ok: false, error: `Walmart takes one upload every 10 minutes. Next one in ${Math.ceil(wait / 60000)} min.`, waitMs: wait };
+  const tested = d.test?.result === "passed";
+  if (!tested && !opts.restore && checked.items.length !== 1) return { ok: false, error: "The first upload is a one-item test. Send one change, let the check finish, then send the rest." };
+  rprSending = true;
+  try {
+    // what Walmart held before, on disk before anything is sent
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const before = Object.fromEntries(checked.items.map((it) => [it.sku, d.state[it.sku] || null]));
+    let backup = null;
+    try {
+      const dir = path.join(app.getPath("userData"), "repricer-backups");
+      fs.mkdirSync(dir, { recursive: true });
+      backup = path.join(dir, `${stamp}.json`);
+      fs.writeFileSync(backup, JSON.stringify({ at: new Date().toISOString(), version: app.getVersion(), sending: checked.items, everythingKnownBefore: d.state }, null, 2));
+    } catch (e) { return { ok: false, error: `The backup couldn't be written, so nothing was sent: ${e.message || e}` }; }
+    let res;
+    try { res = await makeClient().sendRepricerFeed(checked.items); }
+    catch (e) {
+      const entry = { at: Date.now(), items: checked.items, error: e.message || String(e), status: e.status || 0 };
+      d.sends = [...(d.sends || []), entry].slice(-50);
+      if (e.status === 429) d.lastSendAt = Date.now(); // Walmart counted it: wait the full interval
+      saveRpr(d);
+      return { ok: false, error: entry.error, ...rprPublic(d) };
+    }
+    const entry = { at: Date.now(), feedId: res.feedId, items: checked.items, before, backup, test: !!opts.test, restore: !!opts.restore, feed: null };
+    d.lastSendAt = entry.at;
+    d.sends = [...(d.sends || []), entry].slice(-50);
+    if (opts.test) d.test = { result: "sent", at: entry.at, feedId: res.feedId, sku: checked.items[0].sku, sent: checked.items[0], before: d.state, backup };
+    saveRpr(d);
+    try { fs.appendFileSync(path.join(app.getPath("userData"), "repricer-log.jsonl"), JSON.stringify({ ...entry, before: undefined }) + "\n"); } catch { /* best effort */ }
+    return { ok: true, feedId: res.feedId, ...rprPublic(d) };
+  } finally { rprSending = false; }
+}
+async function rprFeed(feedId) {
+  try {
+    const st = await makeClient().feedStatus(String(feedId ?? ""));
+    const d = loadRpr();
+    const entry = (d.sends || []).find((x) => x.feedId === feedId);
+    if (entry) { entry.feed = { ...st, at: Date.now() }; saveRpr(d); }
+    return { ok: true, ...st };
+  } catch (e) { return { ok: false, error: e.message || String(e), status: e.status || 0 }; }
+}
+// The window reports how the one-item test came out (it does the comparing).
+function rprSetTest(patch) {
+  const d = loadRpr();
+  if (!d.test) return rprPublic(d);
+  const p = patch && typeof patch === "object" ? patch : {};
+  if (["passed", "failed", "unclear", "sent"].includes(p.result)) d.test.result = p.result;
+  if (typeof p.note === "string") d.test.note = p.note.slice(0, 2000);
+  d.test.checkedAt = Date.now();
+  saveRpr(d);
+  return rprPublic(d);
+}
+
 // Screenshots: one folder per scan, named for when it started; old scans are pruned.
 const safeScanId = (id) => (/^[0-9A-Za-z_-]{6,40}$/.test(String(id ?? "")) ? String(id) : null);
 function newScan() {
@@ -1693,6 +1820,7 @@ app.whenReady().then(() => {
   apiFile = path.join(app.getPath("userData"), "api.json");
   bbxFile = path.join(app.getPath("userData"), "buybox.json");
   incFile = path.join(app.getPath("userData"), "incentives.json");
+  rprFile = path.join(app.getPath("userData"), "repricer.json");
   const savedZoom = loadUi().paneZoom;
   if (Number.isFinite(savedZoom)) paneZoom = Math.min(1.5, Math.max(0.4, savedZoom));
 
@@ -1710,6 +1838,12 @@ app.whenReady().then(() => {
   ipcMain.handle("market:openAmazon", (_e, asin) => shell.openExternal(amazonUrl(asin)));
   ipcMain.handle("market:insights", (_e, skus) => marketInsights(skus));
   ipcMain.handle("market:importLinnworks", () => importLinnworks());
+  ipcMain.handle("rpr:get", () => rprPublic());
+  ipcMain.handle("rpr:read", (_e, skus) => rprRead(skus));
+  ipcMain.handle("rpr:send", (_e, items, opts) => rprSend(items, { test: !!opts?.test, restore: !!opts?.restore }));
+  ipcMain.handle("rpr:feed", (_e, feedId) => rprFeed(feedId));
+  ipcMain.handle("rpr:setTest", (_e, patch) => rprSetTest(patch));
+  ipcMain.handle("rpr:showFiles", () => shell.openPath(app.getPath("userData")));
   ipcMain.handle("inc:get", () => ({ ...loadIncentives(), running: !!incRunning }));
   ipcMain.handle("inc:refresh", () => refreshIncentives());
   ipcMain.handle("bbx:get", () => ({ settings: publicBbx() }));
