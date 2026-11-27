@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Market layouts</title>
+<style>
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-Regular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-SemiBold.otf") format("opentype"); font-weight: 600 700; }
+@font-face { font-family: "Geist Mono"; src: url("../../fonts/GeistMono-Regular.otf") format("opentype"); }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 30px 36px 44px; background: #5d6478; font: 13.5px/1.45 "Geist", system-ui, sans-serif; color: #101936; width: 1640px; }
+.tag { color: #fff; font-weight: 600; font-size: 16px; margin: 0 0 3px; }
+.why { color: #DCE2F2; font-size: 13px; margin: 0 0 12px; }
+.win { background: #F4F6FB; border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .3); overflow: hidden; margin-bottom: 36px; position: relative; }
+.mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.num { font-variant-numeric: tabular-nums; }
+.mut { color: #6B7693; }
+.top { display: flex; align-items: center; gap: 8px; padding: 0 24px; height: 58px; background: #fff; border-bottom: 1px solid #E3E8F2; }
+.top b.app { font-size: 15px; margin-right: 22px; }
+.top .tab { height: 58px; display: flex; align-items: center; padding: 0 12px; font-weight: 600; color: #6B7693; }
+.top .tab.on { color: #2450D8; box-shadow: inset 0 -2px 0 #2450D8; }
+.top .r { margin-left: auto; display: flex; align-items: center; gap: 12px; color: #6B7693; font-size: 12.5px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; font-weight: 600; border-radius: 9px; padding: 9px 15px; border: 1px solid #D5DCEA; background: #fff; color: #101936; white-space: nowrap; }
+.btn.p { background: #2450D8; border-color: #2450D8; color: #fff; }
+.btn.s { padding: 6px 11px; font-size: 12.5px; }
+.btn.link { border: 0; background: none; color: #2450D8; padding: 0; }
+.fund { display: inline-block; font: 600 11px "Geist", sans-serif; color: #2450D8; background: #E9EFFF; border-radius: 6px; padding: 2px 7px; margin-left: 8px; vertical-align: 1px; }
+.st { display: inline-block; font-weight: 600; font-size: 12px; border-radius: 6px; padding: 2px 8px; }
+.st.l { color: #B4321F; background: #FDECE8; } .st.w { color: #17794F; background: #E4F6EC; }
+.filters { display: flex; gap: 20px; font-weight: 600; color: #6B7693; }
+.filters span { padding: 12px 0; } .filters .on { color: #101936; box-shadow: inset 0 -2px 0 #2450D8; } .filters i { font-style: normal; font-weight: 400; margin-left: 5px; }
+.search { border: 1px solid #D5DCEA; border-radius: 9px; padding: 9px 13px; background: #fff; color: #9AA3BA; }
+label.f { display: block; font-size: 12px; font-weight: 600; color: #6B7693; margin-bottom: 5px; }
+.inp { display: block; border: 1px solid #D5DCEA; border-radius: 9px; padding: 10px 13px; background: #fff; font-weight: 600; font-size: 15px; }
+.inp.c { border-color: #2450D8; box-shadow: 0 0 0 3px #E0E8FF; }
+.card { background: #fff; border: 1px solid #E3E8F2; border-radius: 14px; }
+h4 { margin: 0; font-size: 14px; }
+
+/* ---------- 1: two panes ---------- */
+.one .cols { display: grid; grid-template-columns: 400px 1fr; }
+.one .list { background: #fff; border-right: 1px solid #E3E8F2; }
+.one .lh { padding: 16px 20px 0; border-bottom: 1px solid #E3E8F2; } .one .lh .search { margin-bottom: 4px; }
+.one .li { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid #EEF1F7; }
+.one .li.sel { background: #F0F4FF; box-shadow: inset 3px 0 0 #2450D8; }
+.one .li .g { flex: 1 1 auto; min-width: 0; } .one .li .g b { font-size: 13px; } .one .li .g div { font-size: 12.5px; color: #6B7693; margin-top: 2px; }
+.one .li .e { text-align: right; } .one .li .e b { display: block; margin-top: 3px; font-size: 13px; }
+.one .det { padding: 26px 30px 30px; }
+.one .head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; } .one .head h2 { margin: 0; font-size: 21px; flex: 1 1 auto; } .one .head h2 small { display: block; font: 400 12.5px "Geist", sans-serif; color: #6B7693; margin-top: 3px; }
+.hero { display: grid; grid-template-columns: 1.25fr 1fr 1fr 1fr; }
+.hero > div { padding: 18px 22px; border-left: 1px solid #EEF1F7; } .hero > div:first-child { border-left: 0; }
+.hero span { display: block; font-size: 12px; font-weight: 600; color: #6B7693; } .hero b { display: block; font-size: 24px; letter-spacing: -.01em; margin: 3px 0 1px; } .hero i { font-style: normal; font-size: 12.5px; color: #6B7693; }
+.hero .bad b { color: #B4321F; }
+.one .two { display: grid; grid-template-columns: 1fr 360px; gap: 18px; margin-top: 18px; align-items: start; }
+.sell .hd { display: flex; align-items: center; padding: 16px 20px 12px; } .sell .hd h4 { flex: 1 1 auto; }
+.sell table { width: 100%; border-collapse: collapse; }
+.sell th { text-align: left; font-size: 12px; font-weight: 600; color: #6B7693; padding: 8px 20px; border-top: 1px solid #EEF1F7; border-bottom: 1px solid #EEF1F7; background: #FAFBFD; }
+.sell td { padding: 12px 20px; border-bottom: 1px solid #EEF1F7; } .sell tr:last-child td { border-bottom: 0; }
+.sell .r { text-align: right; } .sell tr.me td { background: #F0F4FF; font-weight: 600; } .sell .tagb { font-size: 11.5px; font-weight: 600; color: #2450D8; margin-left: 8px; }
+.rp { padding: 18px 20px 20px; } .rp h4 { margin-bottom: 14px; } .rp .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.rp .tip { margin-top: 12px; padding: 11px 13px; border-radius: 10px; background: #F0F4FF; font-size: 12.5px; color: #26346B; }
+.rp .btn.p { width: 100%; margin-top: 14px; padding: 11px; } .rp .foot { text-align: center; font-size: 12px; color: #6B7693; margin-top: 8px; }
+.inc { margin-top: 18px; padding: 16px 20px; } .inc p { margin: 5px 0 0; color: #47527A; font-size: 13px; }
+
+/* ---------- 2: table + side panel ---------- */
+.two2 .bar { display: flex; align-items: center; gap: 20px; padding: 0 24px; background: #fff; border-bottom: 1px solid #E3E8F2; } .two2 .bar .search { margin-left: auto; width: 240px; padding: 7px 12px; }
+.two2 .wrap { padding: 20px 24px 24px; }
+.two2 table.t { width: 100%; border-collapse: collapse; background: #fff; }
+.two2 .t th { text-align: left; font-size: 12px; font-weight: 600; color: #6B7693; padding: 11px 16px; border-bottom: 1px solid #E3E8F2; background: #FAFBFD; }
+.two2 .t td { padding: 13px 16px; border-bottom: 1px solid #EEF1F7; } .two2 .t .r { text-align: right; }
+.two2 .t tr.sel td { background: #F0F4FF; } .two2 .t td.gap { color: #B4321F; font-weight: 600; }
+.two2 .tw { overflow: hidden; }
+.two2 .shade { position: absolute; inset: 58px 0 0 0; background: rgba(16, 25, 54, .28); }
+.two2 .panel { position: absolute; top: 58px; right: 0; bottom: 0; width: 520px; background: #fff; box-shadow: -14px 0 40px rgba(16, 25, 54, .18); padding: 24px 26px; }
+.two2 .panel h2 { margin: 0; font-size: 19px; } .two2 .panel .sub { color: #6B7693; font-size: 12.5px; margin: 3px 0 16px; }
+.two2 .x { position: absolute; top: 22px; right: 24px; color: #6B7693; font-size: 18px; }
+.two2 .nums { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #E3E8F2; border-radius: 12px; margin-bottom: 20px; }
+.two2 .nums div { padding: 12px 14px; border-left: 1px solid #EEF1F7; } .two2 .nums div:first-child { border-left: 0; } .two2 .nums span { display: block; font-size: 12px; font-weight: 600; color: #6B7693; } .two2 .nums b { font-size: 19px; }
+.two2 .sec { font-size: 12px; font-weight: 600; color: #6B7693; text-transform: uppercase; letter-spacing: .05em; margin: 0 0 8px; }
+.two2 .s { display: flex; padding: 9px 0; border-bottom: 1px solid #EEF1F7; } .two2 .s .k { width: 22px; color: #9AA3BA; } .two2 .s .n { flex: 1 1 auto; } .two2 .s.me { font-weight: 600; color: #2450D8; }
+.two2 .grid3 { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 10px; margin: 0 0 12px; }
+.two2 .incb { background: #F0F4FF; border-radius: 10px; padding: 11px 13px; font-size: 12.5px; color: #26346B; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+
+<p class="tag">Layout 1 · List on the left, one listing on the right</p>
+<p class="why">Top strip answers "what's happening". Underneath: the sellers on the left, your repricer settings on the right.</p>
+<div class="win one">
+  <div class="top"><b class="app">Walmart Listing Browser</b><span class="tab">Incentive list</span><span class="tab on">Market</span>
+    <div class="r"><span>Last scan 6:29 PM</span><span class="btn">Import settings</span><span class="btn p">Scan now</span></div></div>
+  <div class="cols">
+    <div class="list">
+      <div class="lh"><div class="search">Search SKU or seller</div>
+        <div class="filters"><span class="on">Losing<i>79</i></span><span>Winning<i>144</i></span><span>Funded<i>11</i></span><span>All<i>231</i></span></div></div>
+      <div class="li sel"><div class="g"><b class="mono">X133-64GB-GRAY-1</b><span class="fund">Funded</span><div>Lifeline786 has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">+$5.09</b></div></div>
+      <div class="li"><div class="g"><b class="mono">SM-X133-64GB-GREY</b><div>The Sahara Global has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">−$8.01</b></div></div>
+      <div class="li"><div class="g"><b class="mono">X135-64GB-GRAY-LTE</b><div>The Sahara Global has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">+$11.70</b></div></div>
+      <div class="li"><div class="g"><b class="mono">X135-128GB-GRAY-GLOBAL-1</b><div>Techmate Intl. has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">+$10.01</b></div></div>
+      <div class="li"><div class="g"><b class="mono">X230-128GB-SILVER-GLOBAL</b><div>Spice Mobile has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">+$10.99</b></div></div>
+      <div class="li"><div class="g"><b class="mono">S26-ULTRA-512GB-BLUE-US</b><span class="fund">Funded</span><div>CELLSTOREUSA has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">+$20.01</b></div></div>
+      <div class="li"><div class="g"><b class="mono">X230-128GB-GRAY-GLOBAL-1</b><div>Lifeline786 has the buy box</div></div><div class="e"><span class="st l">Losing</span><b class="num">+$49.99</b></div></div>
+      <div class="li"><div class="g"><b class="mono">A17-128GB-BLACK-US</b><div>You have the buy box</div></div><div class="e"><span class="st w">Winning</span><b class="num">$0.00</b></div></div>
+    </div>
+    <div class="det">
+      <div class="head"><h2 class="mono">X133-64GB-GRAY-1<span class="fund">Funded</span><small>Item 19132403534 · scanned 11:22 PM</small></h2><span class="btn s">Screenshot</span><span class="btn s">Open on Walmart</span><span class="btn s">Re-check</span></div>
+      <div class="card hero">
+        <div class="bad"><span>Status</span><b>Losing by $5.09</b><i>You are #3 of 7 sellers</i></div>
+        <div><span>Buy box</span><b class="num">$129.90</b><i>Lifeline786</i></div>
+        <div><span>Your price</span><b class="num">$134.99</b><i>at your max</i></div>
+        <div><span>Incentive price</span><b class="num">$134.99</b><i>from your Incentive list</i></div>
+      </div>
+      <div class="two">
+        <div class="card sell">
+          <div class="hd"><h4>Sellers on this listing</h4><span class="mut">7 sellers</span></div>
+          <table><tr><th style="width:44px">#</th><th>Seller</th><th class="r">Price</th><th class="r">Shipping</th><th class="r">Total</th></tr>
+            <tr><td class="mut">1</td><td>Lifeline786<span class="tagb">Buy box</span></td><td class="r num">$129.90</td><td class="r mut">Free</td><td class="r num">$129.90</td></tr>
+            <tr><td class="mut">2</td><td>Elec Store SM</td><td class="r num">$130.00</td><td class="r mut">Free</td><td class="r num">$130.00</td></tr>
+            <tr class="me"><td>3</td><td>HotDeals<span class="tagb">You</span></td><td class="r num">$134.99</td><td class="r">Free</td><td class="r num">$134.99</td></tr>
+            <tr><td class="mut">4</td><td>Virtual Depot</td><td class="r num">$136.94</td><td class="r mut">Free</td><td class="r num">$136.94</td></tr>
+            <tr><td class="mut">5</td><td>Spice Mobile</td><td class="r num">$137.00</td><td class="r mut">$3.99</td><td class="r num">$140.99</td></tr>
+            <tr><td></td><td><span class="btn link">Show 2 more</span></td><td></td><td></td><td></td></tr></table>
+        </div>
+        <div>
+          <div class="card rp"><h4>Repricer</h4>
+            <label class="f">Strategy</label><span class="inp" style="font-size:14px">IMRAN BUY BOX 2</span>
+            <div class="row2"><div><label class="f">Minimum</label><span class="inp c num">$129.90</span></div><div><label class="f">Maximum</label><span class="inp num">$134.99</span></div></div>
+            <div class="tip">The buy box is 9¢ under your old minimum of $129.99. <span class="btn link">Match buy box</span></div>
+            <span class="btn p">Push to Walmart</span><div class="foot">Minimum $129.99 → $129.90</div></div>
+          <div class="card inc"><h4>Walmart-funded incentive<span class="fund">Active</span></h4><p>Walmart covers part of the price on this item. You are still paid your full price.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="tag">Layout 2 · One big table, details slide in from the right</p>
+<p class="why">Everything in one sortable table. Click a row and a panel slides over with the sellers and the repricer settings.</p>
+<div class="win two2" style="height:720px">
+  <div class="top"><b class="app">Walmart Listing Browser</b><span class="tab">Incentive list</span><span class="tab on">Market</span>
+    <div class="r"><span>Last scan 6:29 PM</span><span class="btn">Import settings</span><span class="btn p">Scan now</span></div></div>
+  <div class="bar"><div class="filters"><span class="on">Losing<i>79</i></span><span>Winning<i>144</i></span><span>Funded<i>11</i></span><span>All<i>231</i></span></div><div class="search">Search SKU or seller</div></div>
+  <div class="wrap"><div class="card tw"><table class="t">
+    <tr><th>SKU</th><th>Status</th><th>Buy box seller</th><th class="r">Buy box</th><th class="r">Your price</th><th class="r">Gap</th><th>Strategy</th><th class="r">Min</th><th class="r">Max</th></tr>
+    <tr class="sel"><td class="mono"><b>X133-64GB-GRAY-1</b><span class="fund">Funded</span></td><td><span class="st l">Losing</span></td><td>Lifeline786</td><td class="r num">$129.90</td><td class="r num">$134.99</td><td class="r num gap">+$5.09</td><td>IMRAN BUY BOX 2</td><td class="r num">$129.99</td><td class="r num">$134.99</td></tr>
+    <tr><td class="mono"><b>SM-X133-64GB-GREY</b></td><td><span class="st l">Losing</span></td><td>The Sahara Global</td><td class="r num">$129.00</td><td class="r num">$120.99</td><td class="r num gap">−$8.01</td><td>IMRAN BUY BOX 2</td><td class="r num">$120.99</td><td class="r num">$134.99</td></tr>
+    <tr><td class="mono"><b>X135-64GB-GRAY-LTE</b></td><td><span class="st l">Losing</span></td><td>The Sahara Global</td><td class="r num">$134.99</td><td class="r num">$146.69</td><td class="r num gap">+$11.70</td><td class="mut">No strategy</td><td class="r mut">—</td><td class="r mut">—</td></tr>
+    <tr><td class="mono"><b>X135-128GB-GRAY-GLOBAL-1</b></td><td><span class="st l">Losing</span></td><td>Techmate Intl.</td><td class="r num">$159.98</td><td class="r num">$169.99</td><td class="r num gap">+$10.01</td><td>IMRAN BUY BOX 2</td><td class="r num">$155.00</td><td class="r num">$169.99</td></tr>
+    <tr><td class="mono"><b>X230-128GB-SILVER-GLOBAL</b></td><td><span class="st l">Losing</span></td><td>Spice Mobile</td><td class="r num">$239.00</td><td class="r num">$249.99</td><td class="r num gap">+$10.99</td><td>IMRAN BUY BOX 2</td><td class="r num">$235.00</td><td class="r num">$249.99</td></tr>
+    <tr><td class="mono"><b>S26-ULTRA-512GB-BLUE-US</b><span class="fund">Funded</span></td><td><span class="st l">Losing</span></td><td>CELLSTOREUSA</td><td class="r num">$1,229.99</td><td class="r num">$1,250.00</td><td class="r num gap">+$20.01</td><td>IMRAN BUY BOX 2</td><td class="r num">$1,199.00</td><td class="r num">$1,289.99</td></tr>
+    <tr><td class="mono"><b>X230-128GB-GRAY-GLOBAL-1</b></td><td><span class="st l">Losing</span></td><td>Lifeline786</td><td class="r num">$200.00</td><td class="r num">$249.99</td><td class="r num gap">+$49.99</td><td>IMRAN BUY BOX 2</td><td class="r num">$249.99</td><td class="r num">$259.99</td></tr>
+    <tr><td class="mono"><b>A17-128GB-BLACK-US</b></td><td><span class="st l">Losing</span></td><td>Elec Store SM</td><td class="r num">$178.00</td><td class="r num">$181.50</td><td class="r num gap">+$3.50</td><td>IMRAN BUY BOX 2</td><td class="r num">$175.00</td><td class="r num">$189.99</td></tr>
+    <tr><td class="mono"><b>A17-256GB-BLUE-US</b></td><td><span class="st l">Losing</span></td><td>Virtual Depot</td><td class="r num">$214.00</td><td class="r num">$219.99</td><td class="r num gap">+$5.99</td><td>IMRAN BUY BOX 2</td><td class="r num">$210.00</td><td class="r num">$229.99</td></tr>
+    <tr><td class="mono"><b>S25-FE-128GB-NAVY-1</b></td><td><span class="st l">Losing</span></td><td>Spice Mobile</td><td class="r num">$449.00</td><td class="r num">$455.00</td><td class="r num gap">+$6.00</td><td>IMRAN BUY BOX 2</td><td class="r num">$440.00</td><td class="r num">$469.99</td></tr>
+  </table></div></div>
+  <div class="shade"></div>
+  <div class="panel"><span class="x">✕</span>
+    <h2 class="mono">X133-64GB-GRAY-1<span class="fund">Funded</span></h2><div class="sub"><span class="st l">Losing by $5.09</span> &nbsp;You are #3 of 7 sellers</div>
+    <div class="nums"><div><span>Buy box</span><b class="num">$129.90</b></div><div><span>Your price</span><b class="num">$134.99</b></div><div><span>Incentive price</span><b class="num">$134.99</b></div></div>
+    <p class="sec">Repricer</p>
+    <div class="grid3"><div><label class="f">Strategy</label><span class="inp" style="font-size:13px">IMRAN BUY BOX 2</span></div><div><label class="f">Minimum</label><span class="inp c num">$129.90</span></div><div><label class="f">Maximum</label><span class="inp num">$134.99</span></div></div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:22px"><span class="btn p">Push to Walmart</span><span class="btn link">Match buy box</span><span class="mut" style="margin-left:auto;font-size:12.5px">was $129.99</span></div>
+    <p class="sec">Incentive</p>
+    <div class="incb"><b>Walmart-funded · active.</b> Walmart covers part of the price; you are still paid your full price.</div>
+    <p class="sec">Sellers · 7</p>
+    <div class="s"><span class="k">1</span><span class="n">Lifeline786 <span class="mut">· buy box</span></span><b class="num">$129.90</b></div>
+    <div class="s"><span class="k">2</span><span class="n">Elec Store SM</span><b class="num">$130.00</b></div>
+    <div class="s me"><span class="k">3</span><span class="n">HotDeals · you</span><b class="num">$134.99</b></div>
+    <div class="s"><span class="k">4</span><span class="n">Virtual Depot</span><b class="num">$136.94</b></div>
+    <div class="s"><span class="k">5</span><span class="n">Spice Mobile</span><b class="num">$137.00</b></div>
+  </div>
+</div>
+
+</body>
+</html>
