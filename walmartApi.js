@@ -7,6 +7,7 @@
 //
 //   POST /v3/token                      → access token (cached until expiry)
 //   POST /v3/price/getPricingInsights   → per-SKU buy box / competitor / repricer data
+//   GET  /v3/price/incentives           → items with a price incentive (Walmart-funded, reduced referral fee)
 //
 // Every call carries the Basic auth header plus WM_SEC.ACCESS_TOKEN, a fresh
 // WM_QOS.CORRELATION_ID GUID, and WM_SVC.NAME, as the API reference requires.
@@ -56,6 +57,8 @@ class WalmartClient {
     this.host = HOSTS[env === "sandbox" ? "sandbox" : "production"];
     this.token = null;
     this.tokenExpires = 0;
+    this.incentivePaceMs = 21_000;   // 3 requests a minute, with a little room
+    this.incentiveRetryMs = 30_000;  // after a 429
     if (!this.clientId || !this.clientSecret) {
       throw new WalmartApiError("Add your Walmart Client ID and Client Secret first.", 0);
     }
@@ -98,7 +101,9 @@ class WalmartClient {
   }
 
   // Authenticated call. Refreshes the token once on a 401 and backs off on 429.
-  async call(method, path, payload) {
+  // opts.retry429 false leaves a rate-limit answer to the caller (an endpoint
+  // limited to a few requests a minute needs a long wait, not quick retries).
+  async call(method, path, payload, opts = {}) {
     let refreshed = false;
     for (let attempt = 0; ; attempt++) {
       const token = await this.getToken();
@@ -117,7 +122,7 @@ class WalmartClient {
         await this.getToken(true);
         continue;
       }
-      if (res.status === 429 && attempt < MAX_RETRIES_429) {
+      if (res.status === 429 && opts.retry429 !== false && attempt < MAX_RETRIES_429) {
         const retryAfter = Number(res.headers.get("retry-after"));
         await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 1500 * 2 ** attempt);
         continue;
@@ -162,6 +167,107 @@ class WalmartClient {
     const missing = wanted.filter((s) => !bySku[s]);
     return { bySku, missing };
   }
+
+  // Items with a Walmart-funded incentive → { items: [incentive], raw: [first page of each status] }.
+  //
+  //   GET /v3/price/incentives?incentiveType=WALMART_FUNDED&incentiveStatus=ENROLLED|ELIGIBLE&limit=200&offset=N
+  //
+  // Both statuses are read: ENROLLED is the incentive in effect, ELIGIBLE one
+  // the item could get. Walmart allows 3 requests a minute on this endpoint
+  // (since Oct 27, 2026), so requests are spaced out and a 429 waits and tries
+  // the same page again. onProgress(text) reports where it is.
+  async priceIncentives(onProgress) {
+    const say = (t) => { if (typeof onProgress === "function") onProgress(t); };
+    const items = [], raw = [];
+    let requests = 0;
+    for (const status of ["ENROLLED", "ELIGIBLE"]) {
+      for (let offset = 0, page = 0; page < INCENTIVE_MAX_PAGES; page++) {
+        if (requests++ > 0) await sleep(this.incentivePaceMs);
+        say(`Reading ${status === "ENROLLED" ? "enrolled" : "eligible"} Walmart-funded items${page ? ` (page ${page + 1})` : ""}…`);
+        const query = `incentiveType=WALMART_FUNDED&incentiveStatus=${status}&limit=${INCENTIVE_PAGE}&offset=${offset}`;
+        let body = null;
+        for (let attempt = 0; ; attempt++) {
+          try { body = await this.call("GET", `/v3/price/incentives?${query}`, null, { retry429: false }); break; }
+          catch (e) {
+            if (e.status !== 429 || attempt >= 4) throw e;
+            say("Walmart asked to slow down — waiting half a minute…");
+            await sleep(this.incentiveRetryMs);
+          }
+        }
+        const list = incentiveList(body);
+        if (page === 0) raw.push({ status, body: trimBody(body) });
+        for (const row of list) {
+          const it = normalizeIncentive(row, status);
+          // the type filter is trusted only as far as the rows agree with it
+          if (it && it.type !== "REDUCED_REFERRAL") items.push(it);
+        }
+        offset += list.length;
+        const total = num(body?.pageContext?.totalCount ?? body?.totalCount);
+        if (!list.length || list.length < INCENTIVE_PAGE || (total != null && offset >= total)) break;
+      }
+    }
+    return { items, raw };
+  }
+}
+
+// ---- price incentives ----------------------------------------------------------
+// Walmart's two pages on this endpoint show two response shapes: the API
+// reference has { pageContext, items: [{ skuId, currentPrice, targetPrice,
+// incentiveStatus, startDate, expirationDate … }] }, the guide's Walmart-funded
+// sample has { incentives: [{ sku, price, incentivePrice, status,
+// incentiveStartDate, incentiveEndDate, fundingSource … }], totalCount }. Both
+// are read, field by field, so whichever Walmart sends ends up the same here.
+const INCENTIVE_PAGE = 200;       // the endpoint's maximum page size
+const INCENTIVE_MAX_PAGES = 25;   // 5,000 items per status is more than any catalog here
+function incentiveList(body) {
+  for (const k of ["items", "incentives", "incentiveItems", "payload", "data"]) {
+    const v = body?.[k];
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === "object") { const inner = incentiveList(v); if (inner.length) return inner; }
+  }
+  return Array.isArray(body) ? body : [];
+}
+// A date as Walmart sends it (epoch milliseconds as a string or number, or an
+// ISO date) → epoch milliseconds, or null.
+function incentiveDate(v) {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 0) return n < 1e11 ? n * 1000 : n; // seconds → ms
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : null;
+}
+function normalizeIncentive(r, asked) {
+  if (!r || typeof r !== "object") return null;
+  const sku = String(r.skuId ?? r.sku ?? r.sellerSku ?? "").trim();
+  const itemId = String(r.itemId ?? r.wmItemId ?? "").trim();
+  if (!sku && !itemId) return null;
+  const typeRaw = String(r.incentiveType ?? (/walmart/i.test(String(r.fundingSource ?? "")) ? "WALMART_FUNDED" : "")).toUpperCase();
+  const statusRaw = String(r.incentiveStatus ?? r.status ?? "").toUpperCase();
+  const price = num(r.currentPrice ?? r.price);
+  const incentivePrice = num(r.incentivePrice ?? r.targetPrice ?? r.priceAfterIncentive);
+  return {
+    sku, itemId,
+    type: typeRaw || "WALMART_FUNDED",
+    // what was asked for decides the label; Walmart's own word for it is kept alongside
+    status: asked === "ENROLLED" ? "enrolled" : "eligible",
+    statusRaw: statusRaw || null,
+    price,                                                            // the offer price Walmart reports
+    incentivePrice: incentivePrice != null && incentivePrice > 0 ? incentivePrice : null, // the price after the incentive, when given
+    shippingPrice: num(r.shippingPrice),
+    start: incentiveDate(r.startDate ?? r.incentiveStartDate),
+    end: incentiveDate(r.expirationDate ?? r.incentiveEndDate ?? r.endDate),
+    enrolledAt: incentiveDate(r.enrollmentDate),
+    incentiveId: r.incentiveId ?? null,
+    name: r.productName ?? null,
+  };
+}
+// The first few rows of a response, kept for checking what Walmart really sent.
+function trimBody(body) {
+  try {
+    const copy = JSON.parse(JSON.stringify(body ?? null));
+    for (const k of ["items", "incentives", "incentiveItems"]) if (Array.isArray(copy?.[k])) copy[k] = copy[k].slice(0, 5);
+    return copy;
+  } catch { return null; }
 }
 
 // Keep just the fields the sheet uses, as plain numbers/strings.
@@ -189,4 +295,4 @@ function normalizeInsight(r) {
   };
 }
 
-module.exports = { WalmartClient, WalmartApiError, normalizeInsight, HOSTS };
+module.exports = { WalmartClient, WalmartApiError, normalizeInsight, normalizeIncentive, incentiveList, HOSTS };

@@ -64,6 +64,67 @@ let apiSettings = { clientId: "", env: "production", hasSecret: false, lastScan:
 // from the listings, and the keys dialog is no longer reachable. Keys saved
 // earlier stay on disk, unused; API numbers kept from older scans are not shown.
 const apiReady = () => false;
+// Keys are saved (they are used for one thing: which listings have a Walmart-funded incentive).
+const keysReady = () => !!(apiSettings.clientId && apiSettings.hasSecret);
+
+// ---- Walmart-funded incentives -----------------------------------------------------
+// From Walmart's price-incentives API (main process). A row is matched by its
+// SKU; an incentive that names no SKU is matched by item ID. "enrolled" is an
+// incentive in effect (the Funded label); "eligible" is one the item could get.
+let wf = { at: 0, bySku: new Map(), byId: new Map(), error: null, errorAt: null, running: false, note: "" };
+function setIncentives(d) {
+  const bySku = new Map(), byId = new Map();
+  for (const x of Array.isArray(d?.items) ? d.items : []) {
+    const k = String(x.sku ?? "").trim().toLowerCase();
+    const map = k ? bySku : byId, key = k || String(x.itemId ?? "").trim();
+    if (!key) continue;
+    const have = map.get(key);
+    if (!have || (have.status !== "enrolled" && x.status === "enrolled")) map.set(key, x); // an incentive in effect wins
+  }
+  wf = { ...wf, at: d?.at || 0, bySku, byId, error: d?.error || null, errorAt: d?.errorAt || null };
+}
+const wfOf = (it) => wf.bySku.get(String(it?.sku ?? "").trim().toLowerCase()) || wf.byId.get(String(it?.itemId ?? "").trim()) || null;
+const wfLoaded = () => wf.at > 0;
+// The price after the incentive, when Walmart gives one below the offer price.
+const wfAfter = (x) => (x && x.incentivePrice > 0 && (!(x.price > 0) || x.incentivePrice < x.price - 0.005) ? x.incentivePrice : null);
+const shortDate = (t) => new Date(t).toLocaleDateString([], { month: "short", day: "numeric" });
+function wfCell(x) {
+  if (!x) return `<span class="m-muted">—</span>`;
+  if (x.status !== "enrolled") return `<span class="m-pill wf dim" title="Eligible for a Walmart-funded incentive, not in effect">Eligible</span>`;
+  const after = wfAfter(x);
+  const tip = `Walmart-funded incentive${x.start ? ` · since ${shortDate(x.start)}` : ""}${x.end ? ` · until ${shortDate(x.end)}` : ""}`;
+  return `<span class="m-pill wf" title="${esc(tip)}">Funded</span>${after ? `<b>${fmt(after)}</b>${x.price > 0 ? `<s>${fmt(x.price)}</s>` : ""}` : x.end ? `<span class="m-muted">until ${shortDate(x.end)}</span>` : ""}`;
+}
+let wfRefreshing = null;
+function refreshIncentives() {
+  if (wfRefreshing) return wfRefreshing;
+  if (!keysReady()) return Promise.resolve({ ok: false, error: "Add your Walmart API keys first." });
+  wf.running = true; wf.note = "Reading Walmart-funded items…";
+  renderIncState();
+  wfRefreshing = window.api.incentivesRefresh().catch((e) => ({ ok: false, error: String(e?.message || e) })).then((d) => {
+    wfRefreshing = null;
+    wf.running = false; wf.note = "";
+    if (d && Array.isArray(d.items)) setIncentives(d); else wf.error = d?.error || "The list couldn't be read.";
+    renderIncState();
+    renderMarket();
+    return d;
+  });
+  return wfRefreshing;
+}
+window.api.onIncentivesProgress?.((text) => { wf.note = text; renderIncState(); });
+function renderIncState() {
+  const el = $("incState");
+  if (!el) return;
+  const funded = [...wf.bySku.values(), ...wf.byId.values()].filter((x) => x.status === "enrolled").length;
+  const onList = items.filter((it) => idOf(it) && wfOf(it)?.status === "enrolled").length;
+  el.textContent = wf.running ? (wf.note || "Reading…")
+    : !keysReady() ? "Marks the listings that have a Walmart-funded incentive. Needs your Walmart API keys."
+    : wf.error ? `Couldn't read the list${wfLoaded() ? ` (showing the one from ${when(wf.at)})` : ""}: ${wf.error}`
+    : wfLoaded() ? `${funded} item${funded === 1 ? "" : "s"} with an incentive in effect, ${onList} on your price list · read ${when(wf.at)}`
+    : "Not read yet.";
+  el.classList.toggle("m-warn", !wf.running && !!wf.error);
+  $("incRefresh").disabled = wf.running || !keysReady();
+}
 
 // ---- buy box check: settings ------------------------------------------------------
 // Settings live in the main process (userData); this is the renderer's copy.
@@ -198,7 +259,7 @@ function rowFacts(i) {
   const wmMissed = !!(it.buyBox?.failed && !bb);
   const amzMissed = amzList(it).some((a) => !a.manual && a.asin && (a.failed || a.robot));
   return { it, during, bb, api, mine, lost, known, low, cheaper, sellers, wmLow, edge, linked: amzList(it).length, missed: wmMissed || amzMissed,
-    rp: rpRow, me, rank: me ? me.rank : null, oos: !!it.buyBox?.oos };
+    rp: rpRow, me, rank: me ? me.rank : null, oos: !!it.buyBox?.oos, wf: wfOf(it) };
 }
 // ---- room to raise ---------------------------------------------------------------
 // Walmart's repricer lowers a price to win the buy box but never raises it
@@ -246,6 +307,7 @@ function rowMatches(i) {
   const f = rowFacts(i);
   if (mFilter === "lost" && !f.lost) return false;
   if (mFilter === "won" && !f.mine) return false;
+  if (mFilter === "wf" && f.wf?.status !== "enrolled") return false;
   if (mFilter === "oos" && !f.it.buyBox?.oos) return false;
   if (mFilter === "raise" && !raiseFor(f)?.ok) return false;
   if (mFilter === "amz" && !f.cheaper) return false;
@@ -268,7 +330,7 @@ function renderMarket() {
   if (mSelected < 0 || !items[mSelected]) mSelected = rows[0] ?? -1;
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="5" class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
+    tr.innerHTML = `<td colspan="6" class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
     tb.appendChild(tr);
   }
   // rows in first-appearance order, grouped under their Linnworks SKU
@@ -296,6 +358,7 @@ function renderMarket() {
         `<td class="sku"><span class="m-pill lw" title="Linnworks inventory SKU">LW</span>${esc(g.lw)}</td>` +
         `<td class="m-muted">${g.all.length} Walmart SKUs</td>` +
         `<td class="num"></td>` +
+        `<td class="sep m-wf-col">${(() => { const n = facts.filter((x) => x.wf?.status === "enrolled").length; return n ? `<span class="m-pill wf">Funded</span><b>${n}</b>` : ""; })()}</td>` +
         `<td class="sep">${you ? `<span class="m-pill you">You</span><b>${you}</b>` : ""}${lost ? `${you ? " " : ""}<span class="m-pill lost">Lost</span><b>${lost}</b>` : ""}${!you && !lost ? `<span class="m-muted">Not scanned yet</span>` : ""}</td>` +
         `<td class="sep">${amz}</td>`;
       tr.addEventListener("click", (e) => {
@@ -338,6 +401,7 @@ function renderMarket() {
       `<td class="sku">${esc(f.it.sku)}</td>` +
       `<td class="mono">${esc(f.it.itemId)}</td>` +
       `<td class="num"><b>${fmt(f.during)}</b></td>` +
+      `<td class="sep m-wf-col">${wfCell(f.wf)}</td>` +
       `<td class="sep">${wm}</td>` +
       `<td class="sep">${amz}</td>`;
     tr.addEventListener("click", (e) => {
@@ -351,7 +415,12 @@ function renderMarket() {
   // the filter chips, each with how many listings it holds
   const allFacts = items.map((_, i) => i).filter((i) => idOf(items[i])).map(rowFacts);
   const filterCount = { all: allFacts.length, lost: allFacts.filter((f) => f.lost).length, won: allFacts.filter((f) => f.mine).length,
-    oos: allFacts.filter((f) => f.it.buyBox?.oos).length, missed: allFacts.filter((f) => f.missed).length };
+    oos: allFacts.filter((f) => f.it.buyBox?.oos).length, missed: allFacts.filter((f) => f.missed).length,
+    wf: allFacts.filter((f) => f.wf?.status === "enrolled").length };
+  // the Walmart-funded column and chip appear once the list has been read
+  $("mTable").classList.toggle("no-wf", !wfLoaded());
+  document.querySelector("#mFilters .m-wf-chip").classList.toggle("hidden", !wfLoaded());
+  if (mFilter === "wf" && !wfLoaded()) mFilter = "all";
   document.querySelectorAll("#mFilters .m-chip").forEach((b) => {
     b.classList.toggle("active", mFilter === b.dataset.f);
     b.querySelector(".n").textContent = ` ${filterCount[b.dataset.f]}`;
@@ -505,7 +574,11 @@ function renderPanel() {
   else if (bbx0?.robot) verdict = { kind: "none", head: "Robot check", sub: "Open the listing in the pane once to pass it, then re-check." };
   else if (bbx0?.failed) verdict = { kind: "none", head: "Couldn't read this listing", sub: bbx0.notFound ? "Walmart says the page doesn't exist — check the Item ID." : "Re-check it, or open the listing to look." };
   else verdict = { kind: "none", head: "Not scanned yet", sub: "Run the buy box check, or re-check this listing." };
-  const verdictHtml = `<div class="m-verdict ${verdict.kind}"><b>${verdict.head}</b><span>${verdict.sub}</span></div>`;
+  const wfx = f.wf;
+  const wfLine = !wfx ? "" : wfx.status === "enrolled"
+    ? `<div class="m-wf-line"><span class="m-pill wf">Walmart-funded</span>${wfAfter(wfx) ? `Customer pays <b>${fmt(wfAfter(wfx))}</b>${wfx.price > 0 ? ` instead of ${fmt(wfx.price)}` : ""}.` : "An incentive is in effect on this item."}${wfx.start ? ` Since ${shortDate(wfx.start)}.` : ""}${wfx.end ? ` Until ${shortDate(wfx.end)}.` : ""}</div>`
+    : `<div class="m-wf-line"><span class="m-pill wf dim">Eligible</span>This item can get a Walmart-funded incentive; none is in effect.</div>`;
+  const verdictHtml = `<div class="m-verdict ${verdict.kind}"><b>${verdict.head}</b><span>${verdict.sub}</span></div>${wfLine}`;
   const lw = lwOf(it);
   const sibs = lw ? groupMembers(i).filter((j) => j !== i) : [];
   const groupLine = lw
@@ -742,6 +815,7 @@ async function runMarketScan(onlyRows = null, opts = {}) {
   mNotice = "";
   mScan = { running: true, done: 0, total: 0, base: 0, current: "", currentId: "", step: "", stepN: "", stop: false, startedAt: Date.now(), auto: !!opts.auto };
   if (full && !resume) { mResume = null; localStorage.setItem("marketLastScanStart", String(Date.now())); }
+  if (full && !resume && keysReady()) refreshIncentives(); // alongside the scan, not held up by it
   renderMarket();
   const rows = (onlyRows || items.map((_, i) => i).filter(inScope)).filter((i) => idOf(items[i]));
   let ids = [...new Set(rows.map((i) => idOf(items[i])))];
@@ -901,6 +975,7 @@ function bbxExportRows() {
       sellers: sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, shippingNote: s.shipNote, total: s.total, isMe: s.mine, hasBuyBox: s.isBB })),
       screenshot: bb?.shot?.file ?? null,
       screenshotKind: bb?.shot?.kind ?? null,
+      walmartFunded: f?.wf ? { status: f.wf.status, priceAfterIncentive: wfAfter(f.wf), offerPrice: f.wf.price ?? null, start: iso(f.wf.start), end: iso(f.wf.end) } : null,
       scannedAt: iso(missed ? bb.missedAt : bb?.at),
       readStatus,
       listingUrl: itemId ? `https://www.walmart.com/ip/${itemId}` : null,
@@ -935,6 +1010,7 @@ function renderBbxModal() {
   const parts = full.split(/[\\/]/);
   $("bbxExportPath").textContent = parts.length > 4 ? "…" + (full.includes("\\") ? "\\" : "/") + parts.slice(-3).join(full.includes("\\") ? "\\" : "/") : full;
   $("bbxExportPath").title = full;
+  renderIncState();
 }
 function fillBbxForm() {
   const st = bbx.settings;
@@ -969,6 +1045,8 @@ $("bbxFolder").addEventListener("click", async () => {
   renderBbxModal();
 });
 $("bbxFolderOpen").addEventListener("click", () => window.api.bbxOpenExportFolder());
+$("incKeys").addEventListener("click", () => { closeBbxModal(); openApiModal("", false); });
+$("incRefresh").addEventListener("click", () => refreshIncentives());
 $("bbxFolderReset").addEventListener("click", async () => { bbx.settings = await window.api.bbxSave({ exportDir: "" }); renderBbxModal(); });
 (async () => {
   try {
@@ -982,8 +1060,11 @@ $("bbxFolderReset").addEventListener("click", async () => { bbx.settings = await
       if (old?.on && !bbx.settings.scheduleOn) bbx.settings = await window.api.bbxSave({ scheduleOn: true });
     }
   } catch { /* defaults */ }
+  try { setIncentives(await window.api.incentivesGet()); } catch { /* none stored */ }
   bbxLoaded = true;
   renderMarket();
+  // a list older than half an hour is read again shortly after launch
+  setTimeout(async () => { await refreshApiSettings(); if (keysReady() && Date.now() - wf.at > 30 * 60000) refreshIncentives(); }, 6000);
 })();
 
 // ---- Walmart API keys (settings dialog) ---------------------------------------------------
@@ -1010,8 +1091,8 @@ function openApiModal(message, isError) {
   msg.textContent = message || "";
   msg.className = "api-msg" + (isError ? " error" : "") + (message ? "" : " hidden");
   const state = $("apiState");
-  state.textContent = apiReady() ? (apiSettings.env === "sandbox" ? "Connected · sandbox" : "Connected") : "Not connected";
-  state.className = "api-state " + (apiReady() ? "on" : "off");
+  state.textContent = keysReady() ? (apiSettings.env === "sandbox" ? "Keys saved · sandbox" : "Keys saved") : "Not connected";
+  state.className = "api-state " + (keysReady() ? "on" : "off");
   $("apiClientId").value = apiSettings.clientId || "";
   $("apiSecret").value = "";
   $("apiSecret").type = "password";
@@ -1069,6 +1150,7 @@ $("apiSave").addEventListener("click", async () => {
   apiSettings = await window.api.saveApiSettings(v);
   closeApiModal();
   renderMarket();
+  refreshIncentives(); // new keys: read the Walmart-funded list right away
 });
 $("apiRemove").addEventListener("click", async () => {
   apiSettings = await window.api.saveApiSettings({ clear: true });
