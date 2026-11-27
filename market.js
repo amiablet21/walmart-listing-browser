@@ -596,9 +596,9 @@ function renderPanel() {
       `<tr class="${s.mine ? "me" : ""}"><td class="k">${s.rank}</td><td title="${esc(s.shipNote || "")}">${esc(s.seller)}${s.isBB ? `<span class="d-tag">Buy box</span>` : ""}${s.mine ? `<span class="d-tag">You</span>` : ""}</td><td class="r">${fmt(s.price)}</td><td class="r sh">${s.shipping === 0 ? "Free" : s.shipping > 0 ? fmt(s.shipping) : "—"}</td><td class="r">${fmt(s.total)}</td></tr>`).join("")}</tbody></table>`
     : sellersHtml;
   const incHtml = wfx?.status === "enrolled"
-    ? `<h4>Walmart-funded incentive<span class="m-fund">Active</span></h4><p>${wfAfter(wfx) ? `Customers pay <b>${fmt(wfAfter(wfx))}</b>${wfx.price > 0 ? ` instead of ${fmt(wfx.price)}` : ""}; Walmart covers the difference.` : "Walmart is covering part of the price on this item."}${wfx.start ? ` Since ${shortDate(wfx.start)}.` : ""}${wfx.end ? ` Until ${shortDate(wfx.end)}.` : ""}</p>`
-    : wfx ? `<h4>Walmart-funded incentive<span class="m-fund dim">Eligible</span></h4><p>This item can get a Walmart-funded incentive; none is in effect.</p>`
-    : `<h4>Walmart-funded incentive</h4><p class="m-muted">${wfLoaded() ? "None on this item." : keysReady() ? "Not checked yet." : "Needs your Walmart API keys (Scan settings)."}</p>`;
+    ? `<h4>Walmart-funded incentive<span class="m-fund">Active</span></h4><p>${wfAfter(wfx) ? `Customers pay <b>${fmt(wfAfter(wfx))}</b>${wfx.price > 0 ? `, not ${fmt(wfx.price)}` : ""}.` : "Walmart pays part of the price."}${wfx.end ? ` Ends ${shortDate(wfx.end)}.` : ""}</p>`
+    : wfx ? `<h4>Walmart-funded incentive<span class="m-fund dim">Eligible</span></h4><p>Can get one. None active.</p>`
+    : `<h4>Walmart-funded incentive</h4><p class="m-muted">${wfLoaded() ? "None." : keysReady() ? "Not checked yet." : "Needs API keys."}</p>`;
   p.innerHTML = `
     <div class="d-head">
       <div class="d-title"><h2>${esc(it.sku || "(no SKU)")}${fundBadge}</h2><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · read ${when(it.buyBox.at)}` : ""}</div></div>
@@ -716,8 +716,8 @@ function rpNoteHtml() {
   const unfinished = !rFlow && rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear");
   const h = rFlow ? `<span class="m-spin"></span><span>${esc(rFlow.text)}</span>`
     : rResult ? `<span>${rResult.html}</span><button class="mini" id="rResultX" type="button">Dismiss</button>`
-    : rMoved.length ? `<span>A failed test left ${rMoved.length} item${rMoved.length === 1 ? "" : "s"} changed at Walmart. Their settings from before are saved.</span><button class="mini" id="rRestore" type="button">Put them back</button>`
-    : unfinished ? `<span>The one-item test for <b>${esc(rpr.test.sku)}</b> was sent ${esc(when(rpr.test.at))}. To finish it: in Seller Center clear the search box, Download the strategy again, and import that file.</span><button class="mini" id="rImportGo" type="button">Import…</button>`
+    : rMoved.length ? `<span>Test failed: ${rMoved.length} other item${rMoved.length === 1 ? "" : "s"} changed.</span><button class="mini" id="rRestore" type="button">Put back</button>`
+    : unfinished ? `<span>Test sent. Download the strategy again and import it.</span><button class="mini" id="rImportGo" type="button">Import</button>`
     : "";
   return h ? `<div class="d-note ${rFlow ? "busy" : rResult ? rResult.kind : rMoved.length ? "bad" : "info"}">${h}</div>` : "";
 }
@@ -727,10 +727,10 @@ function renderRpCard() {
   if (!rpOn()) { box.innerHTML = `<h4>Repricer</h4><p class="m-muted">Loading…</p>`; return; }
   const sku = rpSku(), s = sku ? rState(sku) : null;
   let body;
-  if (!sku) body = `<p class="m-muted">This row has no SKU, so it can't be matched to a repricer item.</p>`;
-  else if (!rpr.fileAt) body = `<p class="m-muted">Import your strategy's download from Seller Center to see this item's strategy, minimum and maximum, and to change them from here.</p><button type="button" class="primary wide" id="mRpImportGo">Import settings…</button>`;
-  else if (s?.missing) body = `<p class="m-muted">Walmart's API has no item under this exact SKU in your account, so its repricer settings can't be changed from here.</p>`;
-  else if (!rEditable(sku)) body = `<p class="m-muted">${rBusy ? esc(rBusy) : `Not on <b>${esc(rpr.fileStrategy)}</b> as of the last import (${esc(when(rpr.fileAt))}).`}</p><button type="button" class="wide" id="mRpAdd" ${rBusy || !keysReady() ? "disabled" : ""}>Put this item on a strategy…</button>`;
+  if (!sku) body = `<p class="m-muted">No SKU on this row.</p>`;
+  else if (!rpr.fileAt) body = `<p class="m-muted">Import your strategy to see min and max.</p><button type="button" class="primary wide" id="mRpImportGo">Import</button>`;
+  else if (s?.missing) body = `<p class="m-muted">Walmart doesn't know this SKU.</p>`;
+  else if (!rEditable(sku)) body = `<p class="m-muted">${rBusy ? "Reading from Walmart…" : "Not on a strategy."}</p><button type="button" class="wide" id="mRpAdd" ${rBusy || !keysReady() ? "disabled" : ""}>Add to a strategy</button>`;
   else {
     const v = rVal(sku);
     const names = [...new Set(Object.values(rpr.state).map((x) => x?.strategy).filter(Boolean))].sort();
@@ -771,25 +771,26 @@ function renderRpFoot() {
     $("mRpMax")?.classList.toggle("c", !!rEdits[k] && maxNow !== b.max);
     let tip = "";
     if (f.bb && f.lost && String(v.strategy || "").trim() && minNow > 0) {
-      tip = f.bb.price < minNow - 0.005
-        ? `The buy box (${fmt(f.bb.price)}) is ${fmt(round2m(minNow - f.bb.price))} under your minimum, so the repricer can't follow it. <button type="button" class="linkish" id="mRpMatch">Match buy box</button>`
-        : b.min != null && f.bb.price < b.min - 0.005 ? `With this minimum the repricer can reach the buy box at ${fmt(f.bb.price)}.`
-        : `The buy box (${fmt(f.bb.price)}) is inside your range, so the repricer can follow it on its own.`;
+      if (f.bb.price < minNow - 0.005) tip = `Your min is above the buy box (${fmt(f.bb.price)}). <button type="button" class="linkish" id="mRpMatch">Match it</button>`;
     }
+    const arrow = (name, was, now) => (was != null && now != null && Math.abs(was - now) >= 0.005 ? `${name} ${fmt(was)} → ${fmt(now)}` : "");
+    const short = !c || c.invalid ? "" : !c.strategy ? "Take off strategy"
+      : [b.strategy.toLowerCase() !== c.strategy.toLowerCase() ? `Strategy → ${esc(c.strategy)}` : "", arrow("Min", b.min, c.min) || (b.min == null ? `Min ${fmt(c.min)}` : ""), arrow("Max", b.max, c.max) || (b.max == null ? `Max ${fmt(c.max)}` : "")].filter(Boolean).join(" · ");
     const { out } = rPending();
     const wait = (rpr.lastSendAt || 0) + (rpr.gateMs || 600000) - Date.now();
-    const why = !out.length ? "" : rpr.sendsOff ? "Import the strategy's download from Seller Center first."
-      : !keysReady() ? "Add your Walmart API keys first (Scan settings)."
-      : rFlow ? "An upload is being checked — wait for it to finish."
-      : wait > 0 ? `Walmart takes one upload every 10 minutes. Next one in ${Math.floor(wait / 60000)}:${String(Math.floor((wait % 60000) / 1000)).padStart(2, "0")}.`
-      : !rTested() ? "The first push is a one-item test: one change goes out, and the app checks that only that item changed." : "";
+    const why = !out.length ? "" : rpr.sendsOff ? "Import your strategy first."
+      : !keysReady() ? "Add your API keys first."
+      : rFlow ? "Checking the last push…"
+      : wait > 0 ? `Next push in ${Math.floor(wait / 60000)}:${String(Math.floor((wait % 60000) / 1000)).padStart(2, "0")}`
+      : !rTested() ? "First push is a 1-item test." : "";
     const off = !out.length || rpr.sendsOff || !keysReady() || !!rFlow || wait > 0;
-    const label = !rTested() ? "Push to Walmart (one-item test)…" : out.length > 1 || (out.length && !c) ? `Push ${out.length} waiting change${out.length === 1 ? "" : "s"} to Walmart…` : "Push to Walmart…";
+    const label = rTested() && (out.length > 1 || (out.length && !c)) ? `Push ${out.length} change${out.length === 1 ? "" : "s"}` : "Push to Walmart";
     const line = c?.invalid ? `<span class="bad">${esc(c.invalid)}</span>`
-      : sent ? `Sent ${esc(when(sent.at))} · waiting for Walmart`
-      : c ? `${esc(rDescribe(c))} · <button type="button" class="linkish" id="mRpUndo">Undo</button>`
-      : `As imported ${esc(when(rpr.fileAt))}`;
-    html = `${tip ? `<div class="d-tip">${tip}</div>` : ""}<button type="button" class="primary wide" id="mRpPush" ${off ? "disabled" : ""}>${label}</button><div class="d-foot">${line}</div>${why ? `<div class="d-foot">${esc(why)}</div>` : ""}${rpNoteHtml()}`;
+      : sent ? "Sent · waiting for Walmart"
+      : c ? `${short} · <button type="button" class="linkish" id="mRpUndo">Undo</button>`
+      : "";
+    const under = [line, why ? esc(why) : ""].filter(Boolean).join(" · ");
+    html = `${tip ? `<div class="d-tip">${tip}</div>` : ""}<button type="button" class="primary wide" id="mRpPush" ${off ? "disabled" : ""}>${label}</button>${under ? `<div class="d-foot">${under}</div>` : ""}${rpNoteHtml()}`;
   }
   if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
 }

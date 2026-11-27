@@ -330,7 +330,7 @@ $("rImportOk").addEventListener("click", async () => {
     if (rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear")) {
       const feed = (rpr.sends || []).find((x) => x.feedId === rpr.test.feedId)?.feed || null;
       rResult = await rJudgeTest(feed ? { ok: true, ...feed } : null, { ok: true }, before);
-    } else rResult = { kind: "ok", html: `Imported ${res.rows} item${res.rows === 1 ? "" : "s"} on <b>${esc(strategy)}</b> from ${esc(res.file)}. Their real minimum and maximum are in the table.` };
+    } else rResult = { kind: "ok", html: `Imported ${res.rows} item${res.rows === 1 ? "" : "s"}.` };
     renderRepricerTab();
   } finally { $("rImportOk").disabled = false; }
 });
@@ -418,7 +418,7 @@ async function rFollow({ test, feedId, skus, now }) {
       const took = feed?.ok ? ` Walmart's answer: ${esc(feed.status.toLowerCase())}${feed.succeeded != null ? `, ${feed.succeeded} of ${feed.received ?? skus.length} accepted` : ""}.` : " Walmart hasn't confirmed the upload yet.";
       if (test) {
         rResult = errs.length ? await rJudgeTest(feed, { ok: false }, null)
-          : { kind: "info", html: `The test change for <b>${esc(skus[0])}</b> was sent.${took} To finish the test: in Seller Center clear the search box, <b>Download</b> the strategy again, and import that file here. <button class="mini" id="rImportGo" type="button">Import…</button>` };
+          : { kind: "info", html: `Test sent. Download the strategy again and import it. <button class="mini" id="rImportGo" type="button">Import</button>` };
       } else {
         // the test has passed, so what Walmart reports as accepted becomes the current settings
         const res = await window.api.repricerApplyFeed(feedId).catch(() => null);
@@ -484,7 +484,7 @@ async function rJudgeTest(feed, read, before) {
   const applied = now && !now.missing && String(now.strategy || "").toLowerCase() === String(s.strategy || "").toLowerCase() && (!s.strategy || (Math.abs((now.min ?? -1) - s.min) < 0.005 && Math.abs((now.max ?? -1) - s.max) < 0.005));
   if (applied) {
     await finish("passed", "");
-    return { kind: "ok", html: `Test passed: <b>${esc(t.sku)}</b> shows the new settings at Walmart and no other item changed. You can now send many changes at once.` };
+    return { kind: "ok", html: `Test passed. You can now push many changes at once.` };
   }
   await finish("unclear", `Walmart took the upload${feed?.ok ? ` (${feed.status.toLowerCase()})` : ""} but the item doesn't show the new settings yet.`);
   return { kind: "info", html: `Walmart took the test upload${feed?.ok ? ` (${esc(feed.status.toLowerCase())})` : ""} and no other item changed, but <b>${esc(t.sku)}</b> doesn't show the new settings yet. Walmart can take a while; ${rpr.fileAt ? "download the strategy again in a few minutes and import it" : "use “Check it now” in a few minutes"}.` };
