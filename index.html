@@ -288,19 +288,26 @@
           <button class="app-tab" role="tab" data-tab="repricer">Repricer</button>
         </nav>
         <span id="mLastScan" class="m-last"></span>
+        <span class="m-head-actions">
+          <button id="mScanOverBtn" class="hidden" title="Drop the stopped scan and start a new one from the first listing">Start over</button>
+          <button id="mExportBtn" title="Export the rows shown (the filter and search in effect) to .xlsx or .csv">
+            <span id="mExportLabel">Export</span>
+          </button>
+          <button id="mRpImport" title="Import a strategy's download from Seller Center: each item's strategy, minimum and maximum">Import settings</button>
+          <button id="mBbxBtn" title="How often to scan, screenshots, and the results file for other apps" aria-label="Scan settings">
+            <span>Scan settings</span>
+          </button>
+          <button id="mScanBtn" class="primary" title="Read every listing's sellers with a screenshot, then each linked Amazon listing">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+            <span>Run buy box check</span>
+          </button>
+        </span>
       </div>
     </div>
 
+    <div class="m-body">
+      <div class="m-table-wrap" id="mTableWrap">
     <div class="m-toolbar">
-      <button id="mScanBtn" class="primary" title="Read every listing's sellers with a screenshot, then each linked Amazon listing">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
-        <span>Run buy box check</span>
-      </button>
-      <button id="mScanOverBtn" class="hidden" title="Drop the stopped scan and start a new one from the first listing">Start over</button>
-      <button id="mBbxBtn" title="How often to scan, screenshots, and the results file for other apps" aria-label="Scan settings">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"/><path d="M18 6h2"/><circle cx="16" cy="6" r="2"/><path d="M4 12h2"/><path d="M10 12h10"/><circle cx="8" cy="12" r="2"/><path d="M4 18h10"/><path d="M18 18h2"/><circle cx="16" cy="18" r="2"/></svg>
-        <span>Scan settings</span>
-      </button>
       <button id="mLwBtn" title="Import the Linnworks SKU export so Walmart SKUs of one product share their Amazon links" aria-label="Linnworks mapping">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="8.5" y="14" width="7" height="7" rx="1.5"/><path d="M6.5 10v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/><path d="M12 13v1"/></svg>
         <span>Linnworks</span>
@@ -316,13 +323,13 @@
       <span class="tb-sep"></span>
       <span class="m-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input id="mSearch" type="search" placeholder="Search SKU, Item ID, seller…" aria-label="Search the market table" />
+        <input id="mSearch" type="search" placeholder="Search SKU or seller" aria-label="Search the market table" />
       </span>
       <span id="mFilters" class="m-filters" role="group" aria-label="Show">
         <button class="m-chip" data-f="all" title="Every listing">All<span class="n"></span></button>
         <button class="m-chip" data-f="lost" title="Listings where another seller holds the buy box">Losing<span class="n"></span></button>
         <button class="m-chip" data-f="won" title="Listings where you hold the buy box">Winning<span class="n"></span></button>
-        <button class="m-chip m-wf-chip" data-f="wf" title="Listings with a Walmart-funded incentive in effect">Walmart-funded<span class="n"></span></button>
+        <button class="m-chip m-wf-chip" data-f="wf" title="Listings with a Walmart-funded incentive in effect">Walmart Funded<span class="n"></span></button>
         <button class="m-chip" data-f="oos" title="Listings Walmart shows as out of stock">Out of stock<span class="n"></span></button>
         <button class="m-chip" data-f="missed" title="Listings whose page couldn't be read">Not read<span class="n"></span></button>
       </span>
@@ -332,16 +339,10 @@
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
         Retry missed
       </button>
-<button id="mExportBtn" class="m-right" title="Export the rows shown (the filter and search in effect) to .xlsx or .csv">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V3"/><path d="M8 7l4-4 4 4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
-        <span id="mExportLabel">Export</span>
-      </button>
       <!-- scan progress: a thin line along the toolbar's bottom edge, so the table never moves -->
       <div id="mProgress" class="m-progress hidden" role="progressbar" aria-label="Scan progress"><div id="mProgBar" class="m-prog-bar"></div></div>
     </div>
 
-    <div class="m-body">
-      <div class="m-table-wrap" id="mTableWrap">
         <div id="mAmzBar" class="m-amz-bar hidden">
           <span>Amazon page shown here — pass the robot check, then close this to continue.</span>
           <button id="mAmzHide">Close Amazon page</button>
@@ -358,8 +359,7 @@
           </thead>
           <tbody id="mTbody"></tbody>
         </table>
-        <p class="m-hint">Green edge: you hold the buy box and Amazon isn't cheaper. Amber: buy box lost. Red: Amazon undercuts your price. Click a row for every seller with shipping, your rank, the scan's screenshot, and its linked Amazon listings.</p>
-      </div>
+              </div>
       <aside id="mPanel" class="m-panel"></aside>
     </div>
   </section>
@@ -388,11 +388,6 @@
       </div>
     </div>
     <div class="r-toolbar">
-      <button id="rAddAll" class="primary" title="Bring in every SKU from the Incentive price list">Add all from Incentive list</button>
-      <button id="rAdd" title="Add SKUs by typing or pasting them">Add items…</button>
-      <button id="rImport" title="Read a strategy's real settings (min, max, status) from the file Seller Center lets you download">Import from Seller Center…</button>
-      <button id="rRefresh" title="Read each item's current price from Walmart">Refresh prices</button>
-      <button id="rLogs" title="Open the folder with this tab's log (repricer-log.jsonl), Walmart's last raw answer (repricer-debug.json) and the backups">Log files</button>
       <span class="m-search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="rSearch" type="search" placeholder="Search SKU or strategy…" aria-label="Search the repricer table" />
@@ -404,13 +399,29 @@
         <button class="m-chip" data-f="wf">Walmart-funded<span class="n"></span></button>
         <button class="m-chip" data-f="changed">Changed<span class="n"></span></button>
       </span>
+      <span class="r-actions">
+        <button id="rAdd" title="Add SKUs: everything on the Incentive price list, or your own list">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add items
+        </button>
+        <button id="rRefresh" title="Read each item's current price from Walmart">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>Refresh prices
+        </button>
+        <button id="rImport" class="primary" title="Read a strategy's real settings (min, max, status) from the file Seller Center lets you download">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>Import from Seller Center
+        </button>
+        <button id="rLogs" class="r-icon" title="Log files: this tab's log, Walmart's last raw answer and the backups" aria-label="Log files">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
+        </button>
+      </span>
     </div>
     <div class="r-body">
       <div id="rNotice" class="r-notice hidden"></div>
       <div class="r-fill">
-        <span>Fill the rows shown:</span>
+        <b>Bulk edit</b>
         <label>Strategy <input id="rFillStrategy" type="text" list="rStrategies" placeholder="leave as is" /></label>
+        <span class="r-fill-sep"></span>
         <label class="r-check"><input id="rFillMax" type="checkbox" /> Max = Incentive price</label>
+        <span class="r-fill-sep"></span>
         <label>Min = Max − <input id="rFillPct" type="text" inputmode="decimal" placeholder="—" class="r-pct" /> %</label>
         <button id="rFillGo" type="button"><span id="rFillN">Apply</span></button>
       </div>
@@ -443,9 +454,13 @@
   <!-- Repricer: add SKUs by hand -->
   <div id="rAddModal" class="modal-overlay hidden">
     <div class="modal set-card" role="dialog" aria-labelledby="rAddTitle">
-      <div class="set-head"><h2 id="rAddTitle">Add items</h2><p>One SKU per line, exactly as it is in Seller Center.</p></div>
-      <div class="r-pad"><textarea id="rAddText" rows="8" spellcheck="false" aria-label="SKUs to add"></textarea></div>
-      <div class="set-foot"><button id="rAddCancel" class="set-ghost" type="button">Cancel</button><button id="rAddOk" class="primary" type="button">Add</button></div>
+      <div class="set-head"><h2 id="rAddTitle">Add items</h2><p>Bring in everything from your Incentive price list, or paste your own SKUs.</p></div>
+      <div class="r-pad">
+        <button id="rAddAll" class="r-add-all" type="button">Add every SKU from the Incentive price list</button>
+        <div class="r-or">or paste SKUs, one per line, exactly as they are in Seller Center</div>
+        <textarea id="rAddText" rows="7" spellcheck="false" aria-label="SKUs to add"></textarea>
+      </div>
+      <div class="set-foot"><button id="rAddCancel" class="set-ghost" type="button">Cancel</button><button id="rAddOk" class="primary" type="button">Add pasted SKUs</button></div>
     </div>
   </div>
 

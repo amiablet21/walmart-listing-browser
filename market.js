@@ -205,7 +205,7 @@ function amzLow(it) {
 function wmSellers(it) {
   const bb = it.buyBox;
   if (!bb?.price) return [];
-  const list = Array.isArray(bb.offers) ? bb.offers.map((o) => ({ seller: o.seller, price: o.price, shipping: o.shipping ?? null, shipNote: o.shipNote ?? null })) : [];
+  const list = Array.isArray(bb.offers) ? bb.offers.map((o) => ({ seller: o.seller, price: o.price, shipping: o.shipping ?? null, shipNote: o.shipNote ?? null, wfs: !!o.wfs })) : [];
   if (bb.seller && !list.some((o) => Math.abs(o.price - bb.price) < 0.005 && String(o.seller).toLowerCase() === String(bb.seller).toLowerCase())) {
     list.unshift({ seller: bb.seller, price: bb.price, shipping: null, shipNote: null });
   }
@@ -335,7 +335,7 @@ function renderMarket() {
   if (mSelected < 0 || !items[mSelected]) mSelected = rows[0] ?? -1;
   if (!rows.length) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="5" class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
+    tr.innerHTML = `<td class="m-empty">${items.some(idOf) ? "No rows match this filter." : "Add rows with an Item ID on the Incentive price list tab first."}</td>`;
     tb.appendChild(tr);
   }
   // rows in first-appearance order, grouped under their Linnworks SKU
@@ -355,16 +355,7 @@ function renderMarket() {
       const host = facts[0];
       const tr = document.createElement("tr");
       tr.className = "m-row m-parent edge-" + (facts.some((x) => x.cheaper) ? "red" : facts.some((x) => x.lost) ? "amber" : you ? "green" : "none") + (g.all.includes(mSelected) ? " in-sel" : "");
-      let amz;
-      if (!host.linked) amz = `<button type="button" class="m-link-chip" data-link="${g.members[0]}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Link listing</button>`;
-      else if (host.low != null) amz = `<b>${fmt(host.low)}</b>` + (host.linked > 1 ? `<span class="m-muted">lowest of ${host.linked} linked</span>` : "") + (amzList(host.it).some((a) => a.robot) ? `<span class="m-pill warn">needs a look</span>` : "");
-      else amz = `<span class="m-muted">${amzList(host.it).some((a) => a.robot) ? "Robot check" : "Not read yet"}</span>`;
-      tr.innerHTML =
-        `<td class="sku"><span class="m-pill lw" title="Linnworks inventory SKU">LW</span>${esc(g.lw)}</td>` +
-        `<td class="m-muted">${g.all.length} Walmart SKUs</td>` +
-        `<td class="num"></td>` +
-        `<td class="sep">${you ? `<span class="m-pill you">You</span><b>${you}</b>` : ""}${lost ? `${you ? " " : ""}<span class="m-pill lost">Lost</span><b>${lost}</b>` : ""}${!you && !lost ? `<span class="m-muted">Not scanned yet</span>` : ""}</td>` +
-        `<td class="sep">${amz}</td>`;
+      tr.innerHTML = `<td><div class="m-grp"><span class="m-pill lw" title="Linnworks inventory SKU">LW</span><b>${esc(g.lw)}</b><span class="m-muted">${g.all.length} Walmart SKUs${you ? ` · ${you} winning` : ""}${lost ? ` · ${lost} losing` : ""}</span></div></td>`;
       tr.addEventListener("click", (e) => {
         if (!g.all.includes(mSelected)) mSelected = g.members[0];
         mEditing = null;
@@ -379,34 +370,28 @@ function renderMarket() {
     const tr = document.createElement("tr");
     tr.className = "m-row edge-" + f.edge + (i === mSelected ? " sel" : "") + (g.grouped ? " m-child" : "");
     const reading = mScan.running && mScan.current && mScan.currentId === idOf(f.it);
-    let wm;
-    if (reading && mScan.step === "walmart") wm = `<span class="m-reading"><span class="m-spin"></span>Reading Walmart page…</span>`;
-    else if (f.bb) {
-      const pill = f.known ? `<span class="m-pill ${f.mine ? "you" : "lost"}">${f.mine ? "You" : "Lost"}</span>` : "";
-      const note = !f.mine && f.bb.seller ? esc(f.bb.seller)
-        : f.api?.winRate != null ? `win rate ${Math.round(f.api.winRate * 10) / 10}%` : "";
+    // one list item: SKU (+ Funded badge) and who holds the buy box on the left, the status and the gap on the right
+    let st = "", sub, val = "";
+    if (reading && (mScan.step === "walmart" || mScan.step === "amazon")) {
+      sub = `<span class="m-reading"><span class="m-spin"></span>${mScan.step === "amazon" ? `Reading Amazon page ${mScan.stepN}…` : "Reading Walmart page…"}</span>`;
+    } else if (f.bb) {
+      const holder = f.sellers.find((s) => s.isBB) || null;
+      const gap = f.lost && f.me && holder ? round2m(f.me.total - holder.total) : null;
+      if (f.known) st = `<span class="m-st ${f.mine ? "w" : "l"}">${f.mine ? "Winning" : "Losing"}</span>`;
+      val = gap != null && Math.abs(gap) >= 0.005
+        ? `<b title="Your price with shipping, against the buy box seller's">${gap > 0 ? "+" : "−"}${fmt(Math.abs(gap))}</b>`
+        : `<b title="Buy box price">${fmt(f.bb.price)}</b>`;
       const r = raiseFor(f);
-      const raise = r?.ok ? `<span class="m-pill raise" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">↑ ${fmt(r.gap)} room</span>` : "";
-      const rank = f.rank && f.sellers.length > 1 ? `<span class="m-muted" title="Your place among the sellers, by price plus shipping">#${f.rank} of ${f.sellers.length}</span>` : "";
-      wm = `${pill}<b>${fmt(f.bb.price)}</b>${note ? `<span class="m-muted">${note}</span>` : ""}${rank}${f.oos ? `<span class="m-pill warn">Out of stock</span>` : ""}${raise}`;
-    } else if (f.it.buyBox?.oos) wm = `<span class="m-pill warn">Out of stock</span>`;
-    else if (f.it.buyBox?.robot) wm = `<span class="m-muted">Robot check — pass it in the listing pane</span>`;
-    else if (f.it.buyBox?.notInCatalog) wm = `<span class="m-muted">Not in your Walmart catalog under this SKU</span>`;
-    else if (f.it.buyBox?.noBuyBox) wm = `<span class="m-muted">No buy box reported</span>`;
-    else if (f.it.buyBox?.failed) wm = `<span class="m-muted">Couldn't read the page</span>`;
-    else wm = `<span class="m-muted">Not scanned yet</span>`;
-    let amz;
-    if (reading && mScan.step === "amazon") amz = `<span class="m-reading"><span class="m-spin"></span>Reading Amazon page ${mScan.stepN}…</span>`;
-    else if (!f.linked) amz = `<button type="button" class="m-link-chip" data-link="${i}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Link listing</button>`;
-    else if (f.low != null) amz = `<b>${fmt(f.low)}</b>` + (f.linked > 1 ? `<span class="m-muted">lowest of ${f.linked} linked</span>` : "") + (amzList(f.it).some((a) => a.robot) ? `<span class="m-pill warn" title="Amazon asked for a robot check — open the row to pass it">needs a look</span>` : "");
-    else amz = `<span class="m-muted">${amzList(f.it).some((a) => a.robot) ? "Robot check" : f.linked ? "Not read yet" : ""}</span>`;
-    if (g.grouped) amz = `<span class="m-muted m-shared" title="Amazon links are shared across the Linnworks group">${f.linked ? `shared · ${f.cheaper ? "cheaper than this SKU" : "not cheaper"}` : "shared"}</span>`;
-    tr.innerHTML =
-      `<td class="sku">${esc(f.it.sku)}</td>` +
-      `<td class="mono">${esc(f.it.itemId)}</td>` +
-      `<td class="num"><b>${fmt(f.during)}</b></td>` +
-      `<td class="sep">${wm}</td>` +
-      `<td class="sep">${amz}</td>`;
+      sub = f.mine ? `Buy Box: You${r?.ok ? ` · <span class="m-up" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">${fmt(r.gap)} less than next price</span>` : ""}`
+        : f.bb.seller ? `Buy Box: ${esc(f.bb.seller)}` : "Buy Box: not read";
+      if (f.oos) st += `<span class="m-st n">Out of stock</span>`;
+    } else if (f.it.buyBox?.oos) { st = `<span class="m-st n">Out of stock</span>`; sub = "No price on the listing"; }
+    else if (f.it.buyBox?.robot) { st = `<span class="m-st n">Not read</span>`; sub = "Robot check — open the listing once to pass it"; }
+    else if (f.it.buyBox?.noBuyBox) sub = "No buy box reported";
+    else if (f.it.buyBox?.failed) { st = `<span class="m-st n">Not read</span>`; sub = "Couldn't read the page"; }
+    else sub = "Not scanned yet";
+    const fund = f.wf?.status === "enrolled" ? `<span class="m-fund" title="A Walmart-funded incentive is in effect">Walmart Funded</span>` : "";
+    tr.innerHTML = `<td><div class="m-li"><div class="g"><div class="t"><b>${esc(f.it.sku || f.it.itemId)}</b>${fund}</div><div class="s">${sub}</div></div><div class="e">${st}${val}</div></div></td>`;
     tr.addEventListener("click", (e) => {
       mSelected = i;
       mEditing = null;
@@ -453,7 +438,7 @@ function renderMarket() {
 function renderScanBar() {
   const btn = $("mScanBtn");
   btn.classList.toggle("scanning", mScan.running);
-  btn.querySelector("span").textContent = mScan.running ? (mScan.stop ? "Stopping…" : "Stop scan") : mResume ? `Resume scan · ${mResume.ids.length} left` : "Run buy box check";
+  btn.querySelector("span").textContent = mScan.running ? (mScan.stop ? "Stopping…" : "Stop scan") : mResume ? `Resume scan · ${mResume.ids.length} left` : "Scan now";
   $("mScanOverBtn").classList.toggle("hidden", !(mResume && !mScan.running));
   $("mProgress").classList.toggle("hidden", !mScan.running);
   if (!mScan.running) return;
@@ -587,38 +572,72 @@ function renderPanel() {
   const groupLine = lw
     ? `<div class="m-group"><span class="m-pill lw">LW</span><b>${esc(lw)}</b>${sibs.length ? `<span class="m-muted">· also ${sibs.map((j) => `<a href="#sib" data-sib="${j}">${esc(items[j].sku || items[j].itemId)}</a>`).join(", ")}</span>` : `<span class="m-muted">· only this Walmart SKU</span>`}</div>`
     : "";
+  // the strip of numbers across the top
+  const skuKey = String(it.sku ?? "").trim();
+  const rpOk = rpOn();
+  const rs = rpOk && skuKey ? rState(skuKey) : null;
+  const rb = rpOk && skuKey ? rBase(skuKey) : null;
+  const myPrice = f.me ? f.me.price : rs && !rs.missing && rs.price > 0 ? rs.price : null;
+  const near = (a, b) => a != null && b != null && Math.abs(a - b) < 0.005;
+  const myNote = myPrice == null ? (f.bb ? "your offer isn't on this listing" : "")
+    : rb?.strategy && near(myPrice, rb.min) ? "at your minimum" : rb?.strategy && near(myPrice, rb.max) ? "at your maximum"
+    : f.rank && f.sellers.length > 1 ? `#${f.rank} of ${f.sellers.length} sellers` : "";
+  const gapL = f.me && holder ? round2m(f.me.total - holder.total) : null;
+  const stat = f.bb && f.mine ? { k: "win", h: "Winning", s: "You hold the buy box" }
+    : f.bb && f.lost ? { k: "lose", h: gapL > 0 ? `Losing by ${fmt(gapL)}` : "Losing",
+      s: !f.me ? "Your offer isn't on this listing" : gapL < 0 ? `You are ${fmt(-gapL)} cheaper, and still not in the buy box` : `You are #${f.me.rank} of ${f.sellers.length} sellers` }
+    : { k: "none", h: verdict.head, s: verdict.sub };
+  const amzNote = !f.linked ? "no listing linked" : f.low == null ? "not read yet"
+    : f.cheaper ? `${fmt(round2m(f.during - f.low))} under your price` : f.linked > 1 ? `lowest of ${f.linked} linked` : "not cheaper than you";
+  const fundBadge = wfx?.status === "enrolled" ? `<span class="m-fund">Walmart Funded</span>` : "";
+  const sellBody = f.sellers.length
+    ? `<table class="d-sellers"><thead><tr><th class="k">#</th><th>Seller</th><th class="r">Price</th></tr></thead><tbody>${f.sellers.map((s) =>
+      `<tr class="${s.mine ? "me" : ""}"><td class="k">${s.rank}</td><td title="${esc(s.shipNote || "")}">${esc(s.seller)}${s.isBB ? `<span class="d-tag">Buy box</span>` : ""}${s.mine ? `<span class="d-tag">You</span>` : ""}${s.wfs ? `<span class="d-tag wfs" title="Fulfilled by Walmart">WFS</span>` : ""}</td><td class="r">${fmt(s.price)}</td></tr>`).join("")}</tbody></table>`
+    : sellersHtml;
+  // the incentive, on one line: badge, your price crossed out, what the customer pays, days left
+  const daysLeft = wfx?.end ? Math.ceil((new Date(wfx.end).getTime() - Date.now()) / 86400000) : null;
+  const leftText = daysLeft == null || Number.isNaN(daysLeft) ? "" : daysLeft > 1 ? `${daysLeft} days left` : daysLeft === 1 ? "1 day left" : daysLeft === 0 ? "ends today" : "ended";
+  const incHtml = wfx?.status === "enrolled"
+    ? `<span class="m-fund">Walmart Funded</span>${wfAfter(wfx) ? `${wfx.price > 0 ? `<s>${fmt(wfx.price)}</s>` : ""}<b>${fmt(wfAfter(wfx))}</b>` : ""}<span class="r" title="${wfx.end ? `Ends ${shortDate(wfx.end)}` : ""}">${leftText || "active"}</span>`
+    : wfx ? `<span class="m-fund dim">Walmart Funded</span><span class="r">eligible, not active</span>`
+    : `<span class="m-fund dim">Walmart Funded</span><span class="r">${wfLoaded() ? "none" : keysReady() ? "not checked yet" : "needs API keys"}</span>`;
   p.innerHTML = `
-    <div class="m-card m-id">
-      <div class="m-id-head">
-        <div class="m-id-title"><div class="sku">${esc(it.sku || "(no SKU)")}</div><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · ${viaApi ? "Walmart API" : "page"} read ${when(it.buyBox.at)}` : ""}${!viaApi && apiReady() && it.buyBox?.notInCatalog ? ` · <span class="m-warn" title="Walmart's Pricing Insights API returned nothing for this SKU, so the scan read the listing page instead. The SKU must match your Seller Center SKU exactly, and the item must be published.">not found in Walmart's API</span>` : ""}</div></div>
-        <button class="m-icon" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}" aria-label="See the screenshot"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
-        <button class="m-icon" id="mOpenWm" title="Open Walmart listing" aria-label="Open Walmart listing"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></button>
-        <button class="m-icon" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Re-check this listing now" aria-label="Re-check this listing now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
+    <div id="mRpNote"></div>
+    <div class="d-head">
+      <div class="d-title"><h2>${esc(it.sku || "(no SKU)")}${fundBadge}</h2><div class="m-muted">Item ID ${esc(it.itemId)}${it.buyBox?.at ? ` · read ${when(it.buyBox.at)}` : ""}</div></div>
+      <button type="button" class="d-ic" aria-label="See the screenshot" id="mShotEye" ${shot ? "" : "disabled"} title="${shot ? `See the screenshot of the ${shot.kind === "buybox" ? "buy box" : "seller list"} · ${when(shot.at)}` : "No screenshot yet"}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      <button type="button" id="mOpenWm" title="Open the Walmart listing">Open on Walmart</button>
+      <button type="button" class="d-ic" aria-label="Re-check this listing" id="mRecheck" ${mScan.running ? "disabled" : ""} title="Read this listing again now"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
+    </div>
+    ${groupLine}
+    <div class="d-two">
+      <div class="d-col">
+        <div class="m-card d-sell">
+          <div class="d-card-head"><h4>Sellers on this listing</h4>${f.oos ? `<span class="m-st n">Out of stock</span>` : ""}<span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}` : ""}</span></div>
+          ${sellBody}${sellersNote}${raiseHtml}
+        </div>
+        <div class="m-card d-amz">
+          <div class="d-card-head"><h4>Amazon</h4><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}${sibs.length ? ` · shared by ${sibs.length + 1} Walmart SKUs` : ""}</span></div>
+          ${amzHtml}
+          <div class="m-add">
+            <input id="mLinkInput" type="text" placeholder="Paste an Amazon URL or ASIN to add a listing" aria-label="Add Amazon listing" />
+            <button id="mLinkBtn">Add listing</button>
+          </div>
+        </div>
+        <div class="m-card m-notes">
+          <div class="d-card-head"><h4>Notes</h4><span class="m-muted" id="mNoteState"></span></div>
+          <textarea id="mNote" rows="3" placeholder="Anything you want to remember about this SKU…" aria-label="Notes for this SKU">${esc(it.note || "")}</textarea>
+        </div>
       </div>
-      ${groupLine}
-      ${verdictHtml}
-      ${apiStats}
-      ${rpStats}
-    </div>
-    <div class="m-card">
-      <div class="m-card-head wm"><span class="mark wm">W</span><b>Walmart</b><span class="m-muted">${f.sellers.length ? `${f.sellers.length} seller${f.sellers.length === 1 ? "" : "s"}${f.rank && f.sellers.length > 1 ? ` · you are #${f.rank}` : ""}` : viaApi ? "via API" : ""}</span>${f.oos ? `<span class="m-pill warn">Out of stock</span>` : ""}</div>
-      ${sellersHtml}${sellersNote}${raiseHtml}
-    </div>
-    <div class="m-card">
-      <div class="m-card-head amz"><span class="mark amz">a</span><b>Amazon</b><span class="m-muted">${list.length ? `${list.length} listing${list.length === 1 ? "" : "s"} linked` : "no listings linked"}${sibs.length ? ` · shared by ${sibs.length + 1} Walmart SKUs` : ""}</span></div>
-      ${amzHtml}
-      <div class="m-add">
-        <input id="mLinkInput" type="text" placeholder="Paste Amazon URL or ASIN" aria-label="Add Amazon listing" />
-        <button id="mLinkBtn">Link</button>
+      <div class="d-col">
+        <div class="m-card d-rp" id="mRpCard"></div>
+        <div class="m-card d-inc">${incHtml}</div>
+        ${mStoreEditing
+          ? `<div class="m-store editing"><span class="m-muted">Your store on Walmart:</span><input id="mStoreInput" type="text" value="${esc(myStore)}" placeholder="Exactly as Walmart shows it" aria-label="Your store name on Walmart" /><span class="m-edit-actions"><button id="mStoreSave" class="primary">Save</button><button id="mStoreCancel">Cancel</button></span></div>`
+          : `<div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>`}
       </div>
-    </div>
-    <div class="m-card m-notes">
-      <div class="m-card-head"><b>Notes</b><span class="m-muted" id="mNoteState"></span></div>
-      <textarea id="mNote" rows="3" placeholder="Anything you want to remember about this SKU…" aria-label="Notes for this SKU">${esc(it.note || "")}</textarea>
-    </div>
-    ${mStoreEditing
-      ? `<div class="m-store editing"><span class="m-muted">Your store on Walmart:</span><input id="mStoreInput" type="text" value="${esc(myStore)}" placeholder="Exactly as Walmart shows it" aria-label="Your store name on Walmart" /><span class="m-edit-actions"><button id="mStoreSave" class="primary">Save</button><button id="mStoreCancel">Cancel</button></span></div>`
-      : `<div class="m-store"><span class="m-muted">Your store on Walmart:</span> <b>${esc(myStore)}</b> <a href="#" id="mStoreEdit">change</a></div>`}`;
+    </div>`;
+  renderRpCard();
   // wiring
   const note = p.querySelector("#mNote");
   let noteTimer = null;
@@ -678,6 +697,120 @@ function renderPanel() {
 }
 
 function saveQuiet() { window.api.saveItems(items); }
+
+// ---- the Repricer box in a listing's panel -----------------------------------------------
+// The strategy, minimum and maximum of the selected SKU, editable in place. It
+// works on the Repricer tab's own state (repricerTab.js: rEdits, rSent, rpr) and
+// sends through that tab's dialog, so the one-item test, the backup and the
+// 10-minute gap between uploads all apply here too.
+const rpOn = () => typeof rState === "function"; // repricerTab.js loads after this file
+const rpSku = () => String(items[mSelected]?.sku ?? "").trim();
+function rpTyping() { const a = document.activeElement; return !!a && $("mPanel").contains(a) && (a.tagName === "INPUT" || a.tagName === "TEXTAREA"); }
+// The Repricer tab's state changed (an import, a send, an upload being followed).
+function rpSync() { if (!inMarket()) return; if (rpTyping()) renderRpFoot(); else renderPanel(); }
+function rpNoteHtml() {
+  const unfinished = !rFlow && rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear");
+  const h = rFlow ? `<span class="m-spin"></span><span>${esc(rFlow.text)}</span>`
+    : rResult ? `<span>${rResult.html}</span><button class="mini" id="rResultX" type="button">Dismiss</button>`
+    : rMoved.length ? `<span>Test failed: ${rMoved.length} other item${rMoved.length === 1 ? "" : "s"} changed.</span><button class="mini" id="rRestore" type="button">Put back</button>`
+    : unfinished ? `<span>Test sent. Download the strategy again and import it.</span><button class="mini" id="rImportGo" type="button">Import</button>`
+    : "";
+  return h ? `<div class="d-note ${rFlow ? "busy" : rResult ? rResult.kind : rMoved.length ? "bad" : "info"}">${h}</div>` : "";
+}
+function renderRpCard() {
+  const box = $("mRpCard");
+  if (!box) return;
+  if (!rpOn()) { box.innerHTML = `<h4>Repricer</h4><p class="m-muted">Loading…</p>`; return; }
+  const sku = rpSku(), s = sku ? rState(sku) : null;
+  let body;
+  if (!sku) body = `<p class="m-muted">No SKU on this row.</p>`;
+  else if (!rpr.fileAt) body = `<p class="m-muted">Import your strategy to see min and max.</p><button type="button" class="primary wide" id="mRpImportGo">Import</button>`;
+  else if (s?.missing) body = `<p class="m-muted">Walmart doesn't know this SKU.</p>`;
+  else if (!rEditable(sku)) body = `<p class="m-muted">${rBusy ? "Reading from Walmart…" : "Not on a strategy."}</p><button type="button" class="wide" id="mRpAdd" ${rBusy || !keysReady() ? "disabled" : ""}>Add to a strategy</button>`;
+  else {
+    const v = rVal(sku);
+    const names = [...new Set(Object.values(rpr.state).map((x) => x?.strategy).filter(Boolean))].sort();
+    body = `<label class="d-f" for="mRpS">Strategy</label><input class="d-in" id="mRpS" list="mRpStrategies" value="${esc(v.strategy)}" placeholder="No strategy" />
+      <datalist id="mRpStrategies">${names.map((n) => `<option value="${esc(n)}"></option>`).join("")}</datalist>
+      <div class="d-row2"><div><label class="d-f" for="mRpMin">Minimum</label><input class="d-in num" id="mRpMin" inputmode="decimal" value="${esc(v.min)}" /></div>
+      <div><label class="d-f" for="mRpMax">Maximum</label><input class="d-in num" id="mRpMax" inputmode="decimal" value="${esc(v.max)}" /></div></div>`;
+  }
+  box.innerHTML = `<h4>Repricer</h4>${body}<div id="mRpFoot"></div>`;
+  box.querySelectorAll(".d-in").forEach((el) => {
+    el.addEventListener("input", rpEdit);
+    el.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") el.blur(); });
+  });
+  renderRpFoot();
+}
+function rpEdit() {
+  const sku = rpSku(), k = rKey(sku), b = rBase(sku);
+  const v = { strategy: $("mRpS").value, min: $("mRpMin").value, max: $("mRpMax").value };
+  const untouched = v.strategy.trim().toLowerCase() === b.strategy.toLowerCase() && rNum(v.min) === b.min && rNum(v.max) === b.max;
+  if (untouched) delete rEdits[k]; else rEdits[k] = v;
+  delete rSent[k]; // typing over a sent change makes it a new one
+  if (!rList.some((x) => rKey(x) === k)) rList.push(sku);
+  rSave();
+  renderRpFoot();
+}
+function renderRpFoot() {
+  const el = $("mRpFoot");
+  if (!el || !rpOn()) return;
+  const sku = rpSku();
+  let html;
+  if (!sku || !rpr.fileAt || !rEditable(sku)) html = "";
+  else {
+    const k = rKey(sku), b = rBase(sku), c = rChange(sku), sent = rSent[k], v = rVal(sku);
+    const f = rowFacts(mSelected);
+    const minNow = rNum(v.min), maxNow = rNum(v.max);
+    $("mRpS")?.classList.toggle("c", String(v.strategy || "").trim().toLowerCase() !== b.strategy.toLowerCase());
+    $("mRpMin")?.classList.toggle("c", !!rEdits[k] && minNow !== b.min);
+    $("mRpMax")?.classList.toggle("c", !!rEdits[k] && maxNow !== b.max);
+    let tip = "";
+    if (f.bb && f.lost && String(v.strategy || "").trim() && minNow > 0) {
+      if (f.bb.price < minNow - 0.005) tip = `Your min is above the buy box (${fmt(f.bb.price)}). <button type="button" class="linkish" id="mRpMatch">Match it</button>`;
+    }
+    const arrow = (name, was, now) => (was != null && now != null && Math.abs(was - now) >= 0.005 ? `${name} ${fmt(was)} → ${fmt(now)}` : "");
+    const short = !c || c.invalid ? "" : !c.strategy ? "Take off strategy"
+      : [b.strategy.toLowerCase() !== c.strategy.toLowerCase() ? `Strategy → ${esc(c.strategy)}` : "", arrow("Min", b.min, c.min) || (b.min == null ? `Min ${fmt(c.min)}` : ""), arrow("Max", b.max, c.max) || (b.max == null ? `Max ${fmt(c.max)}` : "")].filter(Boolean).join(" · ");
+    const { out } = rPending();
+    const wait = (rpr.lastSendAt || 0) + (rpr.gateMs || 600000) - Date.now();
+    const why = !out.length ? "" : rpr.sendsOff ? "Import your strategy first."
+      : !keysReady() ? "Add your API keys first."
+      : rFlow ? "Checking the last push…"
+      : wait > 0 ? `Next push in ${Math.floor(wait / 60000)}:${String(Math.floor((wait % 60000) / 1000)).padStart(2, "0")}`
+      : !rTested() ? "First push is a 1-item test." : "";
+    const off = !out.length || rpr.sendsOff || !keysReady() || !!rFlow || wait > 0;
+    const label = rTested() && (out.length > 1 || (out.length && !c)) ? `Push ${out.length} change${out.length === 1 ? "" : "s"}` : "Push to Walmart";
+    const line = c?.invalid ? `<span class="bad">${esc(c.invalid)}</span>`
+      : sent ? "Sent · waiting for Walmart"
+      : c ? `${short} · <button type="button" class="linkish" id="mRpUndo">Undo</button>`
+      : "";
+    const under = [line, why ? esc(why) : ""].filter(Boolean).join(" · ");
+    html = `${tip ? `<div class="d-tip">${tip}</div>` : ""}<button type="button" class="primary wide" id="mRpPush" ${off ? "disabled" : ""}>${label}</button>${under ? `<div class="d-foot">${under}</div>` : ""}`;
+  }
+  if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+  const note = $("mRpNote"), nh = rpNoteHtml();
+  if (note && note.dataset.html !== nh) { note.innerHTML = nh; note.dataset.html = nh; }
+}
+$("mPanel").addEventListener("click", (e) => {
+  const id = e.target.id;
+  if (!rpOn() || !id) return;
+  const sku = rpSku();
+  if (id === "mRpImportGo" || id === "rImportGo") openRImport();
+  else if (id === "mRpAdd") rAddSkus([sku]);
+  else if (id === "mRpMatch") { const f = rowFacts(mSelected); if (f.bb) { $("mRpMin").value = money(f.bb.price); rpEdit(); } }
+  else if (id === "mRpUndo") { delete rEdits[rKey(sku)]; rSave(); renderRpCard(); }
+  else if (id === "mRpPush") {
+    openRSend();
+    const pick = $("rSendPick"); // the one-item test sends one change: make it this listing's
+    const opt = [...pick.options].find((o) => o.textContent.toLowerCase() === sku.toLowerCase());
+    if (opt && pick.value !== opt.value) { pick.value = opt.value; pick.onchange?.(); }
+  }
+  else if (id === "rResultX") { rResult = null; rpSync(); }
+  else if (id === "rRestore") rRestore();
+});
+$("mRpImport").addEventListener("click", () => { if (rpOn()) openRImport(); });
+setInterval(() => { if (inMarket() && $("mRpFoot")) renderRpFoot(); }, 1000);
 
 // ---- the screenshot pop-up (the eye in a row's panel) --------------------------------
 let shotShown = null;
@@ -975,7 +1108,7 @@ function bbxExportRows() {
       lowestCompetitorSeller: rival ? rival.seller : null,
       gap: rival && myTotal != null ? round2m(myTotal - rival.total) : null,
       outOfStock: bb?.oos ?? null,
-      sellers: sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, shippingNote: s.shipNote, total: s.total, isMe: s.mine, hasBuyBox: s.isBB })),
+      sellers: sellers.map((s) => ({ rank: s.rank, seller: s.seller, price: s.price, shipping: s.shipping, shippingNote: s.shipNote, total: s.total, isMe: s.mine, hasBuyBox: s.isBB, wfs: !!s.wfs })),
       screenshot: bb?.shot?.file ?? null,
       screenshotKind: bb?.shot?.kind ?? null,
       walmartFunded: f?.wf ? { status: f.wf.status, priceAfterIncentive: wfAfter(f.wf), offerPrice: f.wf.price ?? null, start: iso(f.wf.start), end: iso(f.wf.end) } : null,
@@ -1195,9 +1328,8 @@ setTimeout(scheduleTick, 20000);
 // ---- the Amazon page, shown for a robot check -------------------------------------------
 let amazonPageShown = false;
 function amazonBounds() {
-  const r = $("mTableWrap").getBoundingClientRect();
-  const bar = $("mAmzBar").getBoundingClientRect();
-  return { x: r.left, y: bar.bottom, width: r.width, height: r.bottom - bar.bottom };
+  const r = $("mPanel").getBoundingClientRect(); // over the listing's panel; the bar to close it is above the list
+  return { x: r.left, y: r.top, width: r.width, height: r.height };
 }
 function showAmazonPage(asin) {
   $("mAmzBar").classList.remove("hidden");

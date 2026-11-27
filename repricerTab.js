@@ -113,7 +113,7 @@ function rHint(sku, tr) {
   was(".w-err", c?.invalid || "");
 }
 function renderRepricerTab() {
-  if (!inRepricer()) return;
+  if (!inRepricer()) { rpSync(); return; } // the Market tab shows the same settings, one listing at a time
   const tb = $("rTbody");
   tb.innerHTML = "";
   const shown = rRowsShown();
@@ -182,6 +182,7 @@ function renderRTray() {
     : "";
   note.className = "r-notice" + (html ? "" : " hidden") + (rFlow ? " busy" : rResult ? ` ${rResult.kind}` : rpr.sendsOff ? " info" : rMoved.length ? " bad" : "");
   if (note.dataset.html !== html) { note.innerHTML = html; note.dataset.html = html; }
+  if (!inRepricer()) rpSync();
 }
 setInterval(() => { if (inRepricer()) renderRTray(); }, 1000);
 $("rNotice").addEventListener("click", (e) => {
@@ -224,6 +225,7 @@ function rAddSkus(skus) {
   return added;
 }
 $("rAddAll").addEventListener("click", () => {
+  $("rAddModal").classList.add("hidden");
   const n = rAddSkus(items.map((it) => it.sku).filter((s) => String(s ?? "").trim()));
   rResult = { kind: "info", html: n ? `Added ${n} SKU${n === 1 ? "" : "s"} from the Incentive price list.${keysReady() ? "" : " Add your Walmart API keys (Market → Scan settings) to read their repricer settings."}` : "Every SKU on the Incentive price list is already here." };
   renderRTray();
@@ -272,7 +274,7 @@ $("rFillGo").addEventListener("click", () => {
 // ---- reading from Walmart ----------------------------------------------------------------------
 window.api.onRepricerProgress?.(({ done, total, slowed }) => {
   rBusy = `Reading from Walmart: ${done} of ${total} SKUs${slowed ? " · Walmart asked to slow down, so this takes a few minutes" : ""}`;
-  if (inRepricer()) $("rLast").textContent = rBusy;
+  if (inRepricer()) $("rLast").textContent = rBusy; else rpSync();
 });
 // A sent change that now shows in Walmart's settings is done: the edit has become the fact.
 function rReconcile() {
@@ -328,7 +330,7 @@ $("rImportOk").addEventListener("click", async () => {
     if (rpr.test && (rpr.test.result === "sent" || rpr.test.result === "unclear")) {
       const feed = (rpr.sends || []).find((x) => x.feedId === rpr.test.feedId)?.feed || null;
       rResult = await rJudgeTest(feed ? { ok: true, ...feed } : null, { ok: true }, before);
-    } else rResult = { kind: "ok", html: `Imported ${res.rows} item${res.rows === 1 ? "" : "s"} on <b>${esc(strategy)}</b> from ${esc(res.file)}. Their real minimum and maximum are in the table.` };
+    } else rResult = { kind: "ok", html: `Loaded min and max for ${res.rows} SKU${res.rows === 1 ? "" : "s"} from your file.` };
     renderRepricerTab();
   } finally { $("rImportOk").disabled = false; }
 });
@@ -395,7 +397,7 @@ async function rFollow({ test, feedId, skus, now }) {
   if (rFlow) return;
   const T = rTiming();
   rFlow = { test, feedId, skus, text: "" };
-  const say = (t) => { if (rFlow) rFlow.text = t; if (inRepricer()) renderRTray(); };
+  const say = (t) => { if (rFlow) rFlow.text = t; renderRTray(); };
   let feed = null;
   try {
     if (!now) {
@@ -416,7 +418,7 @@ async function rFollow({ test, feedId, skus, now }) {
       const took = feed?.ok ? ` Walmart's answer: ${esc(feed.status.toLowerCase())}${feed.succeeded != null ? `, ${feed.succeeded} of ${feed.received ?? skus.length} accepted` : ""}.` : " Walmart hasn't confirmed the upload yet.";
       if (test) {
         rResult = errs.length ? await rJudgeTest(feed, { ok: false }, null)
-          : { kind: "info", html: `The test change for <b>${esc(skus[0])}</b> was sent.${took} To finish the test: in Seller Center clear the search box, <b>Download</b> the strategy again, and import that file here. <button class="mini" id="rImportGo" type="button">Import…</button>` };
+          : { kind: "info", html: `Test sent. Download the strategy again and import it. <button class="mini" id="rImportGo" type="button">Import</button>` };
       } else {
         // the test has passed, so what Walmart reports as accepted becomes the current settings
         const res = await window.api.repricerApplyFeed(feedId).catch(() => null);
@@ -482,7 +484,7 @@ async function rJudgeTest(feed, read, before) {
   const applied = now && !now.missing && String(now.strategy || "").toLowerCase() === String(s.strategy || "").toLowerCase() && (!s.strategy || (Math.abs((now.min ?? -1) - s.min) < 0.005 && Math.abs((now.max ?? -1) - s.max) < 0.005));
   if (applied) {
     await finish("passed", "");
-    return { kind: "ok", html: `Test passed: <b>${esc(t.sku)}</b> shows the new settings at Walmart and no other item changed. You can now send many changes at once.` };
+    return { kind: "ok", html: `Test passed. You can now push many changes at once.` };
   }
   await finish("unclear", `Walmart took the upload${feed?.ok ? ` (${feed.status.toLowerCase()})` : ""} but the item doesn't show the new settings yet.`);
   return { kind: "info", html: `Walmart took the test upload${feed?.ok ? ` (${esc(feed.status.toLowerCase())})` : ""} and no other item changed, but <b>${esc(t.sku)}</b> doesn't show the new settings yet. Walmart can take a while; ${rpr.fileAt ? "download the strategy again in a few minutes and import it" : "use “Check it now” in a few minutes"}.` };
@@ -521,5 +523,5 @@ window.addEventListener("keydown", (e) => {
 // ---- start -------------------------------------------------------------------------------------------
 (async () => {
   try { rSetState(await window.api.repricerGet()); } catch { /* nothing stored */ }
-  if (inRepricer()) renderRepricerTab();
+  if (inRepricer()) renderRepricerTab(); else if (inMarket()) renderMarket();
 })();

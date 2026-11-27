@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Market — two cleaner directions</title>
+<style>
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-Regular.otf") format("opentype"); font-weight: 400; }
+@font-face { font-family: "Geist"; src: url("../../fonts/Geist-SemiBold.otf") format("opentype"); font-weight: 600 700; }
+@font-face { font-family: "Geist Mono"; src: url("../../fonts/GeistMono-Regular.otf") format("opentype"); }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 30px 36px 44px; background: #6f6e69; font: 13px/1.45 "Geist", system-ui, sans-serif; color: #1B1B18; width: 1700px; }
+.tag { color: #fff; font-weight: 600; font-size: 15px; margin: 0 0 3px; }
+.why { color: #E9E4D7; font-size: 12.5px; margin: 0 0 12px; }
+.win { background: #fff; border-radius: 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, .28); overflow: hidden; margin-bottom: 34px; }
+.top { display: flex; align-items: center; gap: 18px; padding: 14px 22px; border-bottom: 1px solid #EFEDE7; }
+.top b.app { font-size: 14px; }
+.nav { display: flex; gap: 18px; font-weight: 600; color: #8B887C; } .nav .on { color: #1B1B18; box-shadow: 0 16px 0 -14px #1B1B18; }
+.top .r { margin-left: auto; display: flex; align-items: center; gap: 14px; color: #8B887C; font-size: 12px; }
+.btn { font-weight: 600; border-radius: 9px; padding: 8px 14px; border: 1px solid #DEDBD2; background: #fff; white-space: nowrap; font-size: 13px; color: #1B1B18; }
+.btn.dark { background: #1B1B18; border-color: #1B1B18; color: #fff; } .btn.ghost { border-color: transparent; color: #55534A; padding: 8px 6px; }
+.btn.sm { padding: 5px 11px; font-size: 12px; border-radius: 8px; }
+.mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.muted { color: #8B887C; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- A: work list ---------- */
+.a .sum { display: flex; align-items: baseline; gap: 26px; padding: 22px 22px 6px; }
+.a .sum .big { font-size: 30px; font-weight: 600; letter-spacing: -.02em; } .a .sum .big small { font-size: 13px; font-weight: 500; color: #8B887C; letter-spacing: 0; margin-left: 6px; }
+.a .seg { display: flex; gap: 22px; padding: 10px 22px 0; border-bottom: 1px solid #EFEDE7; font-weight: 600; color: #8B887C; }
+.a .seg span { padding-bottom: 11px; } .a .seg .on { color: #1B1B18; box-shadow: inset 0 -2px 0 #1B1B18; } .a .seg i { font-style: normal; font-weight: 500; margin-left: 5px; }
+.a .seg .srch { margin-left: auto; font-weight: 400; padding-bottom: 9px; }
+.a .row { display: grid; grid-template-columns: 300px 1fr 250px 190px; align-items: center; gap: 24px; padding: 16px 22px; border-bottom: 1px solid #F3F1EC; }
+.a .row.sel { background: #FAF9F5; }
+.a .who b { font-size: 13.5px; } .a .who .sub { font-size: 12px; color: #8B887C; margin-top: 2px; }
+.a .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #C7862B; margin-right: 9px; vertical-align: 1px; } .a .dot.g { background: #5A8A45; }
+.a .fund { font-size: 11px; font-weight: 600; color: #1F5E78; border-bottom: 1px dashed #7FB3C8; margin-left: 8px; font-family: "Geist", sans-serif; }
+/* the price line: min ── you ── buy box ── max */
+.line { position: relative; height: 34px; }
+.line .track { position: absolute; left: 0; right: 0; top: 16px; height: 2px; background: #E7E4DB; border-radius: 2px; }
+.line .range { position: absolute; top: 16px; height: 2px; background: #1B1B18; }
+.line .tick { position: absolute; top: 9px; width: 2px; height: 16px; background: #1B1B18; }
+.line .lbl { position: absolute; top: -4px; font-size: 10.5px; color: #8B887C; transform: translateX(-50%); white-space: nowrap; }
+.line .lbl.b { top: 22px; }
+.line .you { position: absolute; top: 11px; width: 12px; height: 12px; border-radius: 50%; background: #1B1B18; border: 2px solid #fff; box-shadow: 0 0 0 1px #1B1B18; transform: translateX(-50%); }
+.line .bb { position: absolute; top: 9px; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 11px solid #C7862B; transform: translateX(-50%); }
+.line .bb.g { border-top-color: #5A8A45; }
+.a .say b { font-size: 13.5px; } .a .say .sub { font-size: 12px; color: #8B887C; margin-top: 2px; }
+.a .say.lose b { color: #9A5B12; }
+.a .act { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.a .min { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #DEDBD2; border-radius: 9px; padding: 6px 10px; font-weight: 600; } .a .min span { font-size: 11px; color: #8B887C; font-weight: 500; }
+.a .min.c { border-color: #1B1B18; box-shadow: 0 0 0 3px #EFEDE7; }
+.a .foot { display: flex; align-items: center; gap: 12px; padding: 14px 22px; background: #1B1B18; color: #fff; }
+.a .foot .t { flex: 1 1 auto; } .a .foot .t span { color: #B9B6AB; margin-left: 8px; font-size: 12.5px; }
+.a .foot .btn { background: #fff; border-color: #fff; } .a .foot .btn.ghost { background: transparent; color: #B9B6AB; border-color: transparent; }
+
+/* ---------- B: list + detail ---------- */
+.b .cols { display: grid; grid-template-columns: 430px 1fr; min-height: 560px; }
+.b .list { border-right: 1px solid #EFEDE7; }
+.b .lh { display: flex; gap: 18px; padding: 14px 20px 0; font-weight: 600; color: #8B887C; border-bottom: 1px solid #EFEDE7; } .b .lh span { padding-bottom: 11px; } .b .lh .on { color: #1B1B18; box-shadow: inset 0 -2px 0 #1B1B18; } .b .lh i { font-style: normal; font-weight: 500; margin-left: 4px; }
+.b .li { display: flex; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid #F3F1EC; }
+.b .li.sel { background: #FAF9F5; box-shadow: inset 3px 0 0 #1B1B18; }
+.b .li .g { flex: 1 1 auto; min-width: 0; } .b .li .g b { font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .b .li .g span { font-size: 12px; color: #8B887C; }
+.b .li .gap { text-align: right; } .b .li .gap b { display: block; font-size: 13.5px; color: #9A5B12; } .b .li .gap span { font-size: 11.5px; color: #8B887C; }
+.b .li .gap.g b { color: #4C7A39; }
+.b .det { padding: 26px 34px; }
+.b .det h2 { margin: 0; font-size: 20px; letter-spacing: -.01em; } .b .det .sub { color: #8B887C; margin-top: 3px; }
+.b .head { display: flex; align-items: flex-start; gap: 12px; } .b .head .g { flex: 1 1 auto; }
+.b .verd { margin-top: 20px; font-size: 22px; font-weight: 600; letter-spacing: -.01em; color: #9A5B12; } .b .verd small { display: block; font-size: 13px; font-weight: 400; color: #55534A; letter-spacing: 0; margin-top: 4px; }
+.b .lineBox { margin: 26px 0 8px; padding: 26px 8px 22px; }
+.b .line { height: 46px; } .b .line .track, .b .line .range { top: 22px; } .b .line .tick { top: 14px; height: 18px; } .b .line .you { top: 16px; width: 14px; height: 14px; } .b .line .bb { top: 12px; }
+.b .line .lbl { font-size: 11.5px; top: -8px; } .b .line .lbl.b { top: 34px; } .b .line .lbl b { display: block; color: #1B1B18; font-size: 13px; }
+.b .edit { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border: 1px solid #EFEDE7; border-radius: 12px; }
+.b .edit .f { display: flex; flex-direction: column; gap: 4px; } .b .edit .f span { font-size: 11px; color: #8B887C; text-transform: uppercase; letter-spacing: .05em; }
+.b .edit .f b { border: 1px solid #DEDBD2; border-radius: 9px; padding: 8px 12px; font-size: 15px; min-width: 110px; } .b .edit .f b.c { border-color: #1B1B18; box-shadow: 0 0 0 3px #EFEDE7; }
+.b .edit .f b.ro { border-color: transparent; padding-left: 0; min-width: 0; }
+.b .edit .sp { flex: 1 1 auto; }
+.b .two { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 24px; }
+.b h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8B887C; font-weight: 600; }
+.b .s { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #F3F1EC; } .b .s .n { flex: 1 1 auto; } .b .s .k { width: 16px; color: #B9B6AB; } .b .s.me { font-weight: 600; } .b .s .t { color: #8B887C; font-size: 12px; }
+.b .inc { border: 1px solid #D5E6EE; background: #F4F9FB; border-radius: 12px; padding: 14px 16px; } .b .inc b { color: #1F5E78; } .b .inc p { margin: 6px 0 0; color: #3A5B68; font-size: 12.5px; }
+
+/* ---------- the app's own colours ---------- */
+body { color: #1C1B16; }
+.win { background: #FAF9F5; }
+.top { background: #fff; border-bottom-color: #E9E4D7; padding: 12px 18px; gap: 10px; }
+.nav { gap: 6px; color: #6E6B5C; } .nav span { padding: 6px 12px; border-radius: 8px; } .nav .on { background: #E6E8F3; color: #3D4A85; box-shadow: none; }
+.top .r, .muted { color: #6E6B5C; }
+.btn { border-color: #D9D2C1; border-radius: 8px; } .btn.ghost { border-color: #D9D2C1; padding: 8px 14px; color: #1C1B16; }
+.top .r .btn:last-child, .btn.dark { background: #4C5B9E; border-color: #4C5B9E; color: #fff; }
+.a .sum { padding: 18px 18px 4px; }
+.a .seg, .b .lh { gap: 8px; border-bottom: 0; padding: 12px 18px; align-items: center; }
+.a .seg span, .b .lh span { padding: 5px 11px; border-radius: 999px; background: #F4F1E9; font-size: 12px; color: #45433A; }
+.a .seg .on, .b .lh .on { background: #FBEBD3; color: #8A4B12; box-shadow: none; }
+.a .seg .srch { background: #fff; border: 1px solid #D9D2C1; border-radius: 8px; padding: 7px 12px; width: 210px; color: #918D7C; }
+.a .rows { margin: 0 18px 14px; background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; overflow: hidden; }
+.a .row { border-bottom-color: #F0EDE6; padding: 16px 18px; box-shadow: inset 3px 0 0 #C28A2B; } .a .row.sel { background: #EEF0F8; }
+.a .dot { display: none; } .a .who .sub { margin-left: 0 !important; color: #6E6B5C; }
+.a .fund { background: #E4F1F6; color: #1F5E78; border: 1px solid #BFDCE8; border-radius: 999px; padding: 2px 8px; }
+.line .track { background: #E9E4D7; } .line .range, .line .tick { background: #4C5B9E; }
+.line .you { background: #4C5B9E; box-shadow: 0 0 0 1px #4C5B9E; } .line .bb { border-top-color: #C28A2B; } .line .lbl { color: #6E6B5C; }
+.a .say.lose b, .b .li .gap b { color: #8A4B12; } .b .li .gap.g b { color: #3F6A2F; }
+.a .min { border-color: #D9D2C1; background: #fff; } .a .min.c, .b .edit .f b.c { border-color: #C9A227; background: #FFFBEA; box-shadow: none; }
+.a .foot { margin: 0 18px 18px; border-radius: 12px; background: #FFFBEA; border: 1px solid #EBD98A; color: #1C1B16; }
+.a .foot .t span { color: #6B5A1E; } .a .foot .btn { background: #4C5B9E; border-color: #4C5B9E; color: #fff; } .a .foot .btn.ghost { background: #fff; border-color: #D9D2C1; color: #1C1B16; }
+.b .list { border-right-color: #E9E4D7; background: #fff; } .b .li { border-bottom-color: #F0EDE6; } .b .li.sel { background: #EEF0F8; box-shadow: inset 3px 0 0 #4C5B9E; }
+.b .verd { background: #FDF4E4; border: 1px solid #F3DDB6; border-radius: 10px; padding: 12px 14px; color: #8A4B12; font-size: 17px; } .b .verd small { color: #6B4A1E; }
+.b .lineBox { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; margin: 14px 0; padding: 34px 26px 30px; }
+.b .edit { background: #F6F7FC; border-color: #DDE1F2; } .b .edit .f span, .b h4 { color: #3D4A85; } .b .edit .f b { background: #fff; border-color: #D9D2C1; } .b .edit .f b.ro { background: none; }
+.b .two > div:first-child { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 12px 14px; }
+.b .s { border-bottom-color: #F0EDE6; } .b .s.me { background: #F5FAF2; margin: 0 -14px; padding: 7px 14px; }
+.b .inc { background: #E4F1F6; border-color: #BFDCE8; }
+.b .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
+.b .stats > div { background: #fff; border: 1px solid #E9E4D7; border-radius: 12px; padding: 12px 16px; }
+.b .stats span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #6E6B5C; font-weight: 600; }
+.b .stats b { display: block; font-size: 22px; margin-top: 2px; } .b .stats i { font-style: normal; font-size: 12px; color: #6E6B5C; }
+em.fund { font-style: normal; font-family: "Geist", sans-serif; font-size: 11px; font-weight: 600; background: #E4F1F6; color: #1F5E78; border: 1px solid #BFDCE8; border-radius: 999px; padding: 2px 8px; margin-left: 6px; }
+</style>
+</head>
+<body>
+
+<p class="tag">A · A work list</p>
+<p class="why">One line per listing, built around the decision. A price line shows your min, your price, the buy box and your max at a glance. One box to change (the min) and one button that fills in the number that matches the buy box. Strategy, max and sellers open when you click the row.</p>
+<div class="win a">
+  <div class="top"><b class="app">Walmart Listing Browser</b><div class="nav"><span>Incentive list</span><span class="on">Market</span></div>
+    <div class="r"><span>Scanned 6:29 PM · next 9:29 PM</span><span class="btn ghost">Import settings</span><span class="btn ghost">Export</span><span class="btn">Scan now</span></div></div>
+  <div class="sum"><span class="big num">79<small>losing</small></span><span class="big num">144<small>winning</small></span><span class="big num">39<small>stuck at your min</small></span><span class="big num">11<small>Walmart-funded</small></span></div>
+  <div class="seg"><span class="on">Losing<i>79</i></span><span>Stuck at min<i>39</i></span><span>Winning<i>144</i></span><span>No strategy<i>33</i></span><span>Funded<i>11</i></span><span>All<i>231</i></span><span class="srch muted">Search…</span></div>
+
+  <div class="rows">
+  <div class="row sel">
+    <div class="who"><b class="mono"><span class="dot"></span>X133-64GB-GRAY-1</b><span class="fund">Funded</span><div class="sub" style="margin-left:16px">Lifeline786 has the buy box · you're #3 of 7</div></div>
+    <div class="line"><div class="track"></div><div class="range" style="left:22%;width:56%"></div>
+      <div class="tick" style="left:22%"></div><div class="lbl b" style="left:22%">min $129.99</div>
+      <div class="tick" style="left:78%"></div><div class="lbl b" style="left:78%">max $134.99</div>
+      <div class="bb" style="left:21%"></div><div class="lbl" style="left:21%">buy box $129.90</div>
+      <div class="you" style="left:78%"></div><div class="lbl" style="left:78%">you $134.99</div></div>
+    <div class="say lose"><b>$5.09 above the buy box</b><div class="sub">Buy box is 9¢ under your min</div></div>
+    <div class="act"><span class="min c num"><span>min</span>129.90</span><span class="btn sm">Match</span></div>
+  </div>
+  <div class="row">
+    <div class="who"><b class="mono"><span class="dot"></span>X230-128GB-SILVER-GLOBAL</b><div class="sub" style="margin-left:16px">Spice Mobile has the buy box</div></div>
+    <div class="line"><div class="track"></div><div class="range" style="left:30%;width:52%"></div>
+      <div class="tick" style="left:30%"></div><div class="lbl b" style="left:30%">min $235.00</div>
+      <div class="tick" style="left:82%"></div><div class="lbl b" style="left:82%">max $249.99</div>
+      <div class="bb" style="left:44%"></div><div class="lbl" style="left:44%">buy box $239.00</div>
+      <div class="you" style="left:82%"></div><div class="lbl" style="left:82%">you $249.99</div></div>
+    <div class="say lose"><b>$10.99 above the buy box</b><div class="sub">Inside your range — repricer hasn't moved</div></div>
+    <div class="act"><span class="min num"><span>min</span>235.00</span><span class="btn sm" style="visibility:hidden">Match</span></div>
+  </div>
+  <div class="row">
+    <div class="who"><b class="mono"><span class="dot"></span>X135-64GB-GRAY-LTE</b><div class="sub" style="margin-left:16px">The Sahara Global has the buy box</div></div>
+    <div class="line"><div class="track"></div>
+      <div class="bb" style="left:30%"></div><div class="lbl" style="left:30%">buy box $134.99</div>
+      <div class="you" style="left:62%"></div><div class="lbl" style="left:62%">you $146.69</div>
+      <div class="lbl b" style="left:50%">not on a strategy</div></div>
+    <div class="say lose"><b>$11.70 above the buy box</b><div class="sub">No repricer on this item</div></div>
+    <div class="act"><span class="btn sm">Add to IMRAN BUY BOX 2</span></div>
+  </div>
+  <div class="row">
+    <div class="who"><b class="mono"><span class="dot"></span>S26-ULTRA-512GB-BLUE-US</b><span class="fund">Funded</span><div class="sub" style="margin-left:16px">CELLSTOREUSA has the buy box · you're #2 of 2</div></div>
+    <div class="line"><div class="track"></div><div class="range" style="left:18%;width:66%"></div>
+      <div class="tick" style="left:18%"></div><div class="lbl b" style="left:18%">min $1,199.00</div>
+      <div class="tick" style="left:84%"></div><div class="lbl b" style="left:84%">max $1,289.99</div>
+      <div class="bb" style="left:40%"></div><div class="lbl" style="left:40%">buy box $1,229.99</div>
+      <div class="you" style="left:55%"></div><div class="lbl" style="left:55%">you $1,250.00</div></div>
+    <div class="say lose"><b>$20.01 above the buy box</b><div class="sub">Inside your range — repricer hasn't moved</div></div>
+    <div class="act"><span class="min num"><span>min</span>1,199.00</span><span class="btn sm" style="visibility:hidden">Match</span></div>
+  </div>
+  </div>
+  <div class="foot"><div class="t"><b>1 change ready</b><span>X133-64GB-GRAY-1 min $129.99 → $129.90</span></div><span class="btn ghost">Discard</span><span class="btn">Push to Walmart</span></div>
+</div>
+
+<p class="tag">B · List on the left, one listing on the right</p>
+<p class="why">A short list to move through with the arrow keys; the right side gives one listing all the room: a big verdict, the price line, the min and max to edit, the sellers and the incentive. Nothing to scan sideways.</p>
+<div class="win b">
+  <div class="top"><b class="app">Walmart Listing Browser</b><div class="nav"><span>Incentive list</span><span class="on">Market</span></div>
+    <div class="r"><span>Scanned 6:29 PM · next 9:29 PM</span><span class="btn ghost">Import settings</span><span class="btn ghost">Export</span><span class="btn">Scan now</span></div></div>
+  <div class="cols">
+    <div class="list">
+      <div class="lh"><span class="on">Losing<i>79</i></span><span>Stuck<i>39</i></span><span>Winning<i>144</i></span><span>Funded<i>11</i></span><span>All<i>231</i></span></div>
+      <div class="li sel"><div class="g"><b class="mono">X133-64GB-GRAY-1 <em class="fund">Funded</em></b><span>Lifeline786 · #3 of 7</span></div><div class="gap"><b class="num">+$5.09</b><span>stuck at min</span></div></div>
+      <div class="li"><div class="g"><b class="mono">SM-X133-64GB-GREY</b><span>The Sahara Global · #2 of 2</span></div><div class="gap g"><b class="num">−$8.01</b><span>cheaper, still losing</span></div></div>
+      <div class="li"><div class="g"><b class="mono">X135-64GB-GRAY-LTE</b><span>The Sahara Global</span></div><div class="gap"><b class="num">+$11.70</b><span>no strategy</span></div></div>
+      <div class="li"><div class="g"><b class="mono">X135-128GB-GRAY-GLOBAL-1</b><span>Techmate Intl. · #2 of 2</span></div><div class="gap"><b class="num">+$10.01</b><span>in range</span></div></div>
+      <div class="li"><div class="g"><b class="mono">X230-128GB-SILVER-GLOBAL</b><span>Spice Mobile</span></div><div class="gap"><b class="num">+$10.99</b><span>in range</span></div></div>
+      <div class="li"><div class="g"><b class="mono">X230-128GB-GRAY-GLOBAL-1</b><span>Lifeline786 · #2 of 5</span></div><div class="gap"><b class="num">+$49.99</b><span>stuck at min</span></div></div>
+      <div class="li"><div class="g"><b class="mono">S26-ULTRA-512GB-BLUE-US <em class="fund">Funded</em></b><span>CELLSTOREUSA · #2 of 2</span></div><div class="gap"><b class="num">+$20.01</b><span>in range</span></div></div>
+    </div>
+    <div class="det">
+      <div class="head"><div class="g"><h2 class="mono">X133-64GB-GRAY-1</h2><div class="sub">Item 19132403534 · scanned 11:22 PM · IMRAN BUY BOX 2</div></div><span class="btn sm">Screenshot</span><span class="btn sm">Open on Walmart</span><span class="btn sm">Re-check</span></div>
+      <div class="verd">Losing by $5.09<small>Lifeline786 holds the buy box at $129.90. Your repricer can't follow: that's 9¢ under your minimum.</small></div>
+      <div class="stats"><div><span>Buy box</span><b class="num">$129.90</b><i>Lifeline786</i></div><div><span>Your price</span><b class="num">$134.99</b><i>#3 of 7</i></div><div><span>Incentive price</span><b class="num">$134.99</b><i>from your Incentive list</i></div></div>
+      <div class="edit"><div class="f"><span>Strategy</span><b class="num" style="min-width:190px">IMRAN BUY BOX 2</b></div><div class="f"><span>Min</span><b class="c num">129.90</b></div><div class="f"><span>Max</span><b class="num">134.99</b></div><span class="btn sm" style="align-self:flex-end;margin-bottom:5px">Match buy box</span><div class="sp"></div><span class="muted">min was $129.99</span><span class="btn dark">Push to Walmart</span></div>
+      <div class="two">
+        <div><h4>Sellers · 7</h4>
+          <div class="s"><span class="k">1</span><span class="n">Lifeline786 <span class="t">· buy box</span></span><b class="num">$129.90</b></div>
+          <div class="s"><span class="k">2</span><span class="n">Elec Store SM</span><b class="num">$130.00</b></div>
+          <div class="s me"><span class="k">3</span><span class="n">HotDeals <span class="t">· you</span></span><b class="num">$134.99</b></div>
+          <div class="s"><span class="k">4</span><span class="n">Virtual Depot</span><b class="num">$136.94</b></div>
+          <div class="s"><span class="k">5</span><span class="n muted">3 more</span></div></div>
+        <div><h4>Incentive</h4>
+          <div class="inc"><b>Walmart-funded · in effect</b><p>Walmart is covering part of the price on this item. You are paid your full price per unit.</p></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
