@@ -382,15 +382,14 @@ function renderMarket() {
         ? `<b title="Your price with shipping, against the buy box seller's">${gap > 0 ? "+" : "−"}${fmt(Math.abs(gap))}</b>`
         : `<b title="Buy box price">${fmt(f.bb.price)}</b>`;
       const r = raiseFor(f);
-      sub = f.mine ? `You have the buy box${r?.ok ? ` · <span class="m-up" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">${fmt(r.gap)} room to raise</span>` : ""}`
-        : f.bb.seller ? `${esc(f.bb.seller)} has the buy box` : "Buy box holder not read";
+      sub = f.mine ? `Buy Box: You${r?.ok ? ` · <span class="m-up" title="Next seller ${esc(r.nextSeller)} is at ${fmt(r.next)} — suggested ${fmt(r.target)}">${fmt(r.gap)} room to raise</span>` : ""}`
+        : f.bb.seller ? `Buy Box: ${esc(f.bb.seller)}` : "Buy Box: not read";
       if (f.oos) st += `<span class="m-st n">Out of stock</span>`;
     } else if (f.it.buyBox?.oos) { st = `<span class="m-st n">Out of stock</span>`; sub = "No price on the listing"; }
     else if (f.it.buyBox?.robot) { st = `<span class="m-st n">Not read</span>`; sub = "Robot check — open the listing once to pass it"; }
     else if (f.it.buyBox?.noBuyBox) sub = "No buy box reported";
     else if (f.it.buyBox?.failed) { st = `<span class="m-st n">Not read</span>`; sub = "Couldn't read the page"; }
     else sub = "Not scanned yet";
-    if (f.low != null) sub += ` · <span class="${f.cheaper ? "m-amzlow" : ""}" title="${f.cheaper ? "Amazon is cheaper than your price" : "Lowest linked Amazon listing"}">Amazon ${fmt(f.low)}</span>`;
     const fund = f.wf?.status === "enrolled" ? `<span class="m-fund" title="A Walmart-funded incentive is in effect">Funded</span>` : "";
     tr.innerHTML = `<td><div class="m-li"><div class="g"><div class="t"><b>${esc(f.it.sku || f.it.itemId)}</b>${fund}</div><div class="s">${sub}</div></div><div class="e">${st}${val}</div></div></td>`;
     tr.addEventListener("click", (e) => {
