@@ -9,7 +9,7 @@
 //   manual: the price was typed by hand and is never overwritten by a scan.
 
 // ---- tab switching -----------------------------------------------------------
-let appTab = ["market", "repricer"].includes(localStorage.getItem("appTab")) ? localStorage.getItem("appTab") : "sheet";
+let appTab = { market: "market", repricer: "market" }[localStorage.getItem("appTab")] || "sheet"; // the Repricer tab is gone: its settings live in the Market tab
 const inMarket = () => appTab === "market";
 
 // The sheet's own docking must stay quiet while the Market tab is up: the
